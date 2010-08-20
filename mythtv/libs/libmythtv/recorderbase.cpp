@@ -32,7 +32,9 @@ RecorderBase::RecorderBase(TVRec *rec)
       audiodevice("/dev/dsp"), videodevice("/dev/video"), vbidevice("/dev/vbi"),
       vbimode(0), ntsc(true), ntsc_framerate(true), video_frame_rate(29.97),
       m_videoAspect(0), m_videoHeight(0), m_videoWidth(0), curRecording(NULL),
-      request_pause(false), paused(false), nextRingBuffer(NULL), nextRecording(NULL),
+      request_pause(false), paused(false),
+      request_recording(false), recording(false),
+      nextRingBuffer(NULL), nextRecording(NULL),
       positionMapType(MARK_GOP_BYFRAME), positionMapLock()
 {
     QMutexLocker locker(avcodeclock);
@@ -153,6 +155,75 @@ void RecorderBase::SetStrOption(RecordingProfile *profile, const QString &name)
                     "SetStrOption(...%1): Option not in profile.").arg(name));
 }
 
+/** \brief StopRecording() signals to the StartRecording() function that
+ *         it should stop recording and exit cleanly.
+ *
+ *   This function should block until StartRecording() has finished up.
+ */
+void RecorderBase::StopRecording(void)
+{
+    QMutexLocker locker(&pauseLock);
+    request_recording = false;
+    unpauseWait.wakeAll();
+    while (recording)
+    {
+        recordingWait.wait(&pauseLock, 100);
+        if (request_recording)
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    "Programmer Error: StartRecording called while we were in StopRecording");
+            request_recording = false;
+        }
+    }
+}
+
+/// \brief Tells whether the StartRecorder() loop is running.
+bool RecorderBase::IsRecording(void)
+{
+    QMutexLocker locker(&pauseLock);
+    return recording;
+}
+
+/// \brief Tells us if StopRecording() has been called.
+bool RecorderBase::IsRecordingRequested(void)
+{
+    QMutexLocker locker(&pauseLock);
+    return request_recording;
+}
+
+/** \brief Pause tells StartRecording() to pause, it should not block.
+ *
+ *   Once paused the recorder calls tvrec->RecorderPaused().
+ *
+ *  \param clear if true any generated timecodes should be reset.
+ *  \sa Unpause(), WaitForPause()
+ */
+void RecorderBase::Pause(bool clear)
+{
+    (void) clear;
+    QMutexLocker locker(&pauseLock);
+    request_pause = true;
+}
+
+/// \brief Unpause tells StartRecording() to unpause, it should not block.
+void RecorderBase::Unpause(void)
+{
+    QMutexLocker locker(&pauseLock);
+    request_pause = false;
+    unpauseWait.wakeAll();
+}
+
+/// \brief Returns true iff recorder is paused.
+bool RecorderBase::IsPaused(bool holding_lock) const
+{
+    if (!holding_lock)
+        pauseLock.lock();
+    bool ret = paused;
+    if (!holding_lock)
+        pauseLock.unlock();
+    return ret;
+}
+
 /** \fn RecorderBase::WaitForPause(int)
  *  \brief WaitForPause blocks until StartRecording() is actually paused,
  *         or timeout milliseconds elapse.
@@ -164,35 +235,35 @@ bool RecorderBase::WaitForPause(int timeout)
     MythTimer t;
     t.start();
 
-    // Qt4 requires a QMutex as a parameter...
-    // not sure if this is the best solution.  Mutex Must be locked before wait.
-    QMutex mutex;
-    mutex.lock();
-
-    while (true)
+    QMutexLocker locker(&pauseLock);
+    while (!IsPaused(true))
     {
         int wait = timeout - t.elapsed();
-
         if (wait <= 0)
-            return IsPaused();
-        else if (IsPaused())
-            return true;
-
-        pauseWait.wait(&mutex, wait);
+            return false;
+        pauseWait.wait(&pauseLock, wait);
     }
+    return true;
 }
 
 /** \fn RecorderBase::PauseAndWait(int)
- *  \brief If request_pause is true Paused and blocks up to timeout
- *         milliseconds.
+ *  \brief If request_pause is true, sets pause and blocks up to
+ *         timeout milliseconds or until unpaused, whichever is
+ *         sooner.
+ *
+ *  This is the where we actually do the pausing. For most recorders
+ *  that need to do something special on pause, this is the method
+ *  to overide.
+ *
  *  \param timeout number of milliseconds to wait defaults to 100.
  *  \return true if recorder is paused.
  */
 bool RecorderBase::PauseAndWait(int timeout)
 {
+    QMutexLocker locker(&pauseLock);
     if (request_pause)
     {
-        if (!paused)
+        if (!IsPaused(true))
         {
             paused = true;
             pauseWait.wakeAll();
@@ -200,16 +271,16 @@ bool RecorderBase::PauseAndWait(int timeout)
                 tvrec->RecorderPaused();
         }
 
-        // Qt4 requires a QMutex as a parameter...
-        // not sure if this is the best solution.  Mutex Must be locked before wait.
-        QMutex mutex;
-        mutex.lock();
-
-        unpauseWait.wait(&mutex, timeout);
+        unpauseWait.wait(&pauseLock, timeout);
     }
-    if (!request_pause)
+
+    if (!request_pause && IsPaused(true))
+    {
         paused = false;
-    return paused;
+        unpauseWait.wakeAll();
+    }
+
+    return IsPaused(true);
 }
 
 void RecorderBase::CheckForRingBufferSwitch(void)

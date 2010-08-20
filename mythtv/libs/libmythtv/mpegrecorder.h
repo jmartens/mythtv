@@ -12,9 +12,6 @@ struct AVFormatContext;
 struct AVPacket;
 
 class MpegRecorder : public DTVRecorder,
-                     public MPEGSingleProgramStreamListener,
-                     public TSPacketListener,
-                     public TSPacketListenerAV,
                      public ReaderPausedCB
 {
   public:
@@ -33,7 +30,6 @@ class MpegRecorder : public DTVRecorder,
 
     void Initialize(void) {}
     void StartRecording(void);
-    void StopRecording(void);
     void Reset(void);
 
     void Pause(bool clear = true);
@@ -49,15 +45,6 @@ class MpegRecorder : public DTVRecorder,
 
     // TSPacketListener
     bool ProcessTSPacket(const TSPacket &tspacket);
-
-    // TSPacketListenerAV
-    bool ProcessVideoTSPacket(const TSPacket &tspacket);
-    bool ProcessAudioTSPacket(const TSPacket &tspacket);
-    bool ProcessAVTSPacket(const TSPacket &tspacket);
-
-    // Implements MPEGSingleProgramStreamListener
-    void HandleSingleProgramPAT(ProgramAssociationTable *pat);
-    void HandleSingleProgramPMT(ProgramMapTable *pmt);
 
     // ReaderPausedCB
     virtual void ReaderPaused(int fd) { pauseWait.wakeAll(); }
@@ -88,8 +75,6 @@ class MpegRecorder : public DTVRecorder,
     void SetBitrate(int bitrate, int maxbitrate, const QString & reason);
     void HandleResolutionChanges(void);
 
-    inline bool CheckCC(uint pid, uint cc);
-
     bool deviceIsMpegFile;
     int bufferSize;
 
@@ -103,11 +88,7 @@ class MpegRecorder : public DTVRecorder,
     bool     requires_special_pause;
 
     // State
-    bool recording;
-    bool encoding;
     mutable QMutex start_stop_encoding_lock;
-    QMutex recording_wait_lock;
-    QWaitCondition recording_wait;
 
     // Pausing state
     bool cleartimeonpause;
@@ -139,27 +120,6 @@ class MpegRecorder : public DTVRecorder,
     // Buffer device reads
     DeviceReadBuffer *_device_read_buffer;
 
-    // TS
-    unsigned char   _stream_id[0x1fff  + 1];
-    unsigned char   _pid_status[0x1fff + 1];
-    unsigned char   _continuity_counter[0x1fff + 1];
-    static const unsigned char kPayloadStartSeen = 0x2;
-    vector<TSPacket> _scratch;
-
-    // Statistics
-    mutable uint        _continuity_error_count;
-    mutable uint        _stream_overflow_count;
-    mutable uint        _bad_packet_count;
 };
-
-inline bool MpegRecorder::CheckCC(uint pid, uint new_cnt)
-{
-    bool ok = ((((_continuity_counter[pid] + 1) & 0xf) == new_cnt) ||
-               (_continuity_counter[pid] == 0xFF));
-
-    _continuity_counter[pid] = new_cnt & 0xf;
-
-    return ok;
-}
 
 #endif

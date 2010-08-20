@@ -34,6 +34,7 @@ class RecorderBase;
 class DTVRecorder;
 class DVBRecorder;
 class HDHRRecorder;
+class ASIRecorder;
 
 class SignalMonitor;
 class DTVSignalMonitor;

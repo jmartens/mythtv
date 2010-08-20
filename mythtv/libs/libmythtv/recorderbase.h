@@ -122,22 +122,12 @@ class MPUBLIC RecorderBase
      */
     virtual void StartRecording(void) = 0;
 
-    /** \brief StopRecording() signals to the StartRecording() function that
-     *         it should stop recording and exit cleanly.
-     *
-     *   This function should block until StartRecording() has finished up.
-     */
-    virtual void StopRecording(void) = 0;
-
     /** \brief Reset the recorder to the startup state.
      *
      *   This is used after Pause(bool), WaitForPause() and
      *   after the RingBuffer's StopReads() method has been called.
      */
     virtual void Reset(void) = 0;
-
-    /// \brief Tells whether the StartRecorder() loop is running.
-    virtual bool IsRecording(void) = 0;
 
     /// \brief Tells us whether an unrecoverable error has been encountered.
     virtual bool IsErrored(void) = 0;
@@ -148,13 +138,6 @@ class MPUBLIC RecorderBase
      *   because frames may not be written in display order.
      */
     virtual long long GetFramesWritten(void) = 0;
-
-    /** \brief Open devices needed by recorder.
-     *
-     *   This is usually called by StartRecording().
-     *  \return true if device was successfully opened.
-     */
-    virtual bool Open(void) = 0;
 
     /** \brief Returns file descriptor of recorder device.
      *
@@ -184,21 +167,14 @@ class MPUBLIC RecorderBase
     bool GetKeyframePositions(
         int64_t start, int64_t end, frm_pos_map_t&) const;
 
-    /** \brief Pause tells StartRecording() to pause, it should not block.
-     *
-     *   Once paused the recorder calls tvrec->RecorderPaused().
-     *
-     *  \param clear if true any generated timecodes should be reset.
-     *  \sa Unpause(), WaitForPause()
-     */
-    virtual void Pause(bool clear = true)
-        { (void) clear; request_pause = true; }
+    virtual void StopRecording(void);
+    virtual bool IsRecording(void);
+    virtual bool IsRecordingRequested(void);
 
-    /// \brief Unpause tells StartRecording() to unpause, it should not block.
-    virtual void Unpause(void)
-        { request_pause = false; unpauseWait.wakeAll(); }
-    /// \brief Returns true iff recorder is paused.
-    virtual bool IsPaused(void) const { return paused; }
+    // pausing interface
+    virtual void Pause(bool clear = true);
+    virtual void Unpause(void);
+    virtual bool IsPaused(bool holding_lock = false) const;
     virtual bool WaitForPause(int timeout = 1000);
 
     /** \brief Returns an approximation of the frame rate.
@@ -274,11 +250,18 @@ class MPUBLIC RecorderBase
 
     ProgramInfo   *curRecording;
 
-    // For handling pausing
+    // For handling pausing + stop recording
+    mutable QMutex pauseLock; // also used for request_recording and recording
     bool           request_pause;
     bool           paused;
     QWaitCondition pauseWait;
     QWaitCondition unpauseWait;
+    /// True if API call has requested a recording be [re]started
+    bool           request_recording;
+    /// True while recording is actually being performed
+    bool           recording;
+    QWaitCondition recordingWait;
+    
 
     // For RingBuffer switching
     QMutex         nextRingBufferLock;

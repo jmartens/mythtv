@@ -39,7 +39,7 @@ typedef QMap<uint,int> FilterMap;
 
 //#define RETUNE_TIMEOUT 5000
 
-class HDHRStreamHandler : public ReaderPausedCB
+class HDHRStreamHandler
 {
     friend void *run_hdhr_stream_handler_thunk(void *param);
 
@@ -60,10 +60,6 @@ class HDHRStreamHandler : public ReaderPausedCB
     bool TuneProgram(uint mpeg_prog_num);
     bool TuneVChannel(const QString &vchn);
     bool EnterPowerSavingMode(void);
-
-
-    // ReaderPausedCB
-    virtual void ReaderPaused(int fd) { (void) fd; }
 
   private:
     HDHRStreamHandler(const QString &);

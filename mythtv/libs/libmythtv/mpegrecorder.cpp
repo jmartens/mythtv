@@ -89,9 +89,7 @@ MpegRecorder::MpegRecorder(TVRec *rec) :
     has_buggy_vbi(true),          has_v4l2_vbi(false),
     requires_special_pause(false),
     // State
-    recording(false),             encoding(false),
     start_stop_encoding_lock(QMutex::Recursive),
-    recording_wait_lock(),        recording_wait(),
     // Pausing state
     cleartimeonpause(false),
     // Encoding info
@@ -107,14 +105,8 @@ MpegRecorder::MpegRecorder(TVRec *rec) :
     high_mpeg4avgbitrate(13500),  high_mpeg4peakbitrate(20200),
     // Input file descriptors
     chanfd(-1),                   readfd(-1),
-    _device_read_buffer(NULL),
-    // Statistics
-    _continuity_error_count(0),   _stream_overflow_count(0),
-    _bad_packet_count(0)
+    _device_read_buffer(NULL)
 {
-    memset(_stream_id, 0, sizeof(_stream_id));
-    memset(_pid_status, 0, sizeof(_pid_status));
-    memset(_continuity_counter, 0, sizeof(_continuity_counter));
 }
 
 MpegRecorder::~MpegRecorder()
@@ -420,11 +412,6 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
             bufferSize = 1500 * TSPacket::SIZE;
             usingv4l2 = true;
             requires_special_pause = true;
-
-            bzero(_stream_id,  sizeof(_stream_id));
-            bzero(_pid_status, sizeof(_pid_status));
-            memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
-
             m_h264_parser.use_I_forKeyframes(false);
         }
         else
@@ -1016,6 +1003,10 @@ bool MpegRecorder::SetVBIOptions(int chanfd)
 
 bool MpegRecorder::Open(void)
 {
+    memset(_stream_id,  0, sizeof(_stream_id));
+    memset(_pid_status, 0, sizeof(_pid_status));
+    memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
+
     if (deviceIsMpegFile)
         return OpenMpegFileAsInput();
     else
@@ -1026,7 +1017,7 @@ void MpegRecorder::StartRecording(void)
 {
     if (!Open())
     {
-        _error = true;
+        _error = "Failed to open V4L device";
         return;
     }
 
@@ -1037,6 +1028,7 @@ void MpegRecorder::StartRecording(void)
     has_select = false;
 #endif
 
+    _continuity_error_count = 0;
     _start_code = 0xffffffff;
     _last_gop_seen = 0;
     _frames_written_count = 0;
@@ -1059,9 +1051,10 @@ void MpegRecorder::StartRecording(void)
     }
 
     {
-        QMutexLocker locker(&recording_wait_lock);
-        encoding = true;
+        QMutexLocker locker(&pauseLock);
+        request_recording = true;
         recording = true;
+        recordingWait.wakeAll();
     }
 
     unsigned char *buffer = new unsigned char[bufferSize + 1];
@@ -1099,9 +1092,9 @@ void MpegRecorder::StartRecording(void)
     }
 
     QByteArray vdevice = videodevice.toAscii();
-    while (encoding && !_error)
+    while (IsRecordingRequested() && !IsErrored())
     {
-        if (PauseAndWait(100))
+        if (PauseAndWait())
             continue;
 
         if (deviceIsMpegFile)
@@ -1204,7 +1197,9 @@ void MpegRecorder::StartRecording(void)
 
             if (len < 0 && !has_select)
             {
-                usleep(25 * 1000);
+                QMutexLocker locker(&pauseLock);
+                if (request_recording && !request_pause)
+                    unpauseWait.wait(&pauseLock, 25);
                 continue;
             }
 
@@ -1221,7 +1216,7 @@ void MpegRecorder::StartRecording(void)
 
                 if (len <= 0)
                 {
-                    encoding = false;
+                    _error = "Failed to read from video file";
                     continue;
                 }
             }
@@ -1270,12 +1265,17 @@ void MpegRecorder::StartRecording(void)
     FinishRecording();
 
     delete[] buffer;
-    DTVRecorder::SetStreamData(NULL);
-    encoding = false;
 
-    QMutexLocker locker(&recording_wait_lock);
+    if (driver == "hdpvr")
+    {
+        _stream_data->RemoveWritingListener(this);
+        _stream_data->RemoveAVListener(this);
+        DTVRecorder::SetStreamData(NULL);
+    }
+
+    QMutexLocker locker(&pauseLock);
     recording = false;
-    recording_wait.wakeAll();
+    recordingWait.wakeAll();
 }
 
 bool MpegRecorder::ProcessTSPacket(const TSPacket &tspacket_real)
@@ -1291,105 +1291,20 @@ bool MpegRecorder::ProcessTSPacket(const TSPacket &tspacket_real)
         tspacket_fake->SetContinuityCounter(cc);
     }
 
-    const TSPacket *tspacket = (tspacket_fake) ?
-        tspacket_fake : &tspacket_real;
+    const TSPacket &tspacket = (tspacket_fake)
+        ? *tspacket_fake : tspacket_real;
 
-    // Check continuity counter
-    if ((pid != 0x1fff) && !CheckCC(pid, tspacket->ContinuityCounter()))
-    {
-        VERBOSE(VB_RECORD, LOC +
-                QString("PID 0x%1 discontinuity detected").arg(pid,0,16));
-        _continuity_error_count++;
-    }
-
-    // Only write the packet
-    // if audio/video key-frames have been found
-    if (!(_wait_for_keyframe_option && _first_keyframe < 0))
-    {
-        _buffer_packets = true;
-
-        BufferedWrite(*tspacket);
-    }
+    bool ret = DTVRecorder::ProcessTSPacket(tspacket);
 
     if (tspacket_fake)
         delete tspacket_fake;
 
-    return true;
-}
-
-bool MpegRecorder::ProcessVideoTSPacket(const TSPacket &tspacket)
-{
-    if (!ringBuffer)
-        return true;
-
-    _buffer_packets = !FindH264Keyframes(&tspacket);
-    if (!_seen_sps)
-        return true;
-
-    return ProcessAVTSPacket(tspacket);
-}
-
-bool MpegRecorder::ProcessAudioTSPacket(const TSPacket &tspacket)
-{
-    if (!ringBuffer)
-        return true;
-
-    _buffer_packets = !FindAudioKeyframes(&tspacket);
-    return ProcessAVTSPacket(tspacket);
-}
-
-/// Common code for processing either audio or video packets
-bool MpegRecorder::ProcessAVTSPacket(const TSPacket &tspacket)
-{
-    const uint pid = tspacket.PID();
-
-    // Check continuity counter
-    if ((pid != 0x1fff) && !CheckCC(pid, tspacket.ContinuityCounter()))
-    {
-        VERBOSE(VB_RECORD, LOC +
-                QString("PID 0x%1 discontinuity detected").arg(pid,0,16));
-        _continuity_error_count++;
-    }
-
-    // Sync recording start to first keyframe
-    if (_wait_for_keyframe_option && _first_keyframe < 0)
-        return true;
-
-    // Sync streams to the first Payload Unit Start Indicator
-    // _after_ first keyframe iff _wait_for_keyframe_option is true
-    if (!(_pid_status[pid] & kPayloadStartSeen) && tspacket.HasPayload())
-    {
-        if (!tspacket.PayloadStart())
-            return true; // not payload start - drop packet
-
-        VERBOSE(VB_RECORD,
-                QString("PID 0x%1 Found Payload Start").arg(pid,0,16));
-
-        _pid_status[pid] |= kPayloadStartSeen;
-    }
-
-    BufferedWrite(tspacket);
-
-    return true;
-}
-
-void MpegRecorder::StopRecording(void)
-{
-    QMutexLocker locker(&recording_wait_lock);
-    if (recording)
-    {
-        encoding = false; // force exit from StartRecording() while loop
-        recording_wait.wait(&recording_wait_lock);
-    }
+    return ret;
 }
 
 void MpegRecorder::ResetForNewFile(void)
 {
     DTVRecorder::ResetForNewFile();
-
-    bzero(_stream_id,  sizeof(_stream_id));
-    bzero(_pid_status, sizeof(_pid_status));
-    memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
 
     if (driver == "hdpvr")
     {
@@ -1568,48 +1483,6 @@ void MpegRecorder::SetStreamData(void)
 {
     _stream_data->AddMPEGSPListener(this);
     _stream_data->SetDesiredProgram(1);
-}
-
-void MpegRecorder::HandleSingleProgramPAT(ProgramAssociationTable *pat)
-{
-    if (!pat)
-    {
-        VERBOSE(VB_RECORD, LOC + "HandleSingleProgramPAT(NULL)");
-        return;
-    }
-
-    if (!ringBuffer)
-        return;
-
-
-    uint next_cc = (pat->tsheader()->ContinuityCounter()+1)&0xf;
-    pat->tsheader()->SetContinuityCounter(next_cc);
-    pat->GetAsTSPackets(_scratch, next_cc);
-
-    for (uint i = 0; i < _scratch.size(); i++)
-        DTVRecorder::BufferedWrite(_scratch[i]);
-}
-
-void MpegRecorder::HandleSingleProgramPMT(ProgramMapTable *pmt)
-{
-    if (!pmt)
-    {
-        return;
-    }
-
-    // collect stream types for H.264 (MPEG-4 AVC) keyframe detection
-    for (uint i = 0; i < pmt->StreamCount(); i++)
-        _stream_id[pmt->StreamPID(i)] = pmt->StreamType(i);
-
-    if (!ringBuffer)
-        return;
-
-    uint next_cc = (pmt->tsheader()->ContinuityCounter()+1)&0xf;
-    pmt->tsheader()->SetContinuityCounter(next_cc);
-    pmt->GetAsTSPackets(_scratch, next_cc);
-
-    for (uint i = 0; i < _scratch.size(); i++)
-        DTVRecorder::BufferedWrite(_scratch[i]);
 }
 
 void MpegRecorder::SetBitrate(int bitrate, int maxbitrate,
