@@ -17,9 +17,9 @@ using namespace std;
 #define LOC QString("DevRdB(%1): ").arg(videodevice)
 #define LOC_ERR QString("DevRdB(%1) Error: ").arg(videodevice)
 
-DeviceReadBuffer::DeviceReadBuffer(ReaderPausedCB *cb, bool use_poll)
+DeviceReadBuffer::DeviceReadBuffer(DeviceReaderCB *cb, bool use_poll)
     : videodevice(QString::null),   _stream_fd(-1),
-      readerPausedCB(cb),
+      readerCB(cb),
 
       // Data for managing the device ringbuffer
       run(false),                   running(false),
@@ -312,8 +312,8 @@ bool DeviceReadBuffer::HandlePausing(void)
     {
         SetPaused(true);
 
-        if (readerPausedCB)
-            readerPausedCB->ReaderPaused(_stream_fd);
+        if (readerCB)
+            readerCB->ReaderPaused(_stream_fd);
 
         usleep(5000);
         return false;
@@ -342,7 +342,7 @@ bool DeviceReadBuffer::Poll(void) const
     {
         struct pollfd polls;
         polls.fd      = _stream_fd;
-        polls.events  = POLLIN;
+        polls.events  = POLLIN | POLLPRI;
         polls.revents = 0;
 
         int ret = poll(&polls, 1 /*number of polls*/, 10 /*msec*/);
@@ -360,26 +360,34 @@ bool DeviceReadBuffer::Poll(void) const
             break; // are we supposed to pause, stop, etc.
         }
 
-        if (ret > 0)
-            break; // we have data to read :)
-        else if (ret < 0)
+        if (polls.revents & POLLPRI)
         {
-            if ((EOVERFLOW == errno))
-                break; // we have an error to handle
-
-            if ((EAGAIN == errno) || (EINTR  == errno))
-                continue; // errors that tell you to try again
-
-            usleep(2500 /*2.5 ms*/);
+            readerCB->PriorityEvent(polls.fd);
         }
-        else //  ret == 0
+
+        if (polls.revents & POLLIN)
         {
-            if ((uint)timer.elapsed() > max_poll_wait)
+            if (ret > 0)
+                break; // we have data to read :)
+            else if (ret < 0)
             {
-                VERBOSE(VB_IMPORTANT, LOC_ERR + "Poll giving up");
-                QMutexLocker locker(&lock);
-                error = true;
-                return true;
+                if ((EOVERFLOW == errno))
+                    break; // we have an error to handle
+
+                if ((EAGAIN == errno) || (EINTR  == errno))
+                    continue; // errors that tell you to try again
+
+                usleep(2500 /*2.5 ms*/);
+            }
+            else //  ret == 0
+            {
+                if ((uint)timer.elapsed() > max_poll_wait)
+                {
+                    VERBOSE(VB_IMPORTANT, LOC_ERR + "Poll giving up");
+                    QMutexLocker locker(&lock);
+                    error = true;
+                    return true;
+                }
             }
         }
     }

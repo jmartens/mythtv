@@ -13,12 +13,13 @@
 
 #include "util.h"
 
-class ReaderPausedCB
+class DeviceReaderCB
 {
   protected:
-    virtual ~ReaderPausedCB() {}
+    virtual ~DeviceReaderCB() {}
   public:
     virtual void ReaderPaused(int fd) = 0;
+    virtual void PriorityEvent(int fd) = 0;
 };
 
 /** \class DeviceReadBuffer
@@ -31,7 +32,7 @@ class ReaderPausedCB
 class DeviceReadBuffer
 {
   public:
-    DeviceReadBuffer(ReaderPausedCB *callback, bool use_poll = true);
+    DeviceReadBuffer(DeviceReaderCB *callback, bool use_poll = true);
    ~DeviceReadBuffer();
 
     bool Setup(const QString &streamName, int streamfd);
@@ -76,7 +77,7 @@ class DeviceReadBuffer
     QString          videodevice;
     int              _stream_fd;
 
-    ReaderPausedCB  *readerPausedCB;
+    DeviceReaderCB  *readerCB;
     pthread_t        thread;
 
     // Data for managing the device ringbuffer

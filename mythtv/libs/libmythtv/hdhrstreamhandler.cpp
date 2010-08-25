@@ -9,9 +9,6 @@
 #include <sys/ioctl.h>
 #endif
 
-// Qt headers
-#include <QString>
-
 // MythTV headers
 #include "hdhrstreamhandler.h"
 #include "hdhrchannel.h"
@@ -20,18 +17,13 @@
 #include "mpegstreamdata.h"
 #include "cardutil.h"
 
-#define LOC      QString("HDHRSH(%1): ").arg(_devicename)
-#define LOC_WARN QString("HDHRSH(%1) Warning: ").arg(_devicename)
-#define LOC_ERR  QString("HDHRSH(%1) Error: ").arg(_devicename)
-
-QMap<uint,bool> HDHRStreamHandler::_rec_supports_ts_monitoring;
-QMutex          HDHRStreamHandler::_rec_supports_ts_monitoring_lock;
+#define LOC      QString("HDHRSH(%1): ").arg(_device)
+#define LOC_WARN QString("HDHRSH(%1) Warning: ").arg(_device)
+#define LOC_ERR  QString("HDHRSH(%1) Error: ").arg(_device)
 
 QMap<QString,HDHRStreamHandler*> HDHRStreamHandler::_handlers;
 QMap<QString,uint>               HDHRStreamHandler::_handlers_refcnt;
 QMutex                           HDHRStreamHandler::_handlers_lock;
-
-//#define DEBUG_PID_FILTERS
 
 HDHRStreamHandler *HDHRStreamHandler::Get(const QString &devname)
 {
@@ -69,7 +61,7 @@ void HDHRStreamHandler::Return(HDHRStreamHandler * & ref)
 {
     QMutexLocker locker(&_handlers_lock);
 
-    QString devname = ref->_devicename;
+    QString devname = ref->_device;
 
     QMap<QString,uint>::iterator rit = _handlers_refcnt.find(devname);
     if (rit == _handlers_refcnt.end())
@@ -102,174 +94,43 @@ void HDHRStreamHandler::Return(HDHRStreamHandler * & ref)
     ref = NULL;
 }
 
-HDHRStreamHandler::HDHRStreamHandler(const QString &devicename) :
+HDHRStreamHandler::HDHRStreamHandler(const QString &device) :
+    StreamHandler(device),
     _hdhomerun_device(NULL),
     _tuner(-1),
-    _devicename(devicename),
 
-    _start_stop_lock(QMutex::Recursive),
-    _running(false),
-    _reader_thread(),
-
-    _pid_lock(QMutex::Recursive),
-    _open_pid_filters(0),
-    _listener_lock(QMutex::Recursive),
     _hdhr_lock(QMutex::Recursive)
 {
 }
 
-HDHRStreamHandler::~HDHRStreamHandler()
-{
-    if (!_stream_data_list.empty())
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "dtor & _stream_data_list not empty");
-    }
-}
-
-void HDHRStreamHandler::AddListener(MPEGStreamData *data)
-{
-    VERBOSE(VB_RECORD, LOC + "AddListener("<<data<<") -- begin");
-    if (!data)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                "AddListener("<<data<<") -- null data");
-        return;
-    }
-
-    _listener_lock.lock();
-
-    VERBOSE(VB_RECORD, LOC + "AddListener("<<data<<") -- locked");
-
-    _stream_data_list.push_back(data);
-
-    _listener_lock.unlock();
-
-    Start();
-
-    VERBOSE(VB_RECORD, LOC + "AddListener("<<data<<") -- end");
-}
-
-void HDHRStreamHandler::RemoveListener(MPEGStreamData *data)
-{
-    VERBOSE(VB_RECORD, LOC + "RemoveListener("<<data<<") -- begin");
-    if (!data)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                "RemoveListener("<<data<<") -- null data");
-        return;
-    }
-
-    _listener_lock.lock();
-
-    VERBOSE(VB_RECORD, LOC + "RemoveListener("<<data<<") -- locked");
-
-    vector<MPEGStreamData*>::iterator it =
-        find(_stream_data_list.begin(), _stream_data_list.end(), data);
-
-    if (it != _stream_data_list.end())
-        _stream_data_list.erase(it);
-
-    if (_stream_data_list.empty())
-    {
-        _listener_lock.unlock();
-        Stop();
-    }
-    else
-    {
-        _listener_lock.unlock();
-    }
-
-    VERBOSE(VB_RECORD, LOC + "RemoveListener("<<data<<") -- end");
-}
-
-void *run_hdhr_stream_handler_thunk(void *param)
-{
-    HDHRStreamHandler *mon = (HDHRStreamHandler*) param;
-    mon->Run();
-    return NULL;
-}
-
-void HDHRStreamHandler::Start(void)
-{
-    QMutexLocker locker(&_start_stop_lock);
-
-    _eit_pids.clear();
-
-    if (!IsRunning())
-    {
-        QMutex is_running_lock;
-        int rval = pthread_create(&_reader_thread, NULL,
-                                  run_hdhr_stream_handler_thunk, this);
-
-        if (0 != rval)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    "Start: Failed to create thread." + ENO);
-            return;
-        }
-
-        is_running_lock.lock();
-        while (!IsRunning())
-        {
-            _running_state_changed.wait(&is_running_lock, 100);
-        }
-    }
-}
-
-void HDHRStreamHandler::Stop(void)
-{
-    QMutexLocker locker(&_start_stop_lock);
-
-    if (IsRunning())
-    {
-        SetRunning(false);
-        pthread_join(_reader_thread, NULL);
-    }
-}
-
-void HDHRStreamHandler::Run(void)
-{
-    SetRunning(true);
-    RunTS();
-}
-
-/** \fn HDHRStreamHandler::RunTS(void)
- *  \brief Uses TS filtering devices to read a DVB device for tables & data
- *
- *  This supports all types of MPEG based stream data, but is extreemely
- *  slow with DVB over USB 1.0 devices which for efficiency reasons buffer
- *  a stream until a full block transfer buffer full of the requested
- *  tables is available. This takes a very long time when you are just
- *  waiting for a PAT or PMT table, and the buffer is hundreds of packets
- *  in size.
+/** \fn HDHRStreamHandler::run(void)
+ *  \brief Reads HDHomeRun socket for tables & data
  */
-void HDHRStreamHandler::RunTS(void)
+void HDHRStreamHandler::run(void)
 {
-    int remainder = 0;
+    /* Create TS socket. */
+    if (!hdhomerun_device_stream_start(_hdhomerun_device))
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Starting recording (set target failed). Aborting.");
+        _error = true;
+        return;
+    }
+    hdhomerun_device_stream_flush(_hdhomerun_device);
+
+    SetRunning(true, false, false);
 
     /* Calculate buffer size */
     uint buffersize = gCoreContext->GetNumSetting(
         "HDRingbufferSize", 50 * TSPacket::SIZE) * 1024;
     buffersize /= VIDEO_DATA_PACKET_SIZE;
     buffersize *= VIDEO_DATA_PACKET_SIZE;
-
-    // Buffer should be at least about 1MB..
     buffersize = max(49 * TSPacket::SIZE * 128, buffersize);
-
-    /* Create TS socket. */
-    if (!hdhomerun_device_stream_start(_hdhomerun_device))
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                "Starting recording (set target failed). Aborting.");
-        return;
-    }
-    hdhomerun_device_stream_flush(_hdhomerun_device);
-
-    bool _error = false;
 
     VERBOSE(VB_RECORD, LOC + "RunTS(): begin");
 
-    while (IsRunning() && !_error)
+    int remainder = 0;
+    while (_running_desired && !_error)
     {
         UpdateFiltersFromStreamData();
 
@@ -318,64 +179,7 @@ void HDHRStreamHandler::RunTS(void)
     hdhomerun_device_stream_stop(_hdhomerun_device);
     VERBOSE(VB_RECORD, LOC + "RunTS(): " + "end");
 
-    SetRunning(false);
-}
-
-bool HDHRStreamHandler::AddPIDFilter(uint pid, bool do_update)
-{
-#ifdef DEBUG_PID_FILTERS
-    VERBOSE(VB_RECORD, LOC + QString("AddPIDFilter(0x%1)")
-            .arg(pid, 0, 16));
-#endif // DEBUG_PID_FILTERS
-
-    QMutexLocker writing_locker(&_pid_lock);
-
-    vector<uint>::iterator it;
-    it = lower_bound(_pid_info.begin(), _pid_info.end(), pid);
-    if (it != _pid_info.end() && *it == pid)
-        return true;
-
-    _pid_info.insert(it, pid);
-
-    if (do_update)
-        return UpdateFilters();
-
-    return true;
-}
-
-bool HDHRStreamHandler::RemovePIDFilter(uint pid, bool do_update)
-{
-#ifdef DEBUG_PID_FILTERS
-    VERBOSE(VB_RECORD, LOC +
-            QString("RemovePIDFilter(0x%1)").arg(pid, 0, 16));
-#endif // DEBUG_PID_FILTERS
-
-    QMutexLocker write_locker(&_pid_lock);
-
-    vector<uint>::iterator it;
-    it = lower_bound(_pid_info.begin(), _pid_info.end(), pid);
-    if ((it == _pid_info.end()) || (*it != pid))
-       return false;
-
-    _pid_info.erase(it);
-
-    if (do_update)
-        return UpdateFilters();
-
-    return true;
-}
-
-bool HDHRStreamHandler::RemoveAllPIDFilters(void)
-{
-    QMutexLocker write_locker(&_pid_lock);
-
-#ifdef DEBUG_PID_FILTERS
-    VERBOSE(VB_RECORD, LOC + "RemoveAllPIDFilters()");
-#endif // DEBUG_PID_FILTERS
-
-    _pid_info.clear();
-
-    return UpdateFilters();
+    SetRunning(false, false, false);
 }
 
 static QString filt_str(uint pid)
@@ -387,100 +191,6 @@ static QString filt_str(uint pid)
     return QString("0x%1%2%3%4")
         .arg(pid0,0,16).arg(pid1,0,16)
         .arg(pid2,0,16).arg(pid3,0,16);
-}
-
-void HDHRStreamHandler::UpdateListeningForEIT(void)
-{
-    vector<uint> add_eit, del_eit;
-
-    QMutexLocker read_locker(&_listener_lock);
-
-    for (uint i = 0; i < _stream_data_list.size(); i++)
-    {
-        MPEGStreamData *sd = _stream_data_list[i];
-        if (sd->HasEITPIDChanges(_eit_pids) &&
-            sd->GetEITPIDChanges(_eit_pids, add_eit, del_eit))
-        {
-            for (uint i = 0; i < del_eit.size(); i++)
-            {
-                uint_vec_t::iterator it;
-                it = find(_eit_pids.begin(), _eit_pids.end(), del_eit[i]);
-                if (it != _eit_pids.end())
-                    _eit_pids.erase(it);
-                sd->RemoveListeningPID(del_eit[i]);
-            }
-
-            for (uint i = 0; i < add_eit.size(); i++)
-            {
-                _eit_pids.push_back(add_eit[i]);
-                sd->AddListeningPID(add_eit[i]);
-            }
-        }
-    }
-}
-
-bool HDHRStreamHandler::UpdateFiltersFromStreamData(void)
-{
-    UpdateListeningForEIT();
-
-    pid_map_t pids;
-
-    {
-        QMutexLocker read_locker(&_listener_lock);
-
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-            _stream_data_list[i]->GetPIDs(pids);
-    }
-
-    uint_vec_t           add_pids;
-    vector<uint>         del_pids;
-
-    {
-        QMutexLocker read_locker(&_pid_lock);
-
-        // PIDs that need to be added..
-        pid_map_t::const_iterator lit = pids.constBegin();
-        for (; lit != pids.constEnd(); ++lit)
-        {
-            vector<uint>::iterator it;
-            it = lower_bound(_pid_info.begin(), _pid_info.end(), lit.key());
-            if (it == _pid_info.end() || *it != lit.key())
-                add_pids.push_back(lit.key());
-        }
-
-        // PIDs that need to be removed..
-        vector<uint>::const_iterator fit = _pid_info.begin();
-        for (; fit != _pid_info.end(); ++fit)
-        {
-            bool in_pids = pids.find(*fit) != pids.end();
-            if (!in_pids)
-                del_pids.push_back(*fit);
-        }
-    }
-
-    bool need_update = false;
-
-    // Remove PIDs
-    bool ok = true;
-    vector<uint>::iterator dit = del_pids.begin();
-    for (; dit != del_pids.end(); ++dit)
-    {
-        need_update = true;
-        ok &= RemovePIDFilter(*dit, false);
-    }
-
-    // Add PIDs
-    vector<uint>::iterator ait = add_pids.begin();
-    for (; ait != add_pids.end(); ++ait)
-    {
-        need_update = true;
-        ok &= AddPIDFilter(*ait, false);
-    }
-
-    if (need_update)
-        return UpdateFilters() && ok;
-
-    return ok;
 }
 
 bool HDHRStreamHandler::UpdateFilters(void)
@@ -504,13 +214,13 @@ bool HDHRStreamHandler::UpdateFilters(void)
     vector<uint> range_min;
     vector<uint> range_max;
 
-    for (uint i = 0; i < _pid_info.size(); i++)
+    for (uint i = 0; i < (uint)_pid_info.size(); i++)
     {
-        uint pid_min = _pid_info[i];
+        uint pid_min = _pid_info[i]->_pid;
         uint pid_max  = pid_min;
-        for (uint j = i + 1; j < _pid_info.size(); j++)
+        for (uint j = i + 1; j < (uint) _pid_info.size(); j++)
         {
-            if (pid_max + 1 != _pid_info[j])
+            if (pid_max + 1 != _pid_info[j]->_pid)
                 break;
             pid_max++;
             i++;
@@ -549,24 +259,6 @@ bool HDHRStreamHandler::UpdateFilters(void)
     return filter == new_filter;
 }
 
-void HDHRStreamHandler::SetRunning(bool is_running)
-{
-    _running = is_running;
-    _running_state_changed.wakeAll();
-}
-
-PIDPriority HDHRStreamHandler::GetPIDPriority(uint pid) const
-{
-    QMutexLocker reading_locker(&_listener_lock);
-
-    PIDPriority tmp = kPIDPriorityNone;
-
-    for (uint i = 0; i < _stream_data_list.size(); i++)
-        tmp = max(tmp, _stream_data_list[i]->GetPIDPriority(pid));
-
-    return tmp;
-}
-
 bool HDHRStreamHandler::Open(void)
 {
     if (Connect())
@@ -601,7 +293,7 @@ void HDHRStreamHandler::Close(void)
 bool HDHRStreamHandler::Connect(void)
 {
     _hdhomerun_device = hdhomerun_device_create_from_str(
-        _devicename.toLocal8Bit().constData(), NULL);
+        _device.toLocal8Bit().constData(), NULL);
 
     if (!_hdhomerun_device)
     {

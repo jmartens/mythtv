@@ -236,7 +236,7 @@ bool RecorderBase::WaitForPause(int timeout)
     t.start();
 
     QMutexLocker locker(&pauseLock);
-    while (!IsPaused(true))
+    while (!IsPaused(true) && request_pause)
     {
         int wait = timeout - t.elapsed();
         if (wait <= 0)

@@ -512,6 +512,9 @@ using_backend {
         SOURCES += hdhrsignalmonitor.cpp hdhrchannel.cpp
         SOURCES += hdhrrecorder.cpp      hdhrstreamhandler.cpp
 
+        HEADERS *= streamhandler.h
+        SOURCES *= streamhandler.cpp
+
         DEFINES += USING_HDHOMERUN
     }
 
@@ -540,6 +543,9 @@ using_backend {
         # DVB Recorder
         HEADERS += dvbrecorder.h          dvbstreamhandler.h
         SOURCES += dvbrecorder.cpp        dvbstreamhandler.cpp
+
+        HEADERS *= streamhandler.h
+        SOURCES *= streamhandler.cpp
 
         # Misc
         HEADERS += dvbdev/dvbci.h

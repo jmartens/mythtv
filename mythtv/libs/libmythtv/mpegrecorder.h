@@ -12,7 +12,7 @@ struct AVFormatContext;
 struct AVPacket;
 
 class MpegRecorder : public DTVRecorder,
-                     public ReaderPausedCB
+                     public DeviceReaderCB
 {
   public:
     MpegRecorder(TVRec*);
@@ -46,8 +46,9 @@ class MpegRecorder : public DTVRecorder,
     // TSPacketListener
     bool ProcessTSPacket(const TSPacket &tspacket);
 
-    // ReaderPausedCB
+    // DeviceReaderCB
     virtual void ReaderPaused(int fd) { pauseWait.wakeAll(); }
+    virtual void PriorityEvent(int fd) { }
 
   private:
     void SetIntOption(RecordingProfile *profile, const QString &name);
