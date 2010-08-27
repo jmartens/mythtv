@@ -1653,6 +1653,121 @@ class IPTVConfigurationGroup : public VerticalConfigurationGroup
     CaptureCard &parent;
 };
 
+class ASIDevice : public ComboBoxSetting, public CaptureCardDBStorage
+{
+  public:
+    ASIDevice(const CaptureCard &parent) :
+        ComboBoxSetting(this, true),
+        CaptureCardDBStorage(this, parent, "videodevice")
+    {
+        setLabel(QObject::tr("ASI device"));
+        fillSelections(QString::null);
+    };
+
+    /// \brief Adds all available cards to list
+    /// If current is >= 0 it will be considered available even
+    /// if no device exists for it in /dev/dvb/adapter*
+    void fillSelections(const QString &current)
+    {
+        clearSelections();
+
+        // Get devices from filesystem
+        QStringList sdevs = CardUtil::ProbeVideoDevices("ASI");
+
+        // Add current if needed
+        if (!current.isEmpty() &&
+            (find(sdevs.begin(), sdevs.end(), current) == sdevs.end()))
+        {
+            stable_sort(sdevs.begin(), sdevs.end());
+        }
+
+        // Get devices from DB
+        QStringList db = CardUtil::GetVideoDevices("ASI");
+
+        // Figure out which physical devices are already in use
+        // by another card defined in the DB, and select a device
+        // for new configs (preferring non-conflicing devices).
+        QMap<QString,bool> in_use;
+        QString sel = current;
+        for (uint i = 0; i < (uint)sdevs.size(); i++)
+        {
+            const QString dev = sdevs[i];
+            in_use[sdevs[i]] = find(db.begin(), db.end(), dev) != db.end();
+            if (sel.isEmpty() && !in_use[sdevs[i]])
+                sel = dev;
+        }
+
+        // Unfortunately all devices are conflicted, select first device.
+        if (sel.isEmpty() && sdevs.size())
+            sel = sdevs[0];
+
+        QString usestr = QString(" -- ");
+        usestr += QObject::tr("Warning: already in use");
+
+        // Add the devices to the UI
+        for (uint i = 0; i < (uint)sdevs.size(); i++)
+        {
+            const QString dev = sdevs[i];
+            QString desc = dev + (in_use[sdevs[i]] ? usestr : "");
+            desc = (current == sdevs[i]) ? dev : desc;
+            addSelection(desc, dev, dev == sel);
+        }
+    }
+
+    virtual void Load(void)
+    {
+        clearSelections();
+        addSelection(QString::null);
+        CaptureCardDBStorage::Load();
+        fillSelections(getValue());
+    }
+};
+
+ASIConfigurationGroup::ASIConfigurationGroup(CaptureCard& a_parent):
+    VerticalConfigurationGroup(false, true, false, false),
+    parent(a_parent),
+    cardinfo(new TransLabelSetting())
+{
+    device = new ASIDevice(parent);
+    addChild(device);
+    addChild(cardinfo);
+
+    connect(device, SIGNAL(valueChanged(const QString&)),
+            this,   SLOT(  probeCard(   const QString&)));
+
+    probeCard(device->getValue());
+};
+
+void ASIConfigurationGroup::probeCard(const QString &device)
+{
+#ifdef USING_ASI
+    if (device.isEmpty())
+    {
+        cardinfo->setValue("");
+        return;
+    }
+
+    if (parent.getCardID() && parent.GetRawCardType() != "ASI")
+    {
+        cardinfo->setValue("");
+        return;
+    }
+
+    QString error;
+    int device_num = CardUtil::GetASIDeviceNumber(device, &error);
+    if (device_num < 0)
+    {
+        cardinfo->setValue(tr("Not a valid DVEO ASI card"));
+        VERBOSE(VB_IMPORTANT,
+                "ASIConfigurationGroup::probeCard(), Warning: " + error);
+        return;
+    }
+    cardinfo->setValue(tr("Valid DVEO ASI card"));
+#else
+    cardinfo->setValue(QString("Not compiled with ASI support"));
+#endif
+}
+
 ImportConfigurationGroup::ImportConfigurationGroup(CaptureCard& a_parent):
     VerticalConfigurationGroup(false, true, false, false),
     parent(a_parent),
@@ -2124,6 +2239,10 @@ CaptureCardGroup::CaptureCardGroup(CaptureCard &parent) :
     addTarget("FREEBOX",   new IPTVConfigurationGroup(parent));
 #endif // USING_IPTV
 
+#ifdef USING_ASI
+    addTarget("ASI",       new ASIConfigurationGroup(parent));
+#endif // USING_ASU
+
     // for testing without any actual tuner hardware:
     addTarget("IMPORT",    new ImportConfigurationGroup(parent));
 #ifdef USING_IVTV
@@ -2328,6 +2447,10 @@ void CardType::fillSelections(SelectSetting* setting)
 #ifdef USING_IPTV
     setting->addSelection(QObject::tr("Network recorder"), "FREEBOX");
 #endif // USING_IPTV
+
+#ifdef USING_ASI
+    setting->addSelection(QObject::tr("DVEO ASI recorder"), "ASI");
+#endif
 
     setting->addSelection(QObject::tr("Import test recorder"), "IMPORT");
     setting->addSelection(QObject::tr("Demo test recorder"),   "DEMO");

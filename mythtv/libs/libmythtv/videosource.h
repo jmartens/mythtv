@@ -536,6 +536,24 @@ class HDPVRConfigurationGroup: public VerticalConfigurationGroup
     TunerCardAudioInput *audioinput;
 };
 
+class ASIDevice;
+
+class ASIConfigurationGroup: public VerticalConfigurationGroup
+{
+   Q_OBJECT
+
+  public:
+    ASIConfigurationGroup(CaptureCard &parent);
+
+  public slots:
+    void probeCard(const QString &device);
+
+  private:
+    CaptureCard       &parent;
+    ASIDevice         *device;
+    TransLabelSetting *cardinfo;
+};
+
 class ImportConfigurationGroup: public VerticalConfigurationGroup
 {
    Q_OBJECT

@@ -60,6 +60,7 @@ class MPUBLIC CardUtil
         DVBS2     = 13,
         IMPORT    = 14,
         DEMO      = 15,
+        ASI       = 16,
     };
 
     static enum CARD_TYPES toCardType(const QString &name)
@@ -96,6 +97,8 @@ class MPUBLIC CardUtil
             return IMPORT;
         if ("DEMO" == name)
             return DEMO;
+        if ("ASI" == name)
+            return ASI;
         return ERROR_UNKNOWN;
     }
 
@@ -104,7 +107,8 @@ class MPUBLIC CardUtil
         return
             (rawtype != "DVB")       && (rawtype != "FIREWIRE") &&
             (rawtype != "HDHOMERUN") && (rawtype != "FREEBOX")  &&
-            (rawtype != "IMPORT")    && (rawtype != "DEMO");
+            (rawtype != "IMPORT")    && (rawtype != "DEMO")     &&
+            (rawtype != "ASI");
     }
 
     static bool         IsChannelChangeDiscontinuous(const QString &rawtype)
@@ -116,7 +120,8 @@ class MPUBLIC CardUtil
     {
         return
             (rawtype == "FIREWIRE")  || (rawtype == "HDPVR") ||
-            (rawtype == "IMPORT")    || (rawtype == "DEMO");
+            (rawtype == "IMPORT")    || (rawtype == "DEMO")  ||
+            (rawtype == "ASI");
     }
 
     static bool         IsEITCapable(const QString &rawtype)
@@ -127,7 +132,9 @@ class MPUBLIC CardUtil
 
     static bool         IsTunerSharingCapable(const QString &rawtype)
     {
-        return (rawtype == "DVB")   || (rawtype == "HDHOMERUN");
+        return
+            (rawtype == "DVB")       || (rawtype == "HDHOMERUN") ||
+            (rawtype == "ASI");
     }
 
     static bool         IsTunerShared(uint cardidA, uint cardidB);
@@ -135,7 +142,8 @@ class MPUBLIC CardUtil
     static bool         IsTuningDigital(const QString &rawtype)
     {
         return
-            (rawtype == "DVB")       || (rawtype == "HDHOMERUN");
+            (rawtype == "DVB")       || (rawtype == "HDHOMERUN") ||
+            (rawtype == "ASI");
     }
 
     static bool         IsTuningAnalog(const QString &rawtype)
@@ -149,7 +157,7 @@ class MPUBLIC CardUtil
     {
         return
             (rawtype == "FIREWIRE")  || (rawtype == "HDHOMERUN") ||
-            (rawtype == "FREEBOX")   ||
+            (rawtype == "FREEBOX")   || (rawtype == "ASI")       ||
             (rawtype == "IMPORT")    || (rawtype == "DEMO");
     }
 
@@ -288,6 +296,13 @@ class MPUBLIC CardUtil
     // HDHomeRun info
     static bool         HDHRdoesDVB(const QString &device);
     static QString      GetHDHRdesc(const QString &device);
+
+    // ASI info
+    static int          GetASIDeviceNumber(const QString &device,
+                                           QString *error = NULL);
+
+    static uint         GetASIBufferSize(uint device_num,
+                                         QString *error = NULL);
 
   private:
     static QStringList  ProbeV4LVideoInputs(QString device);

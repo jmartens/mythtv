@@ -35,6 +35,11 @@
 #include "hdhomerun.h"
 #endif
 
+#ifdef USING_ASI
+#include <dveo/asi.h>
+#include <dveo/master.h>
+#endif
+
 #define LOC      QString("CardUtil: ")
 #define LOC_WARN QString("CardUtil, Warning: ")
 #define LOC_ERR  QString("CardUtil, Error: ")
@@ -213,6 +218,24 @@ QStringList CardUtil::ProbeVideoDevices(const QString &rawtype)
             QFileInfoList::const_iterator subit = subil.begin();
             for (; subit != subil.end(); ++subit)
                 devs.push_back(subit->filePath());
+        }
+    }
+    else if (rawtype.toUpper() == "ASI")
+    {
+        QDir dir("/dev/", "asirx*", QDir::Name, QDir::System);
+        const QFileInfoList il = dir.entryInfoList();
+        if (il.isEmpty())
+            return devs;
+
+        QFileInfoList::const_iterator it = il.begin();
+        for (; it != il.end(); ++it)
+        {
+            if (GetASIDeviceNumber(it->filePath()) >= 0)
+            {
+                devs.push_back(it->filePath());
+                continue;
+            }
+            break;
         }
     }
 #ifdef USING_HDHOMERUN
@@ -2009,5 +2032,101 @@ QString CardUtil::GetHDHRdesc(const QString &device)
 
     (void) device;
     return connectErr;
+#endif
+}
+
+static QString sys_dev(uint device_num, QString dev)
+{
+    return QString("/sys/class/asi/asirx%1/%2").arg(device_num).arg(dev);
+}
+
+static QString read_sys(QString sys_dev)
+{
+    QFile f(sys_dev);
+    f.open(QIODevice::ReadOnly);
+    QByteArray sdba = f.readAll();
+    f.close();
+    return sdba;
+}
+
+int CardUtil::GetASIDeviceNumber(const QString &device, QString *error)
+{
+#ifdef USING_ASI
+    // basic confirmation
+    struct stat statbuf;
+    memset(&statbuf, 0, sizeof(statbuf));
+    if (stat(device.toLocal8Bit().constData(), &statbuf) < 0)
+    {
+        if (error)
+            *error = QString("Unable to stat '%1'").arg(device) + ENO;
+        return -1;
+    }
+
+    if (!S_ISCHR(statbuf.st_mode))
+    {
+        if (error)
+            *error = QString("'%1' is not a character device").arg(device);
+        return -1;
+    }
+
+    if (!(statbuf.st_rdev & 0x0080))
+    {
+        if (error)
+            *error = QString("'%1' not a DVEO ASI receiver").arg(device);
+        return -1;
+    }
+
+    int device_num = statbuf.st_rdev & 0x007f;
+
+    // extra confirmation
+    QString sys_dev_contents = read_sys(sys_dev(device_num, "dev"));
+    QStringList sys_dev_clist = sys_dev_contents.split(":");
+    if (2 != sys_dev_clist.size())
+    {
+        if (error)
+        {
+            *error = QString("Unable to read '%1'")
+                .arg(sys_dev(device_num, "dev"));
+        }
+        return -1;
+    }
+    if (sys_dev_clist[0].toUInt() != (statbuf.st_rdev>>8))
+    {
+        if (error)
+            *error = QString("'%1' not a DVEO ASI device").arg(device);
+        return -1;
+    }
+
+    return device_num;
+#else
+    (void) device;
+    if (error)
+        *error = "Not compiled with ASI support.";
+    return -1;
+#endif
+}
+
+uint CardUtil::GetASIBufferSize(uint device_num, QString *error)
+{
+#ifdef USING_ASI
+    // get the buffer size
+    QString sys_bufsize_contents = read_sys(sys_dev(device_num, "bufsize"));
+    bool ok;
+    uint buf_size = sys_bufsize_contents.toUInt(&ok);
+    if (!ok)
+    {
+        if (error)
+        {
+            *error = QString("Failed to read buffer size from '%1'")
+                .arg(sys_dev(device_num, "bufsize"));
+        }
+        return 0;
+    }
+    return buf_size;
+#else
+    (void) device_num;
+    if (error)
+        *error = "Not compiled with ASI support.";
+    return 0;
 #endif
 }

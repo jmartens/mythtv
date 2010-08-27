@@ -554,6 +554,21 @@ using_backend {
         DEFINES += USING_DVB
     }
 
+    using_asi {
+        # Channel stuff
+        HEADERS += asichannel.h           asisignalmonitor.h
+        SOURCES += asichannel.cpp         asisignalmonitor.cpp
+
+        # ASI Recorder
+        HEADERS += asirecorder.h          asistreamhandler.h
+        SOURCES += asirecorder.cpp        asistreamhandler.cpp
+
+        HEADERS *= streamhandler.h
+        SOURCES *= streamhandler.cpp
+
+        DEFINES += USING_ASI
+    }
+
     DEFINES += USING_BACKEND
 }
 
