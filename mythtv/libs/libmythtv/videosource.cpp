@@ -1768,6 +1768,114 @@ void ASIConfigurationGroup::probeCard(const QString &device)
 #endif
 }
 
+class OCURDevice : public ComboBoxSetting, public CaptureCardDBStorage
+{
+  public:
+    OCURDevice(const CaptureCard &parent) :
+        ComboBoxSetting(this, true),
+        CaptureCardDBStorage(this, parent, "videodevice")
+    {
+        setLabel(QObject::tr("OCUR device"));
+        fillSelections(QString::null);
+    };
+
+    /// \brief Adds all available cards to list
+    /// If current is >= 0 it will be considered available even
+    /// if no device exists for it in /dev/dvb/adapter*
+    void fillSelections(const QString &current)
+    {
+        clearSelections();
+
+        // Get devices from filesystem
+        QStringList sdevs = CardUtil::ProbeVideoDevices("OCUR");
+
+        // Add current if needed
+        if (!current.isEmpty() &&
+            (find(sdevs.begin(), sdevs.end(), current) == sdevs.end()))
+        {
+            stable_sort(sdevs.begin(), sdevs.end());
+        }
+
+        // Get devices from DB
+        QStringList db = CardUtil::GetVideoDevices("OCUR");
+
+        // Figure out which physical devices are already in use
+        // by another card defined in the DB, and select a device
+        // for new configs (preferring non-conflicing devices).
+        QMap<QString,bool> in_use;
+        QString sel = current;
+        for (uint i = 0; i < (uint)sdevs.size(); i++)
+        {
+            const QString dev = sdevs[i];
+            in_use[sdevs[i]] = find(db.begin(), db.end(), dev) != db.end();
+            if (sel.isEmpty() && !in_use[sdevs[i]])
+                sel = dev;
+        }
+
+        // Unfortunately all devices are conflicted, select first device.
+        if (sel.isEmpty() && sdevs.size())
+            sel = sdevs[0];
+
+        QString usestr = QString(" -- ");
+        usestr += QObject::tr("Warning: already in use");
+
+        // Add the devices to the UI
+        for (uint i = 0; i < (uint)sdevs.size(); i++)
+        {
+            const QString dev = sdevs[i];
+            QString desc = dev + (in_use[sdevs[i]] ? usestr : "");
+            desc = (current == sdevs[i]) ? dev : desc;
+            addSelection(desc, dev, dev == sel);
+        }
+    }
+
+    virtual void Load(void)
+    {
+        clearSelections();
+        addSelection(QString::null);
+        CaptureCardDBStorage::Load();
+        fillSelections(getValue());
+    }
+};
+
+OCURConfigurationGroup::OCURConfigurationGroup(CaptureCard& a_parent):
+    VerticalConfigurationGroup(false, true, false, false),
+    parent(a_parent),
+    cardinfo(new TransLabelSetting())
+{
+    device = new OCURDevice(parent);
+    addChild(device);
+    addChild(cardinfo);
+
+    connect(device, SIGNAL(valueChanged(const QString&)),
+            this,   SLOT(  probeCard(   const QString&)));
+
+    probeCard(device->getValue());
+};
+
+void OCURConfigurationGroup::probeCard(const QString &device)
+{
+#ifdef USING_OCUR
+    if (device.isEmpty())
+    {
+        cardinfo->setValue("");
+        return;
+    }
+
+    if (parent.getCardID() && parent.GetRawCardType() != "OCUR")
+    {
+        cardinfo->setValue("");
+        return;
+    }
+
+    // TODO verify OCUR device setting
+
+    cardinfo->setValue(tr("Valid DVEO OCUR card"));
+#else
+    cardinfo->setValue(QString("Not compiled with OCUR support"));
+#endif
+}
+
 ImportConfigurationGroup::ImportConfigurationGroup(CaptureCard& a_parent):
     VerticalConfigurationGroup(false, true, false, false),
     parent(a_parent),
@@ -2241,7 +2349,11 @@ CaptureCardGroup::CaptureCardGroup(CaptureCard &parent) :
 
 #ifdef USING_ASI
     addTarget("ASI",       new ASIConfigurationGroup(parent));
-#endif // USING_ASU
+#endif // USING_ASI
+
+#ifdef USING_OCUR
+    addTarget("OCUR",      new OCURConfigurationGroup(parent));
+#endif // USING_OCUR
 
     // for testing without any actual tuner hardware:
     addTarget("IMPORT",    new ImportConfigurationGroup(parent));

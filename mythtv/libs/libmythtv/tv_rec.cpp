@@ -44,6 +44,7 @@ using namespace std;
 #include "dvbchannel.h"
 #include "hdhrchannel.h"
 #include "iptvchannel.h"
+#include "ocurchannel.h"
 #include "firewirechannel.h"
 
 #include "recorderbase.h"
@@ -52,6 +53,7 @@ using namespace std;
 #include "dvbrecorder.h"
 #include "hdhrrecorder.h"
 #include "iptvrecorder.h"
+#include "ocurrecorder.h"
 #include "firewirerecorder.h"
 #include "importrecorder.h"
 
@@ -174,6 +176,17 @@ bool TVRec::CreateChannel(const QString &startchannel)
     {
 #ifdef USING_HDHOMERUN
         channel = new HDHRChannel(this, genOpt.videodev);
+        if (!channel->Open())
+            return false;
+        InitChannel(genOpt.defaultinput, startchannel);
+        GetDTVChannel()->EnterPowerSavingMode();
+        init_run = true;
+#endif
+    }
+    else if (genOpt.cardtype == "OCUR")
+    {
+#ifdef USING_OCUR
+        channel = new OCURChannel(this, genOpt.videodev);
         if (!channel->Open())
             return false;
         InitChannel(genOpt.defaultinput, startchannel);
@@ -1016,6 +1029,15 @@ bool TVRec::SetupRecorder(RecordingProfile &profile)
         ringBuffer->SetWriteBufferSize(4*1024*1024);
         recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
 #endif // USING_HDHOMERUN
+    }
+    else if (genOpt.cardtype == "OCUR")
+    {
+#ifdef USING_OCUR
+        recorder = new OCURRecorder(
+            this, dynamic_cast<OCURChannel*>(GetDTVChannel()));
+        ringBuffer->SetWriteBufferSize(4*1024*1024);
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+#endif // USING_OCUR
     }
     else if (genOpt.cardtype == "DVB")
     {

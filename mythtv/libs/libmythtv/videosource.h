@@ -554,6 +554,24 @@ class ASIConfigurationGroup: public VerticalConfigurationGroup
     TransLabelSetting *cardinfo;
 };
 
+class OCURDevice;
+
+class OCURConfigurationGroup: public VerticalConfigurationGroup
+{
+   Q_OBJECT
+
+  public:
+    OCURConfigurationGroup(CaptureCard &parent);
+
+  public slots:
+    void probeCard(const QString &device);
+
+  private:
+    CaptureCard       &parent;
+    OCURDevice        *device;
+    TransLabelSetting *cardinfo;
+};
+
 class ImportConfigurationGroup: public VerticalConfigurationGroup
 {
    Q_OBJECT

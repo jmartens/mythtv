@@ -238,6 +238,14 @@ QStringList CardUtil::ProbeVideoDevices(const QString &rawtype)
             break;
         }
     }
+    else if (rawtype.toUpper() == "OCUR")
+    {
+        // TODO
+        devs.push_back("192.168.200.1-0");
+        devs.push_back("192.168.200.1-1");
+        devs.push_back("192.168.200.1-2");
+        devs.push_back("192.168.200.1-3");
+    }
 #ifdef USING_HDHOMERUN
     else if (rawtype.toUpper() == "HDHOMERUN")
     {

@@ -61,6 +61,7 @@ class MPUBLIC CardUtil
         IMPORT    = 14,
         DEMO      = 15,
         ASI       = 16,
+        OCUR      = 17,
     };
 
     static enum CARD_TYPES toCardType(const QString &name)
@@ -99,6 +100,8 @@ class MPUBLIC CardUtil
             return DEMO;
         if ("ASI" == name)
             return ASI;
+        if ("OCUR" == name)
+            return ASI;
         return ERROR_UNKNOWN;
     }
 
@@ -108,7 +111,7 @@ class MPUBLIC CardUtil
             (rawtype != "DVB")       && (rawtype != "FIREWIRE") &&
             (rawtype != "HDHOMERUN") && (rawtype != "FREEBOX")  &&
             (rawtype != "IMPORT")    && (rawtype != "DEMO")     &&
-            (rawtype != "ASI");
+            (rawtype != "ASI")       && (rawtype != "OCUR");
     }
 
     static bool         IsChannelChangeDiscontinuous(const QString &rawtype)
@@ -134,7 +137,7 @@ class MPUBLIC CardUtil
     {
         return
             (rawtype == "DVB")       || (rawtype == "HDHOMERUN") ||
-            (rawtype == "ASI");
+            (rawtype == "ASI")       || (rawtype == "OCUR");
     }
 
     static bool         IsTunerShared(uint cardidA, uint cardidB);
@@ -149,8 +152,14 @@ class MPUBLIC CardUtil
     static bool         IsTuningAnalog(const QString &rawtype)
     {
         return
-            (rawtype == "V4L")    || (rawtype == "MPEG") ||
-            (rawtype == "HDPVR");
+            (rawtype == "V4L")       || (rawtype == "MPEG");
+    }
+
+    static bool         IsTuningVirtual(const QString &rawtype)
+    {
+        return
+            (rawtype == "FIREWIRE")  || (rawtype == "HDPVR")     ||
+            (rawtype == "OCUR");
     }
 
     static bool         IsSingleInputCard(const QString &rawtype)
@@ -158,7 +167,8 @@ class MPUBLIC CardUtil
         return
             (rawtype == "FIREWIRE")  || (rawtype == "HDHOMERUN") ||
             (rawtype == "FREEBOX")   || (rawtype == "ASI")       ||
-            (rawtype == "IMPORT")    || (rawtype == "DEMO");
+            (rawtype == "IMPORT")    || (rawtype == "DEMO")      ||
+            (rawtype == "OCUR");
     }
 
     /// Convenience function for GetCardIDs()

@@ -569,6 +569,21 @@ using_backend {
         DEFINES += USING_ASI
     }
 
+    using_ocur {
+        # Channel stuff
+        HEADERS += ocurchannel.h          ocursignalmonitor.h
+        SOURCES += ocurchannel.cpp        ocursignalmonitor.cpp
+
+        # OCUR Recorder
+        HEADERS += ocurrecorder.h         ocurstreamhandler.h
+        SOURCES += ocurrecorder.cpp       ocurstreamhandler.cpp
+
+        HEADERS *= streamhandler.h
+        SOURCES *= streamhandler.cpp
+
+        DEFINES += USING_OCUR
+    }
+
     DEFINES += USING_BACKEND
 }
 
