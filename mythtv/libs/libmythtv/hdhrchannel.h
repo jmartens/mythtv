@@ -38,7 +38,10 @@ class HDHRChannel : public DTVChannel
     // Gets
     bool IsOpen(void) const;
     QString GetDevice(void) const { return _device_id; }
-    virtual vector<DTVTunerType> GetTunerTypes(void) const { return _tuner_types; }
+    virtual vector<DTVTunerType> GetTunerTypes(void) const
+        { return _tuner_types; }
+    virtual bool IsMaster(void) const
+        { return _master == NULL; }
 
     // ATSC/DVB scanning/tuning stuff
     bool TuneMultiplex(uint mplexid, QString inputname);
@@ -50,6 +53,7 @@ class HDHRChannel : public DTVChannel
 
   private:
     QString               _device_id;
+    HDHRChannel          *_master;
     HDHRStreamHandler    *_stream_handler;
     vector<DTVTunerType>  _tuner_types;
 

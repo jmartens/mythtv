@@ -35,10 +35,12 @@ using namespace std;
 
 HDHRChannel::HDHRChannel(TVRec *parent, const QString &device)
     : DTVChannel(parent),
-      _device_id(device),           _stream_handler(NULL),
-      _lock(QMutex::Recursive),
+      _device_id(device),           _master(NULL),
+      _stream_handler(NULL),        _lock(QMutex::Recursive),
       tune_lock(QMutex::Recursive), hw_lock(QMutex::Recursive)
 {
+    _master = dynamic_cast<HDHRChannel*>(GetMaster(device));
+    _master = (_master == this) ? NULL : _master;
 }
 
 HDHRChannel::~HDHRChannel(void)
