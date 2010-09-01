@@ -27,17 +27,6 @@
 #include "asichannel.h"
 #include "tv_rec.h"
 
-/*
-#include "RingBuffer.h"
-#include "programinfo.h"
-#include "mpegtables.h"
-#include "iso639.h"
-#include "dvbstreamdata.h"
-#include "atscstreamdata.h"
-#include "atsctables.h"
-#include "cardutil.h"
-*/
-
 #define LOC QString("ASIRec(%1): ").arg(tvrec->GetCaptureCardNum())
 #define LOC_WARN QString("ASIRec(%1), Warning: ") \
                      .arg(tvrec->GetCaptureCardNum())
@@ -47,6 +36,7 @@
 ASIRecorder::ASIRecorder(TVRec *rec, ASIChannel *channel) :
     DTVRecorder(rec), m_channel(channel), m_stream_handler(NULL)
 {
+    SetStreamData(new MPEGStreamData(-1,false));
 }
 
 void ASIRecorder::SetOptionsFromProfile(RecordingProfile *profile,
@@ -67,6 +57,14 @@ void ASIRecorder::StartRecording(void)
         return;
     }
 
+    if (!_stream_data)
+    {
+        _error = "MPEGStreamData pointer has not been set";
+        VERBOSE(VB_IMPORTANT, LOC_ERR + _error);
+        Close();
+        return;        
+    }
+
     _continuity_error_count = 0;
 
     {
@@ -76,6 +74,10 @@ void ASIRecorder::StartRecording(void)
         recordingWait.wakeAll();
     }
 
+    _stream_data->Reset(m_channel->m_pat->ProgramNumber(0));
+    _stream_data->HandleTables(MPEG_PAT_PID, *m_channel->m_pat);
+    _stream_data->HandleTables(m_channel->m_pat->ProgramPID(0),
+                               *m_channel->m_pmt);
 
     // Listen for time table on DVB standard streams
     if (m_channel && (m_channel->GetSIStandard() == "dvb"))
