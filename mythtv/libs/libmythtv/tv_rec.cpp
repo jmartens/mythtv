@@ -6,59 +6,34 @@
 #include <pthread.h>
 #include <sched.h> // for sched_yield
 
-// C++ headers
-#include <iostream>
-using namespace std;
-
 // MythTV headers
-#include "mythconfig.h"
-#include "tv_rec.h"
-#include "osd.h"
-#include "mythcorecontext.h"
-#include "dialogbox.h"
-#include "recordingprofile.h"
-#include "util.h"
-#include "programinfo.h"
 #include "dtvsignalmonitor.h"
-#include "mythdb.h"
-#include "jobqueue.h"
-#include "recordingrule.h"
-#include "eitscanner.h"
-#include "RingBuffer.h"
+#include "recordingprofile.h"
 #include "previewgenerator.h"
-#include "storagegroup.h"
-#include "remoteutil.h"
-#include "tvremoteutil.h"
+#include "mythcorecontext.h"
 #include "mythsystemevent.h"
-#include "channelgroup.h"
-#include "livetvchain.h"
-
 #include "atscstreamdata.h"
 #include "dvbstreamdata.h"
+#include "recordingrule.h"
+#include "channelgroup.h"
+#include "storagegroup.h"
+#include "tvremoteutil.h"
+#include "dtvrecorder.h"
+#include "livetvchain.h"
+#include "programinfo.h"
 #include "atsctables.h"
-
-#include "firewirechannel.h"
-#include "dummychannel.h"
-#include "channelbase.h"
-#include "channelutil.h"
-#include "hdhrchannel.h"
-#include "iptvchannel.h"
-#include "ocurchannel.h"
-#include "asichannel.h"
 #include "dtvchannel.h"
-#include "dvbchannel.h"
+#include "eitscanner.h"
+#include "mythconfig.h"
+#include "remoteutil.h"
+#include "RingBuffer.h"
 #include "v4lchannel.h"
-
-#include "NuppelVideoRecorder.h"
-#include "firewirerecorder.h"
-#include "importrecorder.h"
-#include "mpegrecorder.h"
-#include "hdhrrecorder.h"
-#include "iptvrecorder.h"
-#include "ocurrecorder.h"
-#include "recorderbase.h"
-#include "asirecorder.h"
-#include "dvbrecorder.h"
+#include "dialogbox.h"
+#include "jobqueue.h"
+#include "mythdb.h"
+#include "tv_rec.h"
+#include "util.h"
+#include "osd.h"
 
 #define DEBUG_CHANNEL_PREFIX 0 /**< set to 1 to channel prefixing */
 
@@ -75,6 +50,8 @@ static bool is_dishnet_eit(uint cardid);
 static QString load_profile(QString,void*,RecordingInfo*,RecordingProfile&);
 static int init_jobs(const RecordingInfo *rec, RecordingProfile &profile,
                      bool on_host, bool transcode_bfr_comm, bool on_line_comm);
+static void apply_broken_dvb_driver_crc_hack(ChannelBase*, MPEGStreamData*);
+
 
 /** \class TVRec
  *  \brief This is the coordinating class of the \ref recorder_subsystem.
@@ -143,100 +120,14 @@ TVRec::TVRec(int capturecardnum)
     cards[cardid] = this;
 }
 
-bool TVRec::CreateChannel(const QString &startchannel)
+bool TVRec::CreateChannel(const QString &startchannel,
+                          bool enter_power_save_mode)
 {
-    rbFileExt = "mpg";
-    bool init_run = false;
-    if (genOpt.cardtype == "DVB")
-    {
-#ifdef USING_DVB
-        channel = new DVBChannel(genOpt.videodev, this);
-        if (!channel->Open())
-            return false;
-        GetDVBChannel()->SetSlowTuning(dvbOpt.dvb_tuning_delay);
-        InitChannel(genOpt.defaultinput, startchannel);
-        CloseChannel(); // Close the channel if in dvb_on_demand mode
-        init_run = true;
-#endif
-    }
-    else if (genOpt.cardtype == "FIREWIRE")
-    {
-#ifdef USING_FIREWIRE
-        channel = new FirewireChannel(this, genOpt.videodev, fwOpt);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        init_run = true;
-#endif
-    }
-    else if (genOpt.cardtype == "HDHOMERUN")
-    {
-#ifdef USING_HDHOMERUN
-        channel = new HDHRChannel(this, genOpt.videodev);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        GetDTVChannel()->EnterPowerSavingMode();
-        init_run = true;
-#endif
-    }
-    else if (genOpt.cardtype == "OCUR")
-    {
-#ifdef USING_OCUR
-        channel = new OCURChannel(this, genOpt.videodev);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        GetDTVChannel()->EnterPowerSavingMode();
-        init_run = true;
-#endif
-    }
-    else if ((genOpt.cardtype == "IMPORT") ||
-             (genOpt.cardtype == "DEMO") ||
-             (genOpt.cardtype == "MPEG" &&
-              genOpt.videodev.toLower().left(5) == "file:"))
-    {
-        channel = new DummyChannel(this);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        init_run = true;
-    }
-    else if (genOpt.cardtype == "FREEBOX")
-    {
-#ifdef USING_IPTV
-        channel = new IPTVChannel(this, genOpt.videodev);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        init_run = true;
-#endif
-    }
-    else if (genOpt.cardtype == "ASI")
-    {
-#ifdef USING_ASI
-        channel = new ASIChannel(this, genOpt.videodev);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        init_run = true;
-#endif
-    }
-    else // "V4L" or "MPEG", ie, analog TV
-    {
-#ifdef USING_V4L
-        channel = new V4LChannel(this, genOpt.videodev);
-        if (!channel->Open())
-            return false;
-        InitChannel(genOpt.defaultinput, startchannel);
-        CloseChannel();
-        init_run = true;
-#endif
-        if ((genOpt.cardtype != "MPEG") && (genOpt.cardtype != "HDPVR"))
-            rbFileExt = "nuv";
-    }
+    channel = ChannelBase::CreateChannel(
+        this, genOpt, dvbOpt, fwOpt,
+        startchannel, enter_power_save_mode, rbFileExt);
 
-    if (!init_run)
+    if (!channel)
     {
         QString msg = QString(
             "%1 card configured on video device %2, \n"
@@ -250,6 +141,7 @@ bool TVRec::CreateChannel(const QString &startchannel)
         SetFlags(kFlagErrored);
         return false;
     }
+
     return true;
 }
 
@@ -267,7 +159,7 @@ bool TVRec::Init(void)
 
     // configure the Channel instance
     QString startchannel = GetStartChannel(cardid, genOpt.defaultinput);
-    if (!CreateChannel(startchannel))
+    if (!CreateChannel(startchannel, true))
         return false;
 
     eitIgnoresSource  = gCoreContext->GetNumSetting("EITIgnoresSource", 0);
@@ -995,134 +887,6 @@ void TVRec::ChangeState(TVState nextState)
     WakeEventLoop();
 }
 
-/** \fn TVRec::SetupRecorder(RecordingProfile&)
- *  \brief Allocates and initializes the RecorderBase instance.
- *
- *  Based on the card type, one of the possible recorders are started.
- *  If the card type is "MPEG" or "HDPVR" a MpegRecorder is started,
- *  if the card type is "HDHOMERUN" a HDHRRecorder is started,
- *  if the card type is "FIREWIRE" a FirewireRecorder is started,
- *  if the card type is "DVB" a DVBRecorder is started,
- *  otherwise a NuppelVideoRecorder is started.
- *
- *  If there is any this will return false.
- * \sa IsErrored()
- */
-bool TVRec::SetupRecorder(RecordingProfile &profile)
-{
-    recorder = NULL;
-    if (genOpt.cardtype == "MPEG")
-    {
-#ifdef USING_IVTV
-        recorder = new MpegRecorder(this);
-#endif // USING_IVTV
-    }
-    else if (genOpt.cardtype == "HDPVR")
-    {
-#ifdef USING_HDPVR
-        recorder = new MpegRecorder(this);
-#endif // USING_HDPVR
-    }
-    else if (genOpt.cardtype == "FIREWIRE")
-    {
-#ifdef USING_FIREWIRE
-        recorder = new FirewireRecorder(this, GetFirewireChannel());
-#endif // USING_FIREWIRE
-    }
-    else if (genOpt.cardtype == "HDHOMERUN")
-    {
-#ifdef USING_HDHOMERUN
-        recorder = new HDHRRecorder(this, GetHDHRChannel());
-        ringBuffer->SetWriteBufferSize(4*1024*1024);
-        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
-#endif // USING_HDHOMERUN
-    }
-    else if (genOpt.cardtype == "OCUR")
-    {
-#ifdef USING_OCUR
-        recorder = new OCURRecorder(
-            this, dynamic_cast<OCURChannel*>(GetDTVChannel()));
-        ringBuffer->SetWriteBufferSize(4*1024*1024);
-        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
-#endif // USING_OCUR
-    }
-    else if (genOpt.cardtype == "DVB")
-    {
-#ifdef USING_DVB
-        recorder = new DVBRecorder(this, GetDVBChannel());
-        ringBuffer->SetWriteBufferSize(4*1024*1024);
-        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
-        recorder->SetOption("dvb_on_demand",     dvbOpt.dvb_on_demand);
-#endif // USING_DVB
-    }
-    else if (genOpt.cardtype == "FREEBOX")
-    {
-#ifdef USING_IPTV
-        IPTVChannel *chan = dynamic_cast<IPTVChannel*>(channel);
-        recorder = new IPTVRecorder(this, chan);
-        ringBuffer->SetWriteBufferSize(4*1024*1024);
-        recorder->SetOption("mrl", genOpt.videodev);
-#endif // USING_IPTV
-    }
-    else if (genOpt.cardtype == "ASI")
-    {
-#ifdef USING_ASI
-        ASIChannel *chan = dynamic_cast<ASIChannel*>(channel);
-        recorder = new ASIRecorder(this, chan);
-        ringBuffer->SetWriteBufferSize(4*1024*1024);
-        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
-#endif // USING_ASI
-    }
-    else if (genOpt.cardtype == "IMPORT")
-    {
-        recorder = new ImportRecorder(this);
-    }
-    else if (genOpt.cardtype == "DEMO")
-    {
-#ifdef USING_IVTV
-        recorder = new MpegRecorder(this);
-#else
-        recorder = new ImportRecorder(this);
-#endif
-    }
-    else
-    {
-#ifdef USING_V4L
-        // V4L/MJPEG/GO7007 from here on
-        recorder = new NuppelVideoRecorder(this, channel);
-        recorder->SetOption("skipbtaudio", genOpt.skip_btaudio);
-#endif // USING_V4L
-    }
-
-    if (recorder)
-    {
-        recorder->SetOptionsFromProfile(
-            &profile, genOpt.videodev, genOpt.audiodev, genOpt.vbidev);
-        // Override the samplerate defined in the profile if this card
-        // was configured with a fixed rate.
-        if (genOpt.audiosamplerate)
-            recorder->SetOption("samplerate", genOpt.audiosamplerate);
-        recorder->SetRingBuffer(ringBuffer);
-        recorder->Initialize();
-
-        if (recorder->IsErrored())
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to initialize recorder!");
-            delete recorder;
-            recorder = NULL;
-            return false;
-        }
-
-        return true;
-    }
-
-    QString msg = "Need %1 recorder, but compiled without %2 support!";
-    msg = msg.arg(genOpt.cardtype).arg(genOpt.cardtype);
-    VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
-
-    return false;
-}
-
 /** \fn TVRec::TeardownRecorder(bool)
  *  \brief Tears down the recorder.
  *
@@ -1217,85 +981,24 @@ void TVRec::TeardownRecorder(bool killFile)
         GetDTVChannel()->EnterPowerSavingMode();
 }
 
-DVBRecorder *TVRec::GetDVBRecorder(void)
-{
-#ifdef USING_DVB
-    return dynamic_cast<DVBRecorder*>(recorder);
-#else // if !USING_DVB
-    return NULL;
-#endif // !USING_DVB
-}
-
-HDHRRecorder *TVRec::GetHDHRRecorder(void)
-{
-#ifdef USING_HDHOMERUN
-    return dynamic_cast<HDHRRecorder*>(recorder);
-#else // if !USING_HDHOMERUN
-    return NULL;
-#endif // !USING_HDHOMERUN
-}
-
 DTVRecorder *TVRec::GetDTVRecorder(void)
 {
     return dynamic_cast<DTVRecorder*>(recorder);
 }
 
-/** \fn TVRec::InitChannel(const QString&, const QString&)
- *  \brief Performs ChannelBase instance init from database and
- *         tuner hardware (requires that channel be open).
- */
-void TVRec::InitChannel(const QString &inputname, const QString &startchannel)
-{
-    if (!channel)
-        return;
-
-    QString input   = inputname;
-    QString channum = startchannel;
-
-    channel->Init(input, channum, true);
-}
-
 void TVRec::CloseChannel(void)
 {
-    if (!channel)
-        return;
-
-    if (GetDVBChannel() && !dvbOpt.dvb_on_demand)
-        return;
-
-    channel->Close();
+    if (channel &&
+        ((genOpt.cardtype == "DVB" && dvbOpt.dvb_on_demand) ||
+         CardUtil::IsV4L(genOpt.cardtype)))
+    {
+        channel->Close();
+    }
 }
 
 DTVChannel *TVRec::GetDTVChannel(void)
 {
     return dynamic_cast<DTVChannel*>(channel);
-}
-
-HDHRChannel *TVRec::GetHDHRChannel(void)
-{
-#ifdef USING_HDHOMERUN
-    return dynamic_cast<HDHRChannel*>(channel);
-#else
-    return NULL;
-#endif // USING_HDHOMERUN
-}
-
-DVBChannel *TVRec::GetDVBChannel(void)
-{
-#ifdef USING_DVB
-    return dynamic_cast<DVBChannel*>(channel);
-#else
-    return NULL;
-#endif // USING_DVB
-}
-
-FirewireChannel *TVRec::GetFirewireChannel(void)
-{
-#ifdef USING_FIREWIRE
-    return dynamic_cast<FirewireChannel*>(channel);
-#else
-    return NULL;
-#endif // USING_FIREWIRE
 }
 
 V4LChannel *TVRec::GetV4LChannel(void)
@@ -1406,7 +1109,7 @@ void TVRec::RunTV(void)
     eitScanStartTime = QDateTime::currentDateTime();
     // check whether we should use the EITScanner in this TVRec instance
     if (CardUtil::IsEITCapable(genOpt.cardtype) &&
-        (!GetDVBChannel() || GetDVBChannel()->IsMaster()))
+        (!GetDTVChannel() || GetDTVChannel()->IsMaster()))
     {
         scanner = new EITScanner(cardid);
         uint timeout = eitCrawlIdleStart;
@@ -2021,7 +1724,6 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
 
     // Check if this is an DVB channel
     int progNum = dtvchan->GetProgramNumber();
-#ifdef USING_DVB
     if ((progNum >= 0) && (tuningmode == "dvb"))
     {
         int netid   = dtvchan->GetOriginalNetworkID();
@@ -2040,11 +1742,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
                 QString("DVB service_id %1 on net_id %2 tsid %3")
                 .arg(progNum).arg(netid).arg(tsid));
 
-        // Some DVB devices munge the PMT and/or PAT so the CRC check fails.
-        // We need to tell the stream data class to not check the CRC on
-        // these devices.
-        if (GetDVBChannel())
-            sd->SetIgnoreCRC(GetDVBChannel()->HasCRCBug());
+        apply_broken_dvb_driver_crc_hack(channel, sd);
 
         dsd->Reset();
         sm->SetStreamData(sd);
@@ -2059,7 +1757,6 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
         VERBOSE(VB_RECORD, LOC + "Successfully set up DVB table monitoring.");
         return true;
     }
-#endif // USING_DVB
 
     // Check if this is an MPEG channel
     if (progNum >= 0)
@@ -2075,13 +1772,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
         QString msg = QString("MPEG program number: %1").arg(progNum);
         VERBOSE(VB_RECORD, LOC + msg);
 
-#ifdef USING_DVB
-        // Some DVB devices munge the PMT and/or PAT so the CRC check fails.
-        // We need to tell the stream data class to not check the CRC on
-        // these devices.
-        if (GetDVBChannel())
-            sd->SetIgnoreCRC(GetDVBChannel()->HasCRCBug());
-#endif // USING_DVB
+        apply_broken_dvb_driver_crc_hack(channel, sd);
 
         sd->Reset();
         sm->SetStreamData(sd);
@@ -3711,9 +3402,7 @@ void TVRec::TuningShutdowns(const TuningRequest &request)
 
         GetDevices(newCardID, genOpt, dvbOpt, fwOpt);
         genOpt.defaultinput = inputname;
-        CreateChannel(channum);
-        if (!(request.flags & kFlagNoRec))
-            channel->Open();
+        CreateChannel(channum, false);
     }
 
     if (ringBuffer && (request.flags & kFlagKillRingBuffer))
@@ -4100,7 +3789,23 @@ void TVRec::TuningNewRecorder(MPEGStreamData *streamData)
     if (channel && genOpt.cardtype == "MJPEG")
         channel->Close(); // Needed because of NVR::MJPEGInit()
 
-    if (!SetupRecorder(profile))
+    recorder = RecorderBase::CreateRecorder(
+        this, channel, profile, genOpt, dvbOpt);
+
+    if (recorder)
+    {
+        ringBuffer->SetWriteBufferSize(4*1024*1024);
+        recorder->SetRingBuffer(ringBuffer);
+        recorder->Initialize();
+        if (recorder->IsErrored())
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to initialize recorder!");
+            delete recorder;
+            recorder = NULL;
+        }
+    }
+
+    if (!recorder)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + QString(
                     "Failed to start recorder!\n"
@@ -4596,6 +4301,20 @@ QString TuningRequest::toString(void) const
         .arg((program != 0) ? "yes" : "no").arg(channel).arg(input)
         .arg(TVRec::FlagToString(flags));
 }
+
+#ifdef USING_DVB
+#include "dvbchannel.h"
+static void apply_broken_dvb_driver_crc_hack(ChannelBase *c, MPEGStreamData *s)
+{
+    // Some DVB devices munge the PMT and/or PAT so the CRC check fails.
+    // We need to tell the stream data class to not check the CRC on
+    // these devices. This can cause segfaults.
+    if (dynamic_cast<DVBChannel*>(c))
+        s->SetIgnoreCRC(dynamic_cast<DVBChannel*>(c)->HasCRCBug());
+}
+#else
+static void apply_broken_dvb_driver_crc_hack(ChannelBase*, StreamData*) {}
+#endif // USING_DVB
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */
 

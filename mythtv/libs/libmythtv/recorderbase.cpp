@@ -2,20 +2,34 @@
 #include <stdint.h>
 
 #include <algorithm> // for min
-#include <iostream>
 using namespace std;
 
-#include "recorderbase.h"
-#include "tv_rec.h"
-#include "mythverbose.h"
-#include "RingBuffer.h"
+#include "NuppelVideoRecorder.h"
+#include "firewirerecorder.h"
 #include "recordingprofile.h"
+#include "firewirechannel.h"
+#include "importrecorder.h"
+#include "dummychannel.h"
+#include "hdhrrecorder.h"
+#include "iptvrecorder.h"
+#include "mpegrecorder.h"
+#include "ocurrecorder.h"
+#include "recorderbase.h"
+#include "asirecorder.h"
+#include "dvbrecorder.h"
+#include "hdhrchannel.h"
+#include "iptvchannel.h"
+#include "mythverbose.h"
 #include "programinfo.h"
+#include "ocurchannel.h"
+#include "asichannel.h"
+#include "dtvchannel.h"
+#include "dvbchannel.h"
+#include "v4lchannel.h"
+#include "RingBuffer.h"
+#include "cardutil.h"
+#include "tv_rec.h"
 #include "util.h"
-
-#ifndef LONG_LONG_MAX
-#define LONG_LONG_MAX ((~((long long)0))>>1)
-#endif
 
 #define TVREC_CARDNUM \
         ((tvrec != NULL) ? QString::number(tvrec->GetCaptureCardNum()) : "NULL")
@@ -435,5 +449,116 @@ void RecorderBase::ResolutionChange(uint width, uint height, long long frame)
         curRecording->SaveResolution(frame, width, height);
 }
 
+RecorderBase *RecorderBase::CreateRecorder(
+    TVRec                  *tvrec,
+    ChannelBase            *channel,
+    const RecordingProfile &profile,
+    const GeneralDBOptions &genOpt,
+    const DVBDBOptions     &dvbOpt)
+{
+    if (!channel)
+        return NULL;
+
+    RecorderBase *recorder = NULL;
+    if (genOpt.cardtype == "MPEG")
+    {
+#ifdef USING_IVTV
+        recorder = new MpegRecorder(tvrec);
+#endif // USING_IVTV
+    }
+    else if (genOpt.cardtype == "HDPVR")
+    {
+#ifdef USING_HDPVR
+        recorder = new MpegRecorder(tvrec);
+#endif // USING_HDPVR
+    }
+    else if (genOpt.cardtype == "FIREWIRE")
+    {
+#ifdef USING_FIREWIRE
+        recorder = new FirewireRecorder(
+            tvrec, dynamic_cast<FirewireChannel*>(channel));
+#endif // USING_FIREWIRE
+    }
+    else if (genOpt.cardtype == "HDHOMERUN")
+    {
+#ifdef USING_HDHOMERUN
+        recorder = new HDHRRecorder(
+            tvrec, dynamic_cast<HDHRChannel*>(channel));
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+#endif // USING_HDHOMERUN
+    }
+    else if (genOpt.cardtype == "OCUR")
+    {
+#ifdef USING_OCUR
+        recorder = new OCURRecorder(
+            tvrec, dynamic_cast<OCURChannel*>(channel));
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+#endif // USING_OCUR
+    }
+    else if (genOpt.cardtype == "DVB")
+    {
+#ifdef USING_DVB
+        recorder = new DVBRecorder(
+            tvrec, dynamic_cast<DVBChannel*>(channel));
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+        recorder->SetOption("dvb_on_demand",     dvbOpt.dvb_on_demand);
+#endif // USING_DVB
+    }
+    else if (genOpt.cardtype == "FREEBOX")
+    {
+#ifdef USING_IPTV
+        recorder = new IPTVRecorder(
+            tvrec, dynamic_cast<IPTVChannel*>(channel));
+        recorder->SetOption("mrl", genOpt.videodev);
+#endif // USING_IPTV
+    }
+    else if (genOpt.cardtype == "ASI")
+    {
+#ifdef USING_ASI
+        recorder = new ASIRecorder(
+            tvrec, dynamic_cast<ASIChannel*>(channel));
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+#endif // USING_ASI
+    }
+    else if (genOpt.cardtype == "IMPORT")
+    {
+        recorder = new ImportRecorder(tvrec);
+    }
+    else if (genOpt.cardtype == "DEMO")
+    {
+#ifdef USING_IVTV
+        recorder = new MpegRecorder(tvrec);
+#else
+        recorder = new ImportRecorder(tvrec);
+#endif
+    }
+    else if (CardUtil::IsV4L(genOpt.cardtype))
+    {
+#ifdef USING_V4L
+        // V4L/MJPEG/GO7007 from here on
+        recorder = new NuppelVideoRecorder(tvrec, channel);
+        recorder->SetOption("skipbtaudio", genOpt.skip_btaudio);
+#endif // USING_V4L
+    }
+
+    if (recorder)
+    {
+        recorder->SetOptionsFromProfile(
+            const_cast<RecordingProfile*>(&profile),
+            genOpt.videodev, genOpt.audiodev, genOpt.vbidev);
+        // Override the samplerate defined in the profile if this card
+        // was configured with a fixed rate.
+        if (genOpt.audiosamplerate)
+            recorder->SetOption("samplerate", genOpt.audiosamplerate);
+    }
+    else
+    {
+        QString msg = "Need %1 recorder, but compiled without %2 support!";
+        msg = msg.arg(genOpt.cardtype).arg(genOpt.cardtype);
+        VERBOSE(VB_IMPORTANT, "RecorderBase::CreateRecorder() Error, " + msg);
+    }
+
+    return recorder;
+}
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */

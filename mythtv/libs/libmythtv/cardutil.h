@@ -116,7 +116,8 @@ class MPUBLIC CardUtil
 
     static bool         IsV4L(const QString &rawtype)
     {
-        return (rawtype == "V4L" || rawtype == "MPEG");
+        return (rawtype == "V4L"   || rawtype == "MPEG"      ||
+                rawtype == "HDPVR");
     }
 
     static bool         IsChannelChangeDiscontinuous(const QString &rawtype)

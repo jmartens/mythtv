@@ -1,5 +1,4 @@
 // Std C headers
-#include <cstdio>
 #include <cstdlib>
 #include <cerrno>
 
@@ -11,24 +10,32 @@
 #include <sys/types.h>
 
 // C++ headers
-#include <iostream>
 #include <algorithm>
 using namespace std;
 
 // MythTV headers
-#include "channelbase.h"
-#include "frequencies.h"
-#include "tv_rec.h"
+#include "firewirechannel.h"
 #include "mythcorecontext.h"
-#include "exitcodes.h"
-#include "mythdb.h"
-#include "mythverbose.h"
-#include "cardutil.h"
-#include "channelutil.h"
+#include "dummychannel.h"
 #include "tvremoteutil.h"
+#include "channelutil.h"
+#include "channelbase.h"
+#include "channelutil.h"
+#include "frequencies.h"
+#include "hdhrchannel.h"
+#include "iptvchannel.h"
+#include "ocurchannel.h"
+#include "mythverbose.h"
+#include "asichannel.h"
+#include "dtvchannel.h"
+#include "dvbchannel.h"
+#include "v4lchannel.h"
 #include "sourceutil.h"
+#include "exitcodes.h"
 #include "cardutil.h"
 #include "compat.h"
+#include "mythdb.h"
+#include "tv_rec.h"
 
 #define LOC QString("ChannelBase(%1): ").arg(GetCardID())
 #define LOC_WARN QString("ChannelBase(%1) Warning: ").arg(GetCardID())
@@ -1125,3 +1132,106 @@ void ChannelBase::ClearInputMap(void)
         delete *it;
     m_inputs.clear();
 }
+
+ChannelBase *ChannelBase::CreateChannel(
+    TVRec                    *tvrec,
+    const GeneralDBOptions   &genOpt,
+    const DVBDBOptions       &dvbOpt,
+    const FireWireDBOptions  &fwOpt,
+    const QString            &startchannel,
+    bool                      enter_power_save_mode,
+    QString                  &rbFileExt)
+{
+    rbFileExt = "mpg";
+
+    ChannelBase *channel = NULL;
+    if (genOpt.cardtype == "DVB")
+    {
+#ifdef USING_DVB
+        channel = new DVBChannel(genOpt.videodev, tvrec);
+        dynamic_cast<DVBChannel*>(channel)->SetSlowTuning(
+            dvbOpt.dvb_tuning_delay);
+#endif
+    }
+    else if (genOpt.cardtype == "FIREWIRE")
+    {
+#ifdef USING_FIREWIRE
+        channel = new FirewireChannel(tvrec, genOpt.videodev, fwOpt);
+#endif
+    }
+    else if (genOpt.cardtype == "HDHOMERUN")
+    {
+#ifdef USING_HDHOMERUN
+        channel = new HDHRChannel(tvrec, genOpt.videodev);
+#endif
+    }
+    else if (genOpt.cardtype == "OCUR")
+    {
+#ifdef USING_OCUR
+        channel = new OCURChannel(tvrec, genOpt.videodev);
+#endif
+    }
+    else if ((genOpt.cardtype == "IMPORT") ||
+             (genOpt.cardtype == "DEMO") ||
+             (genOpt.cardtype == "MPEG" &&
+              genOpt.videodev.toLower().left(5) == "file:"))
+    {
+        channel = new DummyChannel(tvrec);
+    }
+    else if (genOpt.cardtype == "FREEBOX")
+    {
+#ifdef USING_IPTV
+        channel = new IPTVChannel(tvrec, genOpt.videodev);
+#endif
+    }
+    else if (genOpt.cardtype == "ASI")
+    {
+#ifdef USING_ASI
+        channel = new ASIChannel(tvrec, genOpt.videodev);
+#endif
+    }
+    else if (CardUtil::IsV4L(genOpt.cardtype))
+    {
+#ifdef USING_V4L
+        channel = new V4LChannel(tvrec, genOpt.videodev);
+#endif
+        if ((genOpt.cardtype != "MPEG") && (genOpt.cardtype != "HDPVR"))
+            rbFileExt = "nuv";
+    }
+
+    if (!channel)
+    {
+        QString msg = "Need %1 channel, but compiled without %2 support!";
+        msg = msg.arg(genOpt.cardtype).arg(genOpt.cardtype);
+        VERBOSE(VB_IMPORTANT, "ChannelBase::CreateRecorder() Error, " + msg);
+        return NULL;
+    }
+
+    if (!channel->Open())
+    {
+        delete channel;
+        return NULL;
+    }
+
+    QString input = genOpt.defaultinput, channum = startchannel;
+    channel->Init(input, channum, true);
+
+    if (enter_power_save_mode)
+    {
+        if (channel &&
+            ((genOpt.cardtype == "DVB" && dvbOpt.dvb_on_demand) ||
+             CardUtil::IsV4L(genOpt.cardtype)))
+        {
+            channel->Close();
+        }
+        else
+        {
+            DTVChannel *dtvchannel = dynamic_cast<DTVChannel*>(channel);
+            if (dtvchannel)
+                dtvchannel->EnterPowerSavingMode();
+        }
+    }
+
+    return channel;
+}
+

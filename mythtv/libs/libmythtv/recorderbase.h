@@ -9,16 +9,18 @@
 #include <QMutex>
 #include <QMap>
 
-#include <pthread.h>
-
-#include "mythexp.h"
-#include "mythtimer.h"
 #include "programtypes.h" // for MarkTypes, frm_pos_map_t
+#include "mythtimer.h"
+#include "mythexp.h"
 
-class TVRec;
-class RingBuffer;
-class ProgramInfo;
+class FireWireDBOptions;
+class GeneralDBOptions;
 class RecordingProfile;
+class DVBDBOptions;
+class ChannelBase;
+class ProgramInfo;
+class RingBuffer;
+class TVRec;
 
 /** \class RecorderBase
  *  \brief This is the abstract base class for supporting
@@ -201,6 +203,13 @@ class MPUBLIC RecorderBase
         ASPECT_2_21_1        = 0x04,
         ASPECT_CUSTOM        = 0x05,
     };
+
+    static RecorderBase *CreateRecorder(
+        TVRec                  *tvrec,
+        ChannelBase            *channel,
+        const RecordingProfile &profile,
+        const GeneralDBOptions &genOpt,
+        const DVBDBOptions     &dvbOpt);
 
   protected:
     /** \brief Convenience function used to set integer options from a profile.

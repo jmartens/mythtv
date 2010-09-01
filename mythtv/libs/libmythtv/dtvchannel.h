@@ -82,6 +82,9 @@ class DTVChannel : public ChannelBase
     DTVChannel *GetMaster(const QString &videodevice);
     const DTVChannel *GetMaster(const QString &videodevice) const;
 
+    /// \brief Returns true if this is the first of a number of multi-rec devs
+    virtual bool IsMaster(void) const { return false; }
+
     // Sets
 
     /// \brief Sets tuning mode: "mpeg", "dvb", "atsc", etc.

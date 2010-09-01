@@ -257,20 +257,14 @@ class MPUBLIC TVRec : public SignalMonitorListener
 
     static QString GetStartChannel(uint cardid, const QString &defaultinput);
 
-    bool SetupRecorder(RecordingProfile& profile);
     void TeardownRecorder(bool killFile = false);
     DTVRecorder  *GetDTVRecorder(void);
-    HDHRRecorder *GetHDHRRecorder(void);
-    DVBRecorder  *GetDVBRecorder(void);
     
-    bool CreateChannel(const QString &startChanNum);
-    void InitChannel(const QString &inputname, const QString &startchannel);
+    bool CreateChannel(const QString &startChanNum,
+                       bool enter_power_save_mode);
     void CloseChannel(void);
-    DTVChannel   *GetDTVChannel(void);
-    HDHRChannel  *GetHDHRChannel(void);
-    DVBChannel   *GetDVBChannel(void);
-    FirewireChannel *GetFirewireChannel(void);
-    V4LChannel   *GetV4LChannel(void);
+    DTVChannel *GetDTVChannel(void);
+    V4LChannel *GetV4LChannel(void);
 
     bool SetupSignalMonitor(bool enable_table_monitoring,
                             bool EITscan, bool notify);

@@ -4,18 +4,21 @@
 #define CHANNELBASE_H
 
 // Qt headers
+#include <QWaitCondition>
 #include <QStringList>
-#include <qwaitcondition.h>
-#include <qmutex.h>
-#include <qthread.h>
+#include <QThread>
+#include <QMutex>
 
 // MythTV headers
 #include "channelutil.h"
 #include "inputinfo.h"
 #include "tv.h"
 
-class TVRec;
+class FireWireDBOptions;
+class GeneralDBOptions;
+class DVBDBOptions;
 class ChannelBase;
+class TVRec;
 
 /*
  * Thread to run tunning process in
@@ -137,6 +140,16 @@ class ChannelBase
     void SetChanNum(const QString & chan) { m_curchannelname= chan; }
 
     virtual int GetCardID(void) const;
+
+    static ChannelBase *CreateChannel(
+        TVRec                    *tv_rec,
+        const GeneralDBOptions   &genOpt,
+        const DVBDBOptions       &dvbOpt,
+        const FireWireDBOptions  &fwOpt,
+        const QString            &startchannel,
+        bool                      enter_power_save_mode,
+        QString                  &rbFileExt);
+
   protected:
     virtual bool SetChannelByString(const QString &chan) = 0;
 
