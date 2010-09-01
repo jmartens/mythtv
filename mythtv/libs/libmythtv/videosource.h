@@ -536,6 +536,8 @@ class HDPVRConfigurationGroup: public VerticalConfigurationGroup
     TunerCardAudioInput *audioinput;
 };
 
+class TunerCardInput;
+class InstanceCount;
 class ASIDevice;
 
 class ASIConfigurationGroup: public VerticalConfigurationGroup
@@ -552,6 +554,8 @@ class ASIConfigurationGroup: public VerticalConfigurationGroup
     CaptureCard       &parent;
     ASIDevice         *device;
     TransLabelSetting *cardinfo;
+    TunerCardInput    *input;
+    InstanceCount     *instances;
 };
 
 class OCURDevice;
@@ -700,7 +704,11 @@ public:
     virtual void Save(void);
 
     uint GetInstanceCount(void) const { return instance_count; }
+
+public slots:
     void SetInstanceCount(uint cnt) { instance_count = cnt; }
+    // this is needed to connect valueChanged() signal from legacy settings
+    void SetInstanceCount(int cnt)  { instance_count = (uint)cnt; }
 
 private:
 

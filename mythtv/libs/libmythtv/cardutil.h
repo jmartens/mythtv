@@ -114,6 +114,11 @@ class MPUBLIC CardUtil
             (rawtype != "ASI")       && (rawtype != "OCUR");
     }
 
+    static bool         IsV4L(const QString &rawtype)
+    {
+        return (rawtype == "V4L" || rawtype == "MPEG");
+    }
+
     static bool         IsChannelChangeDiscontinuous(const QString &rawtype)
     {
         return !IsEncoder(rawtype) || (rawtype == "HDPVR");

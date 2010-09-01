@@ -30,38 +30,35 @@ using namespace std;
 #include "remoteutil.h"
 #include "tvremoteutil.h"
 #include "mythsystemevent.h"
+#include "channelgroup.h"
+#include "livetvchain.h"
 
 #include "atscstreamdata.h"
 #include "dvbstreamdata.h"
 #include "atsctables.h"
 
-#include "livetvchain.h"
-
-#include "channelutil.h"
-#include "channelbase.h"
+#include "firewirechannel.h"
 #include "dummychannel.h"
-#include "dtvchannel.h"
-#include "dvbchannel.h"
+#include "channelbase.h"
+#include "channelutil.h"
 #include "hdhrchannel.h"
 #include "iptvchannel.h"
 #include "ocurchannel.h"
-#include "firewirechannel.h"
+#include "asichannel.h"
+#include "dtvchannel.h"
+#include "dvbchannel.h"
+#include "v4lchannel.h"
 
-#include "recorderbase.h"
 #include "NuppelVideoRecorder.h"
+#include "firewirerecorder.h"
+#include "importrecorder.h"
 #include "mpegrecorder.h"
-#include "dvbrecorder.h"
 #include "hdhrrecorder.h"
 #include "iptvrecorder.h"
 #include "ocurrecorder.h"
-#include "firewirerecorder.h"
-#include "importrecorder.h"
-
-#include "channelgroup.h"
-
-#ifdef USING_V4L
-#include "v4lchannel.h"
-#endif
+#include "recorderbase.h"
+#include "asirecorder.h"
+#include "dvbrecorder.h"
 
 #define DEBUG_CHANNEL_PREFIX 0 /**< set to 1 to channel prefixing */
 
@@ -209,6 +206,16 @@ bool TVRec::CreateChannel(const QString &startchannel)
     {
 #ifdef USING_IPTV
         channel = new IPTVChannel(this, genOpt.videodev);
+        if (!channel->Open())
+            return false;
+        InitChannel(genOpt.defaultinput, startchannel);
+        init_run = true;
+#endif
+    }
+    else if (genOpt.cardtype == "ASI")
+    {
+#ifdef USING_ASI
+        channel = new ASIChannel(this, genOpt.videodev);
         if (!channel->Open())
             return false;
         InitChannel(genOpt.defaultinput, startchannel);
@@ -1056,6 +1063,15 @@ bool TVRec::SetupRecorder(RecordingProfile &profile)
         ringBuffer->SetWriteBufferSize(4*1024*1024);
         recorder->SetOption("mrl", genOpt.videodev);
 #endif // USING_IPTV
+    }
+    else if (genOpt.cardtype == "ASI")
+    {
+#ifdef USING_ASI
+        ASIChannel *chan = dynamic_cast<ASIChannel*>(channel);
+        recorder = new ASIRecorder(this, chan);
+        ringBuffer->SetWriteBufferSize(4*1024*1024);
+        recorder->SetOption("wait_for_seqstart", genOpt.wait_for_seqstart);
+#endif // USING_ASI
     }
     else if (genOpt.cardtype == "IMPORT")
     {
@@ -1921,11 +1937,11 @@ bool ApplyCachedPids(DTVSignalMonitor *dtvMon, const DTVChannel* channel)
     bool vctpid_cached = false;
     for (; it != pid_cache.end(); ++it)
     {
-        if ((it->second == TableID::TVCT) ||
-            (it->second == TableID::CVCT))
+        if ((it->GetTableID() == TableID::TVCT) ||
+            (it->GetTableID() == TableID::CVCT))
         {
             vctpid_cached = true;
-            dtvMon->GetATSCStreamData()->AddListeningPID(it->first);
+            dtvMon->GetATSCStreamData()->AddListeningPID(it->GetPID());
         }
     }
     return vctpid_cached;

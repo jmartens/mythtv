@@ -60,10 +60,6 @@ class V4LChannel : public DTVChannel
     int  GetPictureAttribute(PictureAttribute) const;
     int  ChangePictureAttribute(PictureAdjustType, PictureAttribute, bool up);
 
-    // PID caching
-    void SaveCachedPids(const pid_cache_t&) const;
-    void GetCachedPids(pid_cache_t&) const;
-
     // Digital scanning stuff
     bool TuneMultiplex(uint mplexid, QString inputname);
     bool Tune(const DTVMultiplex &tuning, QString inputname);

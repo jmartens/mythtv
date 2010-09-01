@@ -1558,7 +1558,7 @@ InputNames CardUtil::ProbeV4LVideoInputs(int videofd, bool &ok)
     if (ioctl(videofd, VIDIOCGCAP, &vidcap) != 0)
     {
         QString msg = QObject::tr("Could not query inputs.");
-        VERBOSE(VB_IMPORTANT, msg + ENO);
+        VERBOSE(VB_IMPORTANT, "ProbeV4LVideoInputs(): Error, " + msg + ENO);
         list[-1] = msg;
         vidcap.channels = 0;
     }
@@ -1571,7 +1571,7 @@ InputNames CardUtil::ProbeV4LVideoInputs(int videofd, bool &ok)
 
         if (ioctl(videofd, VIDIOCGCHAN, &test) != 0)
         {
-            VERBOSE(VB_IMPORTANT,
+            VERBOSE(VB_IMPORTANT, "ProbeV4LVideoInputs(): Error, " + 
                     QString("Could determine name of input #%1"
                             "\n\t\t\tNot adding it to the list.")
                     .arg(test.channel) + ENO);

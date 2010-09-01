@@ -1031,20 +1031,6 @@ int DVBChannel::GetChanID() const
     return query.value(0).toInt();
 }
 
-void DVBChannel::SaveCachedPids(const pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::SaveCachedPids(chanid, pid_cache);
-}
-
-void DVBChannel::GetCachedPids(pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::GetCachedPids(chanid, pid_cache);
-}
-
 const DiSEqCDevRotor *DVBChannel::GetRotor(void) const
 {
     if (diseqc_tree)

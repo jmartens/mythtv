@@ -1726,14 +1726,21 @@ class ASIDevice : public ComboBoxSetting, public CaptureCardDBStorage
 ASIConfigurationGroup::ASIConfigurationGroup(CaptureCard& a_parent):
     VerticalConfigurationGroup(false, true, false, false),
     parent(a_parent),
-    cardinfo(new TransLabelSetting())
+    device(new ASIDevice(parent)),
+    cardinfo(new TransLabelSetting()),
+    input(new TunerCardInput(parent, device->getValue(), "ASI")),
+    instances(new InstanceCount(parent))
 {
-    device = new ASIDevice(parent);
     addChild(device);
     addChild(cardinfo);
+    addChild(input);
+    addChild(instances);
+    input->setVisible(false);
 
     connect(device, SIGNAL(valueChanged(const QString&)),
             this,   SLOT(  probeCard(   const QString&)));
+    connect(instances, SIGNAL(valueChanged(int)),
+            &parent,   SLOT(  SetInstanceCount(int)));
 
     probeCard(device->getValue());
 };
@@ -1763,6 +1770,7 @@ void ASIConfigurationGroup::probeCard(const QString &device)
         return;
     }
     cardinfo->setValue(tr("Valid DVEO ASI card"));
+    input->fillSelections(device);
 #else
     cardinfo->setValue(QString("Not compiled with ASI support"));
 #endif

@@ -19,11 +19,9 @@ using namespace std;
 #include <QString>
 
 // MythTV headers
-#include "channelbase.h"
 #include "dtvconfparserhelpers.h" // for DTVTunerType
-
-typedef pair<uint,uint> pid_cache_item_t;
-typedef vector<pid_cache_item_t> pid_cache_t;
+#include "channelbase.h"
+#include "channelutil.h" // for pid_cache_t
 
 class TVRec;
 
@@ -79,12 +77,7 @@ class DTVChannel : public ChannelBase
     /// \brief Returns a vector of supported tuning types.
     virtual vector<DTVTunerType> GetTunerTypes(void) const;
 
-    /** \brief Returns cached MPEG PIDs for last tuned channel.
-     *  \param pid_cache List of PIDs with their TableID
-     *                   types is returned in pid_cache.
-     */
-    virtual void GetCachedPids(pid_cache_t &pid_cache) const
-        { (void) pid_cache; }
+    void GetCachedPids(pid_cache_t &pid_cache) const;
 
     DTVChannel *GetMaster(const QString &videodevice);
     const DTVChannel *GetMaster(const QString &videodevice) const;
@@ -94,11 +87,7 @@ class DTVChannel : public ChannelBase
     /// \brief Sets tuning mode: "mpeg", "dvb", "atsc", etc.
     void SetTuningMode(const QString &tuningmode);
 
-    /** \brief Saves MPEG PIDs to cache to database
-     * \param pid_cache List of PIDs with their TableID types to be saved.
-     */
-    virtual void SaveCachedPids(const pid_cache_t &pid_cache) const
-        { (void) pid_cache; }
+    void SaveCachedPids(const pid_cache_t &pid_cache) const;
 
   protected:
     /// \brief Sets PSIP table standard: MPEG, DVB, ATSC, or OpenCable
@@ -107,9 +96,6 @@ class DTVChannel : public ChannelBase
                     uint dvb_orig_netid,
                     uint mpeg_tsid, int mpeg_pnum);
     void ClearDTVInfo(void) { SetDTVInfo(0, 0, 0, 0, -1); }
-
-    static void GetCachedPids(int chanid, pid_cache_t&);
-    static void SaveCachedPids(int chanid, const pid_cache_t&);
 
   protected:
     mutable QMutex dtvinfo_lock;

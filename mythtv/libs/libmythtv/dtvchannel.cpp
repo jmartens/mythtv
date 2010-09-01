@@ -1,8 +1,11 @@
-#include "dtvchannel.h"
+// C++ headers
+#include <algorithm>
+using namespace std;
 
 // MythTV headers
 #include "mythdb.h"
 #include "cardutil.h"
+#include "dtvchannel.h"
 
 #define LOC QString("DTVChan(%1): ").arg(GetDevice())
 #define LOC_WARN QString("DTVChan(%1) Warning: ").arg(GetDevice())
@@ -31,72 +34,6 @@ DTVChannel::~DTVChannel()
         {
             master_map.erase(it);
             break;
-        }
-    }
-}
-
-/** \fn DTVChannel::GetCachedPids(int, pid_cache_t&)
- *  \brief Returns cached MPEG PIDs when given a Channel ID.
- *
- *  \param chanid   Channel ID to fetch cached pids for.
- *  \param pid_cache List of PIDs with their TableID
- *                   types is returned in pid_cache.
- */
-void DTVChannel::GetCachedPids(int chanid, pid_cache_t &pid_cache)
-{
-    MSqlQuery query(MSqlQuery::InitCon());
-    QString thequery = QString("SELECT pid, tableid FROM pidcache "
-                               "WHERE chanid='%1'").arg(chanid);
-    query.prepare(thequery);
-
-    if (!query.exec() || !query.isActive())
-    {
-        MythDB::DBError("GetCachedPids: fetching pids", query);
-        return;
-    }
-
-    while (query.next())
-    {
-        int pid = query.value(0).toInt(), tid = query.value(1).toInt();
-        if ((pid >= 0) && (tid >= 0))
-            pid_cache.push_back(pid_cache_item_t(pid, tid));
-    }
-}
-
-/** \fn DTVChannel::SaveCachedPids(int, const pid_cache_t&)
- *  \brief Saves PIDs for PSIP tables to database.
- *
- *  \param chanid    Channel ID to fetch cached pids for.
- *  \param pid_cache List of PIDs with their TableID types to be saved.
- */
-void DTVChannel::SaveCachedPids(int chanid, const pid_cache_t &pid_cache)
-{
-    MSqlQuery query(MSqlQuery::InitCon());
-
-    /// delete
-    QString thequery =
-        QString("DELETE FROM pidcache WHERE chanid='%1'").arg(chanid);
-    query.prepare(thequery);
-    if (!query.exec() || !query.isActive())
-    {
-        MythDB::DBError("GetCachedPids -- delete", query);
-        return;
-    }
-
-    /// insert
-    pid_cache_t::const_iterator it = pid_cache.begin();
-    for (; it != pid_cache.end(); ++it)
-    {
-        thequery = QString("INSERT INTO pidcache "
-                           "SET chanid='%1', pid='%2', tableid='%3'")
-            .arg(chanid).arg(it->first).arg(it->second);
-
-        query.prepare(thequery);
-
-        if (!query.exec() || !query.isActive())
-        {
-            MythDB::DBError("GetCachedPids -- insert", query);
-            return;
         }
     }
 }
@@ -168,6 +105,27 @@ void DTVChannel::SetTuningMode(const QString &tuning_mode)
     QMutexLocker locker(&dtvinfo_lock);
     tuningMode = tuning_mode.toLower();
     tuningMode.detach();
+}
+
+/** \brief Returns cached MPEG PIDs for last tuned channel.
+ *  \param pid_cache List of PIDs with their TableID
+ *                   types is returned in pid_cache.
+ */
+void DTVChannel::GetCachedPids(pid_cache_t &pid_cache) const
+{
+    int chanid = GetChanID();
+    if (chanid > 0)
+        ChannelUtil::GetCachedPids(chanid, pid_cache);
+}
+
+/** \brief Saves MPEG PIDs to cache to database
+ * \param pid_cache List of PIDs with their TableID types to be saved.
+ */
+void DTVChannel::SaveCachedPids(const pid_cache_t &pid_cache) const
+{
+    int chanid = GetChanID();
+    if (chanid > 0)
+        ChannelUtil::SaveCachedPids(chanid, pid_cache);
 }
 
 DTVChannel *DTVChannel::GetMaster(const QString &videodevice)

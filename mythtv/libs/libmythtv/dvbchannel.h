@@ -94,10 +94,6 @@ class DVBChannel : public DTVChannel
 
     bool ProbeTuningParams(DTVMultiplex &tuning) const;
 
-    // PID caching
-    void SaveCachedPids(const pid_cache_t&) const;
-    void GetCachedPids(pid_cache_t&) const;
-
   private:
     bool Open(DVBChannel*);
     void Close(DVBChannel*);

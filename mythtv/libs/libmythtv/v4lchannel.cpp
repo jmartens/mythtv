@@ -399,20 +399,6 @@ int V4LChannel::GetCurrentChannelNum(const QString &channame)
     return -1;
 }
 
-void V4LChannel::SaveCachedPids(const pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::SaveCachedPids(chanid, pid_cache);
-}
-
-void V4LChannel::GetCachedPids(pid_cache_t &pid_cache) const
-{
-    int chanid = GetChanID();
-    if (chanid > 0)
-        DTVChannel::GetCachedPids(chanid, pid_cache);
-}
-
 bool V4LChannel::SetChannelByString(const QString &channum)
 {
     QString loc = LOC + QString("SetChannelByString(%1)").arg(channum);

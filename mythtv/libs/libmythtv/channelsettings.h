@@ -141,6 +141,24 @@ class MPUBLIC ChannelOptionsV4L: public VerticalConfigurationGroup {
     ChannelOptionsV4L(const ChannelID& id);
 };
 
+class MPUBLIC ChannelOptionsRawTS: public VerticalConfigurationGroup
+{
+  public:
+    ChannelOptionsRawTS(const ChannelID &id);
+
+    virtual void Load(void);
+    virtual void Save(void);
+
+  private:
+    const ChannelID &cid;
+
+    vector<TransLineEditSetting*> pids;
+    vector<TransComboBoxSetting*> sids;
+    vector<TransCheckBoxSetting*> pcrs;
+
+    static const uint kMaxPIDs = 10;
+};
+
 class MPUBLIC ChannelTVFormat : public ComboBoxSetting, public ChannelDBStorage
 {
   public:
