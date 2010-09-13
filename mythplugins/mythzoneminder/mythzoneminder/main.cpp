@@ -32,21 +32,9 @@
 
 using namespace std;
 
-void runZMConsole(void);
-void runZMLiveView(void);
-void runZMEventView(void);
 
-void setupKeys(void)
-{
-    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Console"),
-        "", "", runZMConsole);
-    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Live View"),
-        "", "", runZMLiveView);
-    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Events"),
-        "", "", runZMEventView);
-}
 
-bool checkConnection(void)
+static bool checkConnection(void)
 {
     if (!ZMClient::get()->connected())
     {
@@ -57,19 +45,7 @@ bool checkConnection(void)
     return true;
 }
 
-int mythplugin_init(const char *libversion)
-{
-    if (!gContext->TestPopupVersion("mythzoneminder",
-                                    libversion,
-                                    MYTH_BINARY_VERSION))
-        return -1;
-
-    setupKeys();
-
-    return 0;
-}
-
-void runZMConsole(void)
+static void runZMConsole(void)
 {
     if (!checkConnection())
         return;
@@ -82,7 +58,7 @@ void runZMConsole(void)
         mainStack->AddScreen(console);
 }
 
-void runZMLiveView(void)
+static void runZMLiveView(void)
 {
     if (!checkConnection())
         return;
@@ -96,7 +72,7 @@ void runZMLiveView(void)
         mainStack->AddScreen(player);
 }
 
-void runZMEventView(void)
+static void runZMEventView(void)
 {
     if (!checkConnection())
         return;
@@ -109,7 +85,7 @@ void runZMEventView(void)
         mainStack->AddScreen(events);
 }
 
-void ZoneMinderCallback(void *data, QString &selection)
+static void ZoneMinderCallback(void *data, QString &selection)
 {
     (void) data;
 
@@ -123,7 +99,7 @@ void ZoneMinderCallback(void *data, QString &selection)
         runZMEventView();
 }
 
-int runMenu(QString which_menu)
+static int runMenu(QString which_menu)
 {
     QString themedir = GetMythUI()->GetThemeDir();
 
@@ -146,6 +122,28 @@ int runMenu(QString which_menu)
         delete diag;
         return -1;
     }
+}
+
+static void setupKeys(void)
+{
+    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Console"),
+        "", "", runZMConsole);
+    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Live View"),
+        "", "", runZMLiveView);
+    REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "ZoneMinder Events"),
+        "", "", runZMEventView);
+}
+
+int mythplugin_init(const char *libversion)
+{
+    if (!gContext->TestPopupVersion("mythzoneminder",
+                                    libversion,
+                                    MYTH_BINARY_VERSION))
+        return -1;
+
+    setupKeys();
+
+    return 0;
 }
 
 int mythplugin_run(void)

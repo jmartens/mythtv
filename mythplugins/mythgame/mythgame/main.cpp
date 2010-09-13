@@ -28,7 +28,7 @@ struct GameData
 {
 };
 
-void GameCallback(void *data, QString &selection)
+static void GameCallback(void *data, QString &selection)
 {
     GameData *ddata = (GameData *)data;
     QString sel = selection.toLower();
@@ -57,7 +57,7 @@ void GameCallback(void *data, QString &selection)
 
 }
 
-int runMenu(QString which_menu)
+static int runMenu(QString which_menu)
 {
     QString themedir = GetMythUI()->GetThemeDir();
 
@@ -86,10 +86,29 @@ int runMenu(QString which_menu)
     }
 }
 
-void runGames(void);
-int  RunGames(void);
+static int RunGames(void)
+{
+    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
+    GameUI *game = new GameUI(mainStack);
 
-void setupKeys(void)
+    if (game->Create())
+    {
+        mainStack->AddScreen(game);
+        return 0;
+    }
+    else
+    {
+        delete game;
+        return -1;
+    }
+}
+
+static void runGames(void)
+{
+    RunGames();
+}
+
+static void setupKeys(void)
 {
     REG_JUMP("MythGame", QT_TRANSLATE_NOOP("MythControls",
         "Game frontend"), "", runGames);
@@ -130,28 +149,6 @@ int mythplugin_init(const char *libversion)
     setupKeys();
 
     return 0;
-}
-
-void runGames()
-{
-    RunGames();
-}
-
-int RunGames(void)
-{
-    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
-    GameUI *game = new GameUI(mainStack);
-
-    if (game->Create())
-    {
-        mainStack->AddScreen(game);
-        return 0;
-    }
-    else
-    {
-        delete game;
-        return -1;
-    } 
 }
 
 int mythplugin_run(void)

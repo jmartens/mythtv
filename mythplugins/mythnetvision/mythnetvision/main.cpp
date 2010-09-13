@@ -23,49 +23,7 @@ using namespace std;
 GrabberManager *grabMan = 0;
 RSSManager *rssMan = 0;
 
-void runNetVision(void);
-int  RunNetVision(void);
-void runNetTree(void);
-int  RunNetTree(void);
-void runTreeEditor(void);
-int  RunTreeEditor(void);
-
-void setupKeys(void)
-{
-    REG_JUMP("MythNetSearch", QT_TRANSLATE_NOOP("MythControls",
-        "Internet Television Client - Search"), "", runNetVision);
-    REG_JUMP("MythNetTree", QT_TRANSLATE_NOOP("MythControls",
-        "Internet Television Client - Site/Tree View"), "", runNetTree);
-}
-
-int mythplugin_init(const char *libversion)
-{
-    if (!gContext->TestPopupVersion("mythnetvision",
-                                    libversion,
-                                    MYTH_BINARY_VERSION))
-        return -1;
-
-    setupKeys();
-
-    return 0;
-}
-
-void runNetVision(void)
-{
-    RunNetVision();
-}
-
-void runNetTree(void)
-{
-    RunNetTree();
-}
-
-void runTreeEditor(void)
-{
-    RunTreeEditor();
-}
-
-int RunNetVision(void)
+static int RunNetVision(void)
 {
     MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
 
@@ -83,7 +41,7 @@ int RunNetVision(void)
     }
 }
 
-int RunNetTree(void)
+static int RunNetTree(void)
 {
     MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
 
@@ -104,7 +62,7 @@ int RunNetTree(void)
     }
 }
 
-int RunTreeEditor(void)
+static int RunTreeEditor(void)
 {
     MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
 
@@ -120,6 +78,41 @@ int RunTreeEditor(void)
         delete treeedit;
         return -1;
     }
+}
+
+static void runNetVision(void)
+{
+    RunNetVision();
+}
+
+static void runNetTree(void)
+{
+    RunNetTree();
+}
+
+static void runTreeEditor(void)
+{
+    RunTreeEditor();
+}
+
+static void setupKeys(void)
+{
+    REG_JUMP("MythNetSearch", QT_TRANSLATE_NOOP("MythControls",
+        "Internet Television Client - Search"), "", runNetVision);
+    REG_JUMP("MythNetTree", QT_TRANSLATE_NOOP("MythControls",
+        "Internet Television Client - Site/Tree View"), "", runNetTree);
+}
+
+int mythplugin_init(const char *libversion)
+{
+    if (!gContext->TestPopupVersion("mythnetvision",
+                                    libversion,
+                                    MYTH_BINARY_VERSION))
+        return -1;
+
+    setupKeys();
+
+    return 0;
 }
 
 int mythplugin_run(void)

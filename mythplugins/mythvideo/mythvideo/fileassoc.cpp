@@ -10,9 +10,9 @@
 #include <mythuitextedit.h>
 #include <mythuicheckbox.h>
 #include <mythuibutton.h>
+#include <metadata/dbaccess.h>
+#include <metadata/videoutils.h>
 
-#include "dbaccess.h"
-#include "videoutils.h"
 #include "fileassoc.h"
 
 namespace

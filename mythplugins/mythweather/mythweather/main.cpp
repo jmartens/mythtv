@@ -23,10 +23,31 @@
 
 SourceManager *srcMan = 0;
 
-void runWeather();
-int  RunWeather();
+static int RunWeather()
+{
+    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
 
-void setupKeys()
+    Weather *weather = new Weather(mainStack, "mythweather", srcMan);
+
+    if (weather->Create())
+    {
+        mainStack->AddScreen(weather);
+        weather->setupScreens();
+        return 0;
+    }
+    else
+    {
+        delete weather;
+        return -1;
+    }
+}
+
+static void runWeather()
+{
+    RunWeather();
+}
+
+static void setupKeys()
 {
     REG_JUMP("MythWeather", QT_TRANSLATE_NOOP("MythControls",
         "Weather forecasts"), "", runWeather);
@@ -62,36 +83,12 @@ int mythplugin_init(const char *libversion)
     return 0;
 }
 
-void runWeather()
-{
-    RunWeather();
-}
-
-int RunWeather()
-{
-    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
-
-    Weather *weather = new Weather(mainStack, "mythweather", srcMan);
-
-    if (weather->Create())
-    {
-        mainStack->AddScreen(weather);
-        weather->setupScreens();
-        return 0;
-    }
-    else
-    {
-        delete weather;
-        return -1;
-    }
-}
-
 int mythplugin_run()
 {
     return RunWeather();
 }
 
-void WeatherCallback(void *data, QString &selection)
+static void WeatherCallback(void *data, QString &selection)
 {
     (void) data;
 

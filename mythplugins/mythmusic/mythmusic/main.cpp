@@ -50,7 +50,7 @@ QString gCDdevice;
 /**
  * \brief Work out the best CD drive to use at this time
  */
-QString chooseCD(void)
+static QString chooseCD(void)
 {
     if (gCDdevice.length())
         return gCDdevice;
@@ -62,7 +62,7 @@ QString chooseCD(void)
     return MediaMonitor::defaultCDdevice();
 }
 
-void CheckFreeDBServerFile(void)
+static void CheckFreeDBServerFile(void)
 {
     QString homeDir = QDir::home().path();
 
@@ -97,7 +97,7 @@ void CheckFreeDBServerFile(void)
     }
 }
 
-void SavePending(int pending)
+static void SavePending(int pending)
 {
     //  Temporary Hack until mythmusic
     //  has a proper settings/setup
@@ -245,7 +245,7 @@ static void loadMusic()
 
 }
 
-void startPlayback(void)
+static void startPlayback(void)
 {
     loadMusic();
     PlaybackBoxMusic *pbb;
@@ -257,7 +257,7 @@ void startPlayback(void)
     delete pbb;
 }
 
-void startDatabaseTree(void)
+static void startDatabaseTree(void)
 {
     loadMusic();
     DatabaseBox *dbbox = new DatabaseBox(GetMythMainWindow(),
@@ -268,7 +268,7 @@ void startDatabaseTree(void)
     gPlayer->constructPlaylist();
 }
 
-void startRipper(void)
+static void startRipper(void)
 {
     loadMusic();
 
@@ -284,7 +284,7 @@ void startRipper(void)
 //   connect(rip, SIGNAL(Success()), SLOT(RebuildMusicTree()));
 }
 
-void startImport(void)
+static void startImport(void)
 {
     loadMusic();
 
@@ -300,7 +300,7 @@ void startImport(void)
 //   connect(import, SIGNAL(Changed()), SLOT(RebuildMusicTree()));
 }
 
-void RebuildMusicTree(void)
+static void RebuildMusicTree(void)
 {
     if (!gMusicData->all_music || !gMusicData->all_playlists)
         return;
@@ -328,7 +328,7 @@ void RebuildMusicTree(void)
         busy->Close();
 }
 
-void MusicCallback(void *data, QString &selection)
+static void MusicCallback(void *data, QString &selection)
 {
     (void) data;
 
@@ -372,7 +372,7 @@ void MusicCallback(void *data, QString &selection)
     }
 }
 
-int runMenu(QString which_menu)
+static int runMenu(QString which_menu)
 {
     QString themedir = GetMythUI()->GetThemeDir();
 
@@ -401,13 +401,60 @@ int runMenu(QString which_menu)
     }
 }
 
-void runMusicPlayback(void);
-void runMusicSelection(void);
-void runRipCD(void);
-void runScan(void);
-void showMiniPlayer(void);
+static void runMusicPlayback(void)
+{
+    GetMythUI()->AddCurrentLocation("playmusic");
+    startPlayback();
+    GetMythUI()->RemoveCurrentLocation();
+}
 
-void handleMedia(MythMediaDevice *cd)
+static void runMusicSelection(void)
+{
+    GetMythUI()->AddCurrentLocation("musicplaylists");
+    startDatabaseTree();
+    GetMythUI()->RemoveCurrentLocation();
+}
+
+static void runRipCD(void)
+{
+    loadMusic();
+
+    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
+
+    Ripper *rip = new Ripper(mainStack, chooseCD());
+
+    if (rip->Create())
+        mainStack->AddScreen(rip);
+    else
+        delete rip;
+
+//   connect(rip, SIGNAL(Success()), SLOT(RebuildMusicTree()));
+}
+
+static void runScan(void)
+{
+    loadMusic();
+
+    if ("" != gMusicData->startdir)
+    {
+        FileScanner *fscan = new FileScanner();
+        fscan->SearchDir(gMusicData->startdir);
+        RebuildMusicTree();
+        delete fscan;
+    }
+}
+
+static void showMiniPlayer(void)
+{
+    if (!gMusicData->all_music)
+        return;
+
+    // only show the miniplayer if there isn't already a client attached
+    if (!gPlayer->hasClient())
+        gPlayer->showMiniPlayer();
+}
+
+static void handleMedia(MythMediaDevice *cd)
 {
     // Note that we should deal with other disks that may contain music.
     // e.g. MEDIATYPE_MMUSIC or MEDIATYPE_MIXED
@@ -451,7 +498,7 @@ void handleMedia(MythMediaDevice *cd)
         mythplugin_run();
 }
 
-void setupKeys(void)
+static void setupKeys(void)
 {
     REG_JUMP(QT_TRANSLATE_NOOP("MythControls", "Play music"),
         "", "", runMusicPlayback);
@@ -602,57 +649,4 @@ void mythplugin_destroy(void)
     gPlayer->deleteLater();
 
     delete gMusicData;
-}
-
-void runMusicPlayback(void)
-{
-    GetMythUI()->AddCurrentLocation("playmusic");
-    startPlayback();
-    GetMythUI()->RemoveCurrentLocation();
-}
-
-void runMusicSelection(void)
-{
-    GetMythUI()->AddCurrentLocation("musicplaylists");
-    startDatabaseTree();
-    GetMythUI()->RemoveCurrentLocation();
-}
-
-void runRipCD(void)
-{
-    loadMusic();
-
-    MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
-
-    Ripper *rip = new Ripper(mainStack, chooseCD());
-
-    if (rip->Create())
-        mainStack->AddScreen(rip);
-    else
-        delete rip;
-
-//   connect(rip, SIGNAL(Success()), SLOT(RebuildMusicTree()));
-}
-
-void runScan(void)
-{
-    loadMusic();
-
-    if ("" != gMusicData->startdir)
-    {
-        FileScanner *fscan = new FileScanner();
-        fscan->SearchDir(gMusicData->startdir);
-        RebuildMusicTree();
-        delete fscan;
-    }
-}
-
-void showMiniPlayer(void)
-{
-    if (!gMusicData->all_music)
-        return;
-
-    // only show the miniplayer if there isn't already a client attached
-    if (!gPlayer->hasClient())
-        gPlayer->showMiniPlayer();
 }
