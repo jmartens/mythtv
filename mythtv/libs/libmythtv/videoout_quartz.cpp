@@ -1186,7 +1186,7 @@ bool VideoOutputQuartz::InputChanged(const QSize &input_size,
             .arg(input_size.height()).arg(aspect));
 
     bool cid_changed = (video_codec_id != av_codec_id);
-    bool res_changed = input_size != window.GetVideoDispDim();
+    bool res_changed = input_size != window.GetActualVideoDim();
     bool asp_changed = aspect != window.GetVideoAspect();
 
     VideoOutput::InputChanged(input_size, aspect, av_codec_id, codec_private,
@@ -1450,7 +1450,7 @@ bool VideoOutputQuartz::CreateQuartzBuffers(void)
     db_vdisp_profile->SetVideoRenderer(renderer);
     VERBOSE(VB_IMPORTANT, LOC + "VProf: " + db_vdisp_profile->toString());
 
-    vbuffers.CreateBuffers(video_dim.width(), video_dim.height());
+    vbuffers.CreateBuffers(FMT_YV12, video_dim.width(), video_dim.height());
 
     // Set up pause frame
     if (pauseFrame.buf)
@@ -1459,7 +1459,7 @@ bool VideoOutputQuartz::CreateQuartzBuffers(void)
     VideoFrame *scratch = vbuffers.GetScratchFrame();
 
     init(&pauseFrame, FMT_YV12, new unsigned char[scratch->size],
-         scratch->width, scratch->height, scratch->bpp, scratch->size);
+         scratch->width, scratch->height, scratch->size);
 
     pauseFrame.frameNumber = scratch->frameNumber;
 

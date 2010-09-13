@@ -119,17 +119,6 @@ bool NuppelDecoder::CanHandle(char testbuf[kDecoderProbeBufferSize],
     return false;
 }
 
-QString NuppelDecoder::GetEncodingType(void) const
-{
-    switch (GetVideoCodecID())
-    {
-        case kCodec_NUV_MPEG4:  return QObject::tr("Nuppel/MPEG-4");
-        case kCodec_NUV_RTjpeg: return QObject::tr("Nuppel/RTJPEG");
-    }
-
-    return QObject::tr("Nuppel/unknown");
-}
-
 MythCodecID NuppelDecoder::GetVideoCodecID(void) const
 {
     MythCodecID value = kCodec_NONE;
@@ -143,6 +132,13 @@ MythCodecID NuppelDecoder::GetVideoCodecID(void) const
     else
         value = kCodec_NUV_RTjpeg;
     return (value);
+}
+
+QString NuppelDecoder::GetRawEncodingType(void)
+{
+    if (mpa_vidctx)
+        return ff_codec_id_string(mpa_vidctx->codec_id);
+    return QString();
 }
 
 bool NuppelDecoder::ReadFileheader(struct rtfileheader *fh)

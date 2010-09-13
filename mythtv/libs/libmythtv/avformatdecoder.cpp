@@ -225,7 +225,7 @@ void AvFormatDecoder::GetDecoders(render_opts &opts)
     opts.decoders->append("ffmpeg");
     (*opts.equiv_decoders)["ffmpeg"].append("nuppel");
     (*opts.equiv_decoders)["ffmpeg"].append("dummy");
-    
+
 #ifdef USING_XVMC
     opts.decoders->append("xvmc");
     opts.decoders->append("xvmc-vld");
@@ -433,7 +433,9 @@ int64_t AvFormatDecoder::NormalizeVideoTimecode(int64_t timecode)
 
 int AvFormatDecoder::GetNumChapters()
 {
-    return ic->nb_chapters;
+    if (ic->nb_chapters > 1)
+        return ic->nb_chapters;
+    return 0;
 }
 
 void AvFormatDecoder::GetChapterTimes(QList<long long> &times)
@@ -1154,6 +1156,37 @@ static enum PixelFormat get_format_vdpau(struct AVCodecContext *avctx,
     return fmt[i];
 }
 
+static enum PixelFormat get_format_dxva2(struct AVCodecContext *avctx,
+                                         const enum PixelFormat *fmt)
+{
+    if (!fmt)
+        return PIX_FMT_NONE;
+    int i = 0;
+    for (; fmt[i] != PIX_FMT_NONE ; i++)
+        if (PIX_FMT_DXVA2_VLD == fmt[i])
+            break;
+    return fmt[i];
+}
+
+static bool IS_VAAPI_PIX_FMT(enum PixelFormat fmt)
+{
+    return fmt == PIX_FMT_VAAPI_MOCO ||
+           fmt == PIX_FMT_VAAPI_IDCT ||
+           fmt == PIX_FMT_VAAPI_VLD;
+}
+
+static enum PixelFormat get_format_vaapi(struct AVCodecContext *avctx,
+                                         const enum PixelFormat *fmt)
+{
+    if (!fmt)
+        return PIX_FMT_NONE;
+    int i = 0;
+    for (; fmt[i] != PIX_FMT_NONE ; i++)
+        if (IS_VAAPI_PIX_FMT(fmt[i]))
+            break;
+    return fmt[i];
+}
+
 static bool IS_DR1_PIX_FMT(const enum PixelFormat fmt)
 {
     switch (fmt)
@@ -1174,9 +1207,6 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
             <<"id("<<ff_codec_id_string(enc->codec_id)
             <<") type ("<<ff_codec_type_string(enc->codec_type)
             <<").");
-
-    // store raw codec for later use in GetEncodingType()
-    raw_codec_id = enc->codec_id;
 
     if (ringBuffer && ringBuffer->isDVD())
         directrendering = false;
@@ -1204,7 +1234,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
     {
         directrendering = true;
         if (!gCoreContext->GetNumSetting("DecodeExtraAudio", 0) &&
-            !CODEC_IS_HWACCEL(codec))
+            !CODEC_IS_HWACCEL(codec, enc))
         {
             SetLowBuffers(false);
         }
@@ -1592,7 +1622,7 @@ void AvFormatDecoder::ScanRawTextCaptions(int av_stream_index)
                     .arg(tracks[kTrackTypeRawText].size()).arg(av_stream_index)
                     .arg(iso639_key_toName(lang)).arg(lang));
     StreamInfo si(av_stream_index, lang, 0, 0, 0);
-    tracks[kTrackTypeRawText].push_back(si);                    
+    tracks[kTrackTypeRawText].push_back(si);
 }
 
 /** \fn AvFormatDecoder::ScanDSMCCStreams(void)
@@ -3054,7 +3084,7 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
     // frame and fixups aren't enabled for DVD.
     // Select reordered_opaque (PTS) timestamps if they are less faulty or the
     // the DTS timestamp is missing. Also use fixups for missing PTS instead of
-    // DTS to avoid oscillating between PTS and DTS. Only select DTS if PTS is 
+    // DTS to avoid oscillating between PTS and DTS. Only select DTS if PTS is
     // more faulty or never detected.
     if (ringBuffer->isDVD())
     {
@@ -3181,6 +3211,11 @@ void AvFormatDecoder::ProcessVBIDataPacket(
                 // SECAM lines  6-23
                 // PAL   lines  6-22
                 // NTSC  lines 10-21 (rare)
+                if (tracks[kTrackTypeTeletextMenu].empty())
+                {
+                    StreamInfo si(pkt->stream_index, 0, 0, 0, 0);
+                    tracks[kTrackTypeTeletextMenu].push_back(si);
+                }
                 ttd->Decode(buf+1, VBI_IVTV);
                 break;
             case VBI_TYPE_CC:
@@ -3573,15 +3608,15 @@ static int filter_max_ch(const AVFormatContext *ic,
  *      recalled as the Nth stream in the preferred language
  *      or the Nth substream when audio is in dual language
  *      format (each channel contains a different language track)
- *      If it can not be located we attempt to find a stream
+ *      If it cannot be located we attempt to find a stream
  *      in the same language.
  *
- *   2) If we can not reselect the last user selected stream,
+ *   2) If we cannot reselect the last user selected stream,
  *      then for each preferred language from most preferred
  *      to least preferred, we try to find a new stream based
  *      on the algorithm below.
  *
- *   3) If we can not select a stream in a preferred language
+ *   3) If we cannot select a stream in a preferred language
  *      we try to select a stream irrespective of language
  *      based on the algorithm below.
  *
@@ -3675,7 +3710,7 @@ int AvFormatDecoder::AutoSelectAudioTrack(void)
         VERBOSE(VB_AUDIO, LOC + "Trying to select audio track (w/lang)");
 
         // try to get the language track matching the frontend language.
-        QString language_key_convert = iso639_str2_to_str3(GetMythUI()->GetLanguage());
+        QString language_key_convert = iso639_str2_to_str3(gCoreContext->GetLanguage());
         uint language_key = iso639_str3_to_key(language_key_convert);
         uint canonical_key = iso639_key_to_canonical_key(language_key);
 
@@ -4489,25 +4524,13 @@ QString AvFormatDecoder::GetCodecDecoderName(void) const
     return get_decoder_name(video_codec_id);
 }
 
-QString AvFormatDecoder::GetEncodingType(void) const
+QString AvFormatDecoder::GetRawEncodingType(void)
 {
-    // Shorten the most common strings (for use in INFO OSD):
-    switch (raw_codec_id)
-    {
-        case CODEC_ID_MPEG1VIDEO:          return "MPEG-1";
-        case CODEC_ID_MPEG2VIDEO:
-        case CODEC_ID_MPEG2VIDEO_XVMC:
-        case CODEC_ID_MPEG2VIDEO_XVMC_VLD: return "MPEG-2";
-    }
-
-    const char *string = ff_codec_id_string(raw_codec_id);
-
-    if (strcmp(string, "Unknown Codec ID") == 0)
-        return QObject::tr("Unknown");
-
-    return string;
+    int stream = selectedTrack[kTrackTypeVideo].av_stream_index;
+    if (stream < 0 || !ic)
+        return QString();
+    return ff_codec_id_string(ic->streams[stream]->codec->codec_id);
 }
-
 
 void *AvFormatDecoder::GetVideoCodecPrivate(void)
 {
@@ -4557,13 +4580,13 @@ bool AvFormatDecoder::DoPassThrough(const AVCodecContext *ctx)
     bool passthru = false;
 
     if (ctx->codec_id == CODEC_ID_AC3)
-        passthru = m_audio->CanAC3() &&
-            ctx->channels >= (int)m_audio->GetMaxChannels() &&
-                   !internal_vol;
+        passthru = m_audio->CanAC3();
     else if (ctx->codec_id == CODEC_ID_DTS)
-        passthru = m_audio->CanDTS() && !internal_vol;
-
-    passthru &= m_audio->CanPassthrough();
+        passthru = m_audio->CanDTS();
+    passthru &= m_audio->CanPassthrough(ctx->sample_rate);
+        // Will downmix if we can't support the amount of channels
+    passthru &= ctx->channels >= (int)m_audio->GetMaxChannels();
+    passthru &= !internal_vol;
     passthru &= !transcoding && !disable_passthru;
     // Don't know any cards that support spdif clocked at < 44100
     // Some US cable transmissions have 2ch 32k AC-3 streams

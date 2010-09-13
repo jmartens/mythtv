@@ -68,7 +68,7 @@ AudioDeviceComboBox::AudioDeviceComboBox(AudioConfigSettings *parent) :
     QString dflt = "ALSA:default";
 #elif USING_PULSEOUTPUT
     QString dflt = "PulseAudio:default";
-#elif USING_COREAUDIO
+#elif CONFIG_DARWIN
     QString dflt = "CoreAudio:";
 #elif USING_MINGW
     QString dflt = "Windows:";
@@ -126,9 +126,9 @@ AudioConfigSettings::AudioConfigSettings() :
         // Rescan button
     TransButtonSetting *rescan = new TransButtonSetting("rescan");
     rescan->setLabel(QObject::tr("Scan for audio devices"));
-    rescan->setHelpText(QObject::tr("Scan for the available audio devices "
-                                    "available. Custom entry will be scanned "
-                                    "and capability entries populated."));
+    rescan->setHelpText(QObject::tr("Scan for available audio devices. "
+                                    "Custom entry will be scanned and "
+                                    "capability entries populated."));
     addChild(rescan);
     connect(rescan, SIGNAL(pressed()), this, SLOT(AudioRescan()));
 
@@ -431,7 +431,7 @@ HostCheckBox *AudioConfigSettings::DTSPassThrough()
 HostCheckBox *AudioConfigSettings::MPCM()
 {
     HostCheckBox *gc = new HostCheckBox("MultiChannelPCM");
-    gc->setValue(true);
+    gc->setValue(false);
     return gc;
 }
 
@@ -1764,7 +1764,7 @@ void PlaybackProfileConfigs::btnPress(QString cmd)
             {
                 msg = (name.isEmpty()) ?
                     QObject::tr(
-                        "Sorry, playback group\nname can not be blank.") :
+                        "Sorry, playback group\nname cannot be blank.") :
                     QObject::tr(
                         "Sorry, playback group name\n"
                         "'%1' is already being used.").arg(name);
@@ -1918,9 +1918,9 @@ static HostComboBox __attribute__ ((unused)) *DecodeVBIFormat()
 static HostSpinBox *OSDCC708TextZoomPercentage(void)
 {
     HostSpinBox *gs = new HostSpinBox("OSDCC708TextZoom", 50, 200, 5);
-    gs->setLabel(QObject::tr("ATSC caption text zoom percentage"));
+    gs->setLabel(QObject::tr("Subtitle text zoom percentage"));
     gs->setValue(100);
-    gs->setHelpText(QObject::tr("Use this to enlarge or shrink captions."));
+    gs->setHelpText(QObject::tr("Use this to enlarge or shrink text based subtitles."));
 
     return gs;
 }
@@ -2005,18 +2005,6 @@ static HostSpinBox *YScanDisplacement()
     gs->setHelpText(QObject::tr("Adjust this to move the image vertically."));
     return gs;
 };
-
-static HostCheckBox *AlwaysStreamFiles()
-{
-    HostCheckBox *gc = new HostCheckBox("AlwaysStreamFiles");
-    gc->setLabel(QObject::tr("Always stream recordings from the backend"));
-    gc->setValue(false);
-    gc->setHelpText(QObject::tr(
-                        "If enabled, MythTV will always stream files from a "
-                        "remote backend instead of directly reading a "
-                        "recording file if it is accessible locally."));
-    return gc;
-}
 
 static HostCheckBox *CCBackground()
 {
@@ -2132,6 +2120,8 @@ static HostCheckBox *UsePicControls()
 }
 #endif
 
+// This currently does not work
+/*
 static HostLineEdit *UDPNotifyPort()
 {
     HostLineEdit *ge = new HostLineEdit("UDPNotifyPort");
@@ -2143,6 +2133,7 @@ static HostLineEdit *UDPNotifyPort()
                     "http://www.mythtv.org/wiki/MythNotify ."));
     return ge;
 }
+*/
 
 static HostComboBox *PlaybackExitPrompt()
 {
@@ -2403,7 +2394,7 @@ static HostComboBox *XineramaMonitorAspectRatio()
     gc->addSelection(QObject::tr("16:9"),  "1.7777");
     gc->addSelection(QObject::tr("16:10"), "1.6");
     gc->setHelpText(QObject::tr(
-                        "The aspect ratio of a Xinerama display can not be "
+                        "The aspect ratio of a Xinerama display cannot be "
                         "queried from the display, so it must be specified."));
     return gc;
 }
@@ -3408,7 +3399,7 @@ static void ISO639_fill_selections(SelectSetting *widget, uint i)
     if ((lang.isEmpty() || lang == "aar") &&
         !gCoreContext->GetSetting("Language", "").isEmpty())
     {
-        lang = iso639_str2_to_str3(GetMythUI()->GetLanguage().toLower());
+        lang = iso639_str2_to_str3(gCoreContext->GetLanguage().toLower());
     }
 
     QMap<int,QString>::iterator it  = _iso639_key_to_english_name.begin();
@@ -4148,7 +4139,6 @@ PlaybackSettings::PlaybackSettings()
 
     general1->addChild(columns);
     general1->addChild(LiveTVIdleTimeout());
-    general1->addChild(AlwaysStreamFiles());
 #ifdef USING_OPENGL_VSYNC
     general1->addChild(UseOpenGLVSync());
 #endif // USING_OPENGL_VSYNC
@@ -4271,19 +4261,19 @@ OSDSettings::OSDSettings()
     osd->addChild(EnableMHEG());
     osd->addChild(PersistentBrowseMode());
     osd->addChild(BrowseAllTuners());
+    osd->addChild(CCBackground());
+    osd->addChild(DefaultCCMode());
+    osd->addChild(PreferCC708());
     osd->addChild(SubtitleFont());
+    osd->addChild(OSDCC708TextZoomPercentage());
     osd->addChild(SubtitleCodec());
-    osd->addChild(UDPNotifyPort());
+    //osd->addChild(UDPNotifyPort());
     addChild(osd);
 
-    VerticalConfigurationGroup *cc = new VerticalConfigurationGroup(false);
-    cc->setLabel(QObject::tr("Closed Captions"));
+    //VerticalConfigurationGroup *cc = new VerticalConfigurationGroup(false);
+    //cc->setLabel(QObject::tr("Closed Captions"));
     //cc->addChild(DecodeVBIFormat());
-    cc->addChild(CCBackground());
-    cc->addChild(DefaultCCMode());
-    cc->addChild(PreferCC708());
-    cc->addChild(OSDCC708TextZoomPercentage());
-    addChild(cc);
+    //addChild(cc);
 
 #if CONFIG_DARWIN
     // Any Mac OS-specific OSD stuff would go here.

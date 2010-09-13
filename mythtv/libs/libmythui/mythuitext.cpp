@@ -14,6 +14,7 @@
 #include "mythpainter.h"
 #include "mythmainwindow.h"
 #include "mythfontproperties.h"
+#include "mythcorecontext.h"
 
 #include "compat.h"
 
@@ -86,11 +87,12 @@ void MythUIText::Reset()
 void MythUIText::SetText(const QString &text)
 {
     QString newtext = text;
-    newtext.replace(QRegExp("\\\\n"), "\n");
-    newtext = newtext.trimmed();
 
     if (newtext == m_Message)
         return;
+
+    if (newtext.isEmpty())
+        m_Message = m_DefaultMessage;
 
     m_Message = newtext;
     m_CutMessage.clear();
@@ -618,26 +620,26 @@ bool MythUIText::ParseElement(
         if (element.attribute("lang","").isEmpty())
         {
             m_Message = qApp->translate("ThemeUI",
-                                        getFirstText(element).toUtf8(), NULL,
+                                        parseText(element).toUtf8(), NULL,
                                         QCoreApplication::UnicodeUTF8);
         }
         else if (element.attribute("lang","").toLower() ==
-                 GetMythUI()->GetLanguageAndVariant())
+                 gCoreContext->GetLanguageAndVariant())
         {
-            m_Message = getFirstText(element);
+            m_Message = parseText(element);
         }
         else if (element.attribute("lang","").toLower() ==
-                 GetMythUI()->GetLanguage())
+                 gCoreContext->GetLanguage())
         {
-            m_Message = getFirstText(element);
+            m_Message = parseText(element);
         }
 
-        SetText(m_Message);
         m_DefaultMessage = m_Message;
+        SetText(m_Message);
     }
     else if (element.tagName() == "template")
     {
-        m_TemplateText = getFirstText(element);
+        m_TemplateText = parseText(element);
     }
     else if (element.tagName() == "cutdown")
     {
@@ -734,9 +736,9 @@ void MythUIText::CopyFrom(MythUIType *base)
     m_AltDisplayRect = text->m_AltDisplayRect;
     m_drawRect = text->m_drawRect;
 
+    m_DefaultMessage = text->m_DefaultMessage;
     SetText(text->m_Message);
     m_CutMessage = text->m_CutMessage;
-    m_DefaultMessage = text->m_DefaultMessage;
     m_TemplateText = text->m_TemplateText;
 
     m_Cutdown = text->m_Cutdown;

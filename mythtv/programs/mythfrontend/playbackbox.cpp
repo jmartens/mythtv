@@ -8,43 +8,38 @@
 #include <QTimer>
 #include <QMap>
 
-// libmythdb
-#include "oldsettings.h"
-#include "mythdb.h"
-#include "mythdbcon.h"
-#include "mythverbose.h"
-#include "mythdirs.h"
-
-// libmythtv
-#include "tv.h"
-#include "mythplayer.h"
-#include "recordinginfo.h"
-#include "playgroup.h"
-#include "mythsystemevent.h"
-
-// libmyth
-#include "mythcorecontext.h"
-#include "util.h"
-#include "storagegroup.h"
-#include "programinfo.h"
-
-// libmythui
-#include "mythuihelper.h"
-#include "mythuitext.h"
-#include "mythuibutton.h"
-#include "mythuibuttonlist.h"
-#include "mythuistatetype.h"
-#include "mythdialogbox.h"
-#include "mythuitextedit.h"
-#include "mythuiimage.h"
-#include "mythuicheckbox.h"
+// MythTV
+#include "previewgeneratorqueue.h"
 #include "mythuiprogressbar.h"
-
+#include "mythuibuttonlist.h"
+#include "mythcorecontext.h"
+#include "mythsystemevent.h"
+#include "mythuistatetype.h"
+#include "mythuicheckbox.h"
+#include "mythuitextedit.h"
+#include "mythdialogbox.h"
+#include "recordinginfo.h"
+#include "mythuihelper.h"
+#include "storagegroup.h"
+#include "mythuibutton.h"
+#include "mythverbose.h"
+#include "mythuiimage.h"
+#include "programinfo.h"
+#include "oldsettings.h"
+#include "mythplayer.h"
+#include "mythuitext.h"
 #include "remoteutil.h"
+#include "mythdbcon.h"
+#include "playgroup.h"
+#include "mythdirs.h"
+#include "mythdb.h"
+#include "util.h"
+#include "tv.h"
 
 //  Mythfrontend
 #include "playbackboxlistitem.h"
 #include "customedit.h"
+#include "proglist.h"
 
 #define LOC      QString("PlaybackBox: ")
 #define LOC_WARN QString("PlaybackBox Warning: ")
@@ -444,6 +439,7 @@ PlaybackBox::PlaybackBox(MythScreenStack *parent, QString name, BoxType ltype,
 PlaybackBox::~PlaybackBox(void)
 {
     gCoreContext->removeListener(this);
+    PreviewGeneratorQueue::RemoveListener(this);
 
     for (uint i = 0; i < sizeof(m_artImage) / sizeof(MythUIImage*); i++)
     {
@@ -498,6 +494,8 @@ bool PlaybackBox::Create()
             SLOT(ItemSelected(MythUIButtonListItem*)));
     connect(m_recordingList, SIGNAL(itemClicked(MythUIButtonListItem*)),
             SLOT(PlayFromBookmark(MythUIButtonListItem*)));
+    connect(m_recordingList, SIGNAL(itemVisible(MythUIButtonListItem*)),
+            SLOT(ItemVisible(MythUIButtonListItem*)));
 
     // connect up timers...
     connect(m_artTimer[kArtworkFan],   SIGNAL(timeout()), SLOT(fanartLoad()));
@@ -514,6 +512,7 @@ bool PlaybackBox::Create()
 void PlaybackBox::Load(void)
 {
     m_programInfoCache.WaitForLoadToComplete();
+    PreviewGeneratorQueue::AddListener(this);
 }
 
 void PlaybackBox::Init()
@@ -634,7 +633,7 @@ void PlaybackBox::updateGroupInfo(const QString &groupname,
     }
 
     QString desc = tr("There is/are %n recording(s) in this display group",
-                      NULL, countInGroup);
+                      "", countInGroup);
 
     if (m_type == kDeleteBox && countInGroup > 1)
     {
@@ -787,7 +786,7 @@ void PlaybackBox::UpdateUIListItem(
 
     QString oldimgfile = item->GetImage("preview");
     if (oldimgfile.isEmpty() || force_preview_reload)
-        m_helper.GetPreviewImage(*pginfo);
+        m_preview_tokens.insert(m_helper.GetPreviewImage(*pginfo));
 
     if ((GetFocusWidget() == m_recordingList) && is_sel)
     {
@@ -811,7 +810,7 @@ void PlaybackBox::UpdateUIListItem(
         if (m_previewImage)
         {
             m_previewImage->SetFilename(oldimgfile);
-            m_previewImage->Load();
+            m_previewImage->Load(true, true);
         }
 
         // Handle artwork
@@ -847,17 +846,83 @@ void PlaybackBox::UpdateUIListItem(
     }
 }
 
+void PlaybackBox::ItemVisible(MythUIButtonListItem *item)
+{
+    ProgramInfo *pginfo = qVariantValue<ProgramInfo*>(item->GetData());
+
+    MythUIButtonListItem *sel_item = item->parent()->GetItemCurrent();
+    if ((item != sel_item) && pginfo && item->GetImage("preview").isEmpty() &&
+        (asAvailable == pginfo->GetAvailableStatus()))
+    {
+        QString token = m_helper.GetPreviewImage(*pginfo, true);
+        if (token.isEmpty())
+            return;
+
+        m_preview_tokens.insert(token);
+        // now make sure selected item is still at the top of the queue
+        ProgramInfo *sel_pginfo =
+            qVariantValue<ProgramInfo*>(sel_item->GetData());
+        if (sel_pginfo && sel_item->GetImage("preview").isEmpty() &&
+            (asAvailable == sel_pginfo->GetAvailableStatus()))
+        {
+            m_preview_tokens.insert(
+                m_helper.GetPreviewImage(*sel_pginfo, false));
+        }
+    }
+}
+
+
 /** \brief Updates the UI properties for a new preview file.
  *  This first update the image property of the MythUIButtonListItem
  *  with the new preview file, then if it is selected and there is
  *  a preview image UI item in the theme that it's filename property
  *  gets updated as well.
  */
-void PlaybackBox::HandlePreviewEvent(
-    const QString &piKey, const QString &previewFile)
+void PlaybackBox::HandlePreviewEvent(const QStringList &list)
 {
-    if (previewFile.isEmpty())
+    if (list.size() < 5)
+    {
+        VERBOSE(VB_IMPORTANT, "HandlePreviewEvent() -- too few args");
+        for (uint i = 0; i < (uint) list.size(); i++)
+        {
+            VERBOSE(VB_IMPORTANT, QString("%1: %2")
+                    .arg(i).arg(list[i]));
+        }
         return;
+    }
+
+    const QString piKey       = list[0];
+    const QString previewFile = list[1];
+    const QString message     = list[2];
+
+    bool found = false;
+    for (uint i = 4; i < (uint) list.size(); i++)
+    {
+        QString token = list[i];
+        QSet<QString>::iterator it = m_preview_tokens.find(token);
+        if (it != m_preview_tokens.end())
+        {
+            found = true;
+            m_preview_tokens.erase(it);
+        }
+    }
+
+    if (!found)
+    {
+        QString tokens("\n\t\t\ttokens: ");
+        for (uint i = 4; i < (uint) list.size(); i++)
+            tokens += list[i] + ", ";
+        VERBOSE(VB_IMPORTANT, LOC +
+                "Ignoring PREVIEW_SUCCESS, no matcing token" + tokens);
+        return;
+    }
+
+    if (previewFile.isEmpty())
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Ignoring PREVIEW_SUCCESS, no preview file.");
+        return;
+    }
 
     ProgramInfo *info = m_programInfoCache.GetProgramInfo(piKey);
     MythUIButtonListItem *item = NULL;
@@ -865,8 +930,18 @@ void PlaybackBox::HandlePreviewEvent(
     if (info)
         item = m_recordingList->GetItemByData(qVariantFromValue(info));
 
+    if (!item)
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Ignoring PREVIEW_SUCCESS, item no longer on screen.");
+    }
+
     if (item)
     {
+        VERBOSE(VB_GUI, LOC +
+                QString("Loading preview %1,\n\t\t\tmsg %2")
+                .arg(previewFile).arg(message));
+
         item->SetImage(previewFile, "preview", true);
 
         if ((GetFocusWidget() == m_recordingList) &&
@@ -874,7 +949,7 @@ void PlaybackBox::HandlePreviewEvent(
             m_previewImage)
         {
             m_previewImage->SetFilename(previewFile);
-            m_previewImage->Load();
+            m_previewImage->Load(true, true);
         }
     }
 }
@@ -892,7 +967,8 @@ void PlaybackBox::updateIcons(const ProgramInfo *pginfo)
     iconMap["commflagged"] = FL_COMMFLAG;
     iconMap["cutlist"]     = FL_CUTLIST;
     iconMap["autoexpire"]  = FL_AUTOEXP;
-    iconMap["processing"]  = FL_EDITING;
+    iconMap["processing"]  = FL_COMMPROCESSING;
+    iconMap["editing"]     = FL_EDITING;
     iconMap["bookmark"]    = FL_BOOKMARK;
     iconMap["inuse"]       = (FL_INUSERECORDING |
                               FL_INUSEPLAYING |
@@ -1013,17 +1089,30 @@ void PlaybackBox::UpdateUsageUI(void)
 
     // If the theme doesn't have these widgets,
     // don't waste time querying the backend...
-    if (!freereportText && !usedProgress)
+    if (!freereportText && !usedProgress && !GetChild("diskspacetotal") &&
+        !GetChild("diskspaceused") && !GetChild("diskspacefree") &&
+        !GetChild("diskspacepercentused") && !GetChild("diskspacepercentfree"))
         return;
 
     double freeSpaceTotal = (double) m_helper.GetFreeSpaceTotalMB();
     double freeSpaceUsed  = (double) m_helper.GetFreeSpaceUsedMB();
+
+    InfoMap usageMap;
+    usageMap["diskspacetotal"] = QString().sprintf("%0.2f",
+                                                   freeSpaceTotal / 1024.0);
+    usageMap["diskspaceused"] = QString().sprintf("%0.2f",
+                                                  freeSpaceUsed / 1024.0);
+    usageMap["diskspacefree"] = QString().sprintf("%0.2f",
+                                    (freeSpaceTotal - freeSpaceUsed) / 1024.0);
 
     QString usestr;
 
     double perc = 0.0;
     if (freeSpaceTotal > 0.0)
         perc = (100.0 * freeSpaceUsed) / freeSpaceTotal;
+
+    usageMap["diskspacepercentused"] = QString().number((int)perc);
+    usageMap["diskspacepercentfree"] = QString().number(100 - (int)perc);
 
     usestr.sprintf("%d", (int)perc);
     usestr = usestr + tr("% used");
@@ -1041,6 +1130,8 @@ void PlaybackBox::UpdateUsageUI(void)
         usedProgress->SetTotal((int)freeSpaceTotal);
         usedProgress->SetUsed((int)freeSpaceUsed);
     }
+
+    SetTextFromMap(usageMap);
 }
 
 /*
@@ -1134,9 +1225,6 @@ void PlaybackBox::updateRecList(MythUIButtonListItem *sel_item)
         m_currentGroup = groupname;
 
     m_recordingList->Reset();
-
-    if (groupname == "default")
-        groupname.clear();
 
     ProgramMap::iterator pmit = m_progLists.find(groupname);
     if (pmit == m_progLists.end())
@@ -1454,7 +1542,8 @@ bool PlaybackBox::UpdateUILists(void)
 
             if ((((p->GetRecordingGroup() == m_recGroup) ||
                   ((m_recGroup == "All Programs") &&
-                   (p->GetRecordingGroup() != "Deleted")) ||
+                   (p->GetRecordingGroup() != "Deleted") &&
+                   (p->GetRecordingGroup() != "LiveTV")) ||
                   (p->GetRecordingGroup() == "LiveTV" &&
                    (m_viewMask & VIEW_LIVETVGRP))) &&
                  (m_recGroupPwCache[m_recGroup] == m_curGroupPassword)) ||
@@ -1498,7 +1587,7 @@ bool PlaybackBox::UpdateUILists(void)
                     sTitle = construct_sort_title(
                         p->GetTitle(), m_viewMask, titleSort,
                         p->GetRecordingPriority(), m_prefixes);
-                    sTitle = sTitle.toLower();
+                    sTitle = sTitle.toLower().simplified();
 
                     if (!sortedList.contains(sTitle))
                         sortedList[sTitle] = p->GetTitle();
@@ -1507,7 +1596,8 @@ bool PlaybackBox::UpdateUILists(void)
                 }
 
                 if ((m_viewMask & VIEW_RECGROUPS) &&
-                    !p->GetRecordingGroup().isEmpty()) // Show recording groups
+                    !p->GetRecordingGroup().isEmpty() &&
+                    p->GetRecordingGroup() != "LiveTV") // Show recording groups
                 {
                     sortedList[p->GetRecordingGroup().toLower()] =
                         p->GetRecordingGroup();
@@ -2035,7 +2125,7 @@ void PlaybackBox::deleteSelected(MythUIButtonListItem *item)
                 QString("availability status: %1 ")
                 .arg(pginfo->GetAvailableStatus()));
 
-        ShowOkPopup(tr("Can not delete\n") +
+        ShowOkPopup(tr("Cannot delete\n") +
                     tr("This recording is already being deleted"));
     }
     else if (!pginfo->QueryIsDeleteCandidate())
@@ -2050,12 +2140,12 @@ void PlaybackBox::deleteSelected(MythUIButtonListItem *item)
 
         if (byWho.isEmpty())
         {
-            ShowOkPopup(tr("Can not delete\n") +
+            ShowOkPopup(tr("Cannot delete\n") +
                         tr("This recording is already being deleted"));
         }
         else
         {
-            ShowOkPopup(tr("Can not delete\n") +
+            ShowOkPopup(tr("Cannot delete\n") +
                         tr("This recording is currently in use by:") + "\n" +
                         byWho);
         }
@@ -2248,6 +2338,15 @@ bool PlaybackBox::Play(
     {
         QCoreApplication::postEvent(
             this, new MythEvent("PLAY_PLAYLIST"));
+    }
+    else
+    {
+        // User may have saved or deleted a bookmark,
+        // requiring update of preview..
+        ProgramInfo *pginfo = m_programInfoCache.GetProgramInfo(
+            tvrec.GetChanID(), tvrec.GetRecordingStartTime());
+        if (pginfo)
+            UpdateUIListItem(pginfo, true);
     }
 
     return playCompleted;
@@ -2812,26 +2911,54 @@ void PlaybackBox::showTranscodingProfiles()
     if (!CreatePopupMenu(tr("Transcoding profiles")))
         return;
 
-    m_popupMenu->AddButton(tr("Default"), SLOT(doBeginTranscoding()));
-    m_popupMenu->AddButton(tr("Autodetect"),
-                                    SLOT(changeProfileAndTranscodeAuto()));
-    m_popupMenu->AddButton(tr("High Quality"),
-                                    SLOT(changeProfileAndTranscodeHigh()));
-    m_popupMenu->AddButton(tr("Medium Quality"),
-                                    SLOT(changeProfileAndTranscodeMedium()));
-    m_popupMenu->AddButton(tr("Low Quality"),
-                                    SLOT(changeProfileAndTranscodeLow()));
+    m_popupMenu->AddButton(tr("Default"), qVariantFromValue(-1));
+    m_popupMenu->AddButton(tr("Autodetect"), qVariantFromValue(0));
+
+    MSqlQuery query(MSqlQuery::InitCon());
+    query.prepare("SELECT r.name, r.id "
+                  "FROM recordingprofiles r, profilegroups p "
+                  "WHERE p.name = 'Transcoders' "
+                  "AND r.profilegroup = p.id "
+                  "AND r.name != 'RTjpeg/MPEG4' "
+                  "AND r.name != 'MPEG2' ");
+
+    if (!query.exec())
+    {
+        MythDB::DBError(LOC + "unable to query transcoders", query);
+        return;
+    }
+
+    while (query.next())
+    {
+        QString transcoder_name = query.value(0).toString();
+        int transcoder_id = query.value(1).toInt();
+
+        // Translatable strings for known profiles
+        if (transcoder_name == "High Quality")
+            transcoder_name = tr("High Quality");
+        else if (transcoder_name == "Medium Quality")
+            transcoder_name = tr("Medium Quality");
+        else if (transcoder_name == "Low Quality")
+            transcoder_name = tr("Low Quality");
+
+        m_popupMenu->AddButton(transcoder_name,
+                               qVariantFromValue(transcoder_id));
+    }
+    m_popupMenu->SetReturnEvent(this, "transcode");
 }
 
-void PlaybackBox::changeProfileAndTranscode(const QString &profile)
+void PlaybackBox::changeProfileAndTranscode(int id)
 {
-   ProgramInfo *pginfo = CurrentItem();
+    ProgramInfo *pginfo = CurrentItem();
 
     if (!pginfo)
         return;
 
-    const RecordingInfo ri(*pginfo);
-    ri.ApplyTranscoderProfileChange(profile);
+    if (id >= 0)
+    {
+        RecordingInfo ri(*pginfo);
+        ri.ApplyTranscoderProfileChangeById(id);
+    }
     doBeginTranscoding();
 }
 
@@ -2839,7 +2966,7 @@ void PlaybackBox::ShowActionPopup(const ProgramInfo &pginfo)
 {
     QString label =
         (asFileNotFound == pginfo.GetAvailableStatus()) ?
-        tr("Recording file can not be found") :
+        tr("Recording file cannot be found") :
         (asZeroByte     == pginfo.GetAvailableStatus()) ?
         tr("Recording file contains no data") :
         tr("Recording Options");
@@ -3620,7 +3747,19 @@ bool PlaybackBox::keyPressEvent(QKeyEvent *event)
 
 void PlaybackBox::customEvent(QEvent *event)
 {
-    if ((MythEvent::Type)(event->type()) == MythEvent::MythEventMessage)
+    if (event->type() == DialogCompletionEvent::kEventType)
+    {
+        DialogCompletionEvent *dce = dynamic_cast<DialogCompletionEvent*>(event);
+
+        if (!dce)
+            return;
+
+        QString resultid = dce->GetId();
+
+        if (resultid == "transcode" && dce->GetResult() >= 0)
+            changeProfileAndTranscode(dce->GetData().toInt());
+    }
+    else if ((MythEvent::Type)(event->type()) == MythEvent::MythEventMessage)
     {
         MythEvent *me = (MythEvent *)event;
         QString message = me->Message();
@@ -3793,9 +3932,19 @@ void PlaybackBox::customEvent(QEvent *event)
             // asPendingDelete, we need to put them back now..
             ScheduleUpdateUIList();
         }
-        else if (message == "PREVIEW_READY" && me->ExtraDataCount() == 2)
+        else if (message == "PREVIEW_SUCCESS")
         {
-            HandlePreviewEvent(me->ExtraData(0), me->ExtraData(1));
+            HandlePreviewEvent(me->ExtraDataList());
+        }
+        else if (message == "PREVIEW_FAILED" && me->ExtraDataCount() >= 5)
+        {
+            for (uint i = 4; i < (uint) me->ExtraDataCount(); i++)
+            {
+                QString token = me->ExtraData(i);
+                QSet<QString>::iterator it = m_preview_tokens.find(token);
+                if (it != m_preview_tokens.end())
+                    m_preview_tokens.erase(it);
+            }
         }
         else if (message == "AVAILABILITY" && me->ExtraDataCount() == 8)
         {
@@ -4013,7 +4162,7 @@ void PlaybackBox::HandleUpdateProgramInfoEvent(const ProgramInfo &evinfo)
     {
         ProgramInfo *dst = FindProgramInUILists(evinfo);
         if (dst)
-            UpdateUIListItem(dst, false);
+            UpdateUIListItem(dst, true);
         return;
     }
 
@@ -4445,7 +4594,7 @@ void PlaybackBox::saveRecMetadata(const QString &newTitle,
         item->SetText(newTitle, "title");
         item->SetText(newSubtitle, "subtitle");
 
-        UpdateUIListItem(item, true);
+        UpdateUIListItem(item, true); // Why?
     }
 
     RecordingInfo ri(*pginfo);

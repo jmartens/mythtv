@@ -17,8 +17,10 @@ from connections import DBConnection, LoggedCursor, XMLConnection
 from socket import gethostname
 from uuid import uuid4
 from lxml import etree
-import os
+import datetime as _pydt
+import time as _pyt
 import weakref
+import os
 
 
 class DBData( DictData, MythSchema ):
@@ -52,6 +54,7 @@ class DBData( DictData, MythSchema ):
             Raw list as returned by 'select * from mytable'
     """
     _field_type = 'Pass'
+    _field_order = []
     _logmodule = None
 
     _table = None
@@ -63,26 +66,35 @@ class DBData( DictData, MythSchema ):
     @classmethod
     def _setClassDefs(cls, db=None):
         db = DBCache(db)
+        log = MythLog('DBData Setup (%s)' % cls.__name__)
         if cls._table is None:
             cls._table = cls.__name__.lower()
+            log(log.DATABASE|log.EXTRA,
+                'set _table to %s' % cls._table)
         if cls._logmodule is None:
             cls._logmodule = 'Python %s' % cls.__name__
-        if cls._field_order is None:
+            log(log.DATABASE|log.EXTRA,
+                'set _logmodule to %s' % cls._logmodule)
+        if cls._field_order == []:
             cls._field_order = db.tablefields[cls._table]
-
 
         if (cls._setwheredat is None) or (cls._where is None):
             if cls._key is None:
-                log = MythLog(cls._logmodule)
                 with db.cursor(log) as cursor:
                     cursor.execute("""SHOW KEYS FROM %s
                                       WHERE Key_name='PRIMARY'""" \
                                             % cls._table)
                     cls._key = [k[4] for k in sorted(cursor.fetchall(),
                                                      key=lambda x: x[3])]
+                log(log.DATABASE|log.EXTRA,
+                    'set _key to %s' % str(cls._key))
             gen = lambda j,s,l: j.join([s % k for k in l])
             cls._where = gen(' AND ', '%s=%%s', cls._key)
             cls._setwheredat = gen('', 'self.%s,', cls._key)
+            log(log.DATABASE|log.EXTRA,
+                'set _where to %s' % cls._where)
+            log(log.DATABASE|log.EXTRA,
+                'set _setwheredat to %s' % cls._setwheredat)
 
     @classmethod
     def getAllEntries(cls, db=None):
@@ -119,38 +131,20 @@ class DBData( DictData, MythSchema ):
         pass
 
     def _setDefs(self):
-        cls = self.__class__
-        if self._table is None:
-            cls._table = cls.__name__.lower()
-        if self._logmodule is None:
-            cls._logmodule = 'Python %s' % cls.__name__
-        if self._field_order == []:
-            cls._field_order = self._db.tablefields[self._table]
-
+        self.__class__._setClassDefs(self._db)
         self._log = MythLog(self._logmodule)
-
-        if (self._setwheredat is None) or (self._where is None):
-            if self._key is None:
-                with self._db.cursor(self._log) as cursor:
-                    cursor.execute("""SHOW KEYS FROM %s
-                                      WHERE Key_name='PRIMARY'""" \
-                                            % self._table)
-                    self._key = [k[4] for k in sorted(cursor.fetchall(),
-                                                     key=lambda x: x[3])]
-            gen = lambda j,s,l: j.join([s % k for k in l])
-            self._where = gen(' AND ', '%s=%%s', self._key)
-            self._setwheredat = gen('', 'self.%s,', self._key)
-
         self._fillNone()
 
     def __init__(self, data, db=None):
         dict.__init__(self)
-        if self._field_order is None:
-            self.__class__._field_order = []
         self._db = DBCache(db)
-        self._db._check_schema(self._schema_value,
-                                self._schema_local, self._schema_name)
+        self._db._check_schema(self._schema_value, self._schema_local,
+                                self._schema_name, self._schema_update)
         self._setDefs()
+
+        if self._key is not None:
+            if len(self._key) == 1:
+                data = (data,)
 
         if data is None: pass
         elif None in data: pass
@@ -202,8 +196,8 @@ class DBData( DictData, MythSchema ):
     def __setstate__(self, state):
         self._field_order = []
         self._db = DBCache(**state['db'])
-        self._db._check_schema(self._schema_value,
-                                self._schema_local, self._schema_name)
+        self._db._check_schema(self._schema_value, self._schema_local,
+                               self._schema_name, self._schema_update)
         self._setDefs()
         DictData.__setstate__(self, state['data'])
         if state['wheredat'] is not None:
@@ -253,11 +247,9 @@ class DBDataWrite( DBData ):
                 if 'auto_increment' in \
                         db.tablefields[cls._table][cls._key[0]].extra:
                     cls.create = cls._create_autoincrement
-                    cls.__init__ = cls._init_autoincrement
                     cls._defaults[cls._key[0]] = None
                     return
         cls.create = cls._create_normal
-        cls.__init__ = cls._init_normal
 
     def _sanitize(self, data, fill=True):
         """Remove fields from dictionary that are not in database table."""
@@ -286,11 +278,8 @@ class DBDataWrite( DBData ):
         DBData._evalwheredat(self, wheredat)
         self._origdata = dict.copy(self)
 
-    def _init_normal(self, data=None, db=None):
+    def __init__(self, data=None, db=None):
         DBData.__init__(self, data, db)
-
-    def _init_autoincrement(self, id=None, db=None):
-        DBData.__init__(self, (id,), db)
 
     def _import(self, data=None):
         if data is not None:
@@ -331,6 +320,7 @@ class DBDataWrite( DBData ):
         self._create(data)
         self._evalwheredat()
         self._pull()
+        self._postinit()
         return self
 
     def _create_autoincrement(self, data=None):
@@ -343,6 +333,7 @@ class DBDataWrite( DBData ):
         intid = self._create(data)
         self._evalwheredat([intid])
         self._pull()
+        self._postinit()
         return self
 
     def _pull(self):
@@ -896,12 +887,12 @@ class DBCache( MythSchema ):
         self.settings = None
         if db is not None:
             # load existing database connection
-            self.log(MythLog.DATABASE, "Loading existing connection",
-                                    str(db.dbconn))
+            self.log(MythLog.DATABASE|MythLog.EXTRA,
+                            "Loading existing connection", db.ident)
             dbconn.update(db.dbconn)
         if args is not None:
             # load user defined arguments (takes dict, or key/value tuple)
-            self.log(MythLog.DATABASE, "Loading user settings", str(args))
+            self.log(MythLog.DATABASE, "Loading user settings")
             dbconn.update(args)
         if 'SecurityPin' not in dbconn:
             dbconn['SecurityPin'] = 0
@@ -925,7 +916,7 @@ class DBCache( MythSchema ):
                 dbconn.update(self._readXML(conffile))
 
                 if self._check_dbconn(dbconn):
-                    self.log(MythLog.IMPORTANT|MythLog.DATABASE,
+                    self.log(MythLog.DATABASE,
                            "Using connection settings from %s" % conffile)
                     break
             else:
@@ -1032,7 +1023,7 @@ class DBCache( MythSchema ):
                 return False
         return True
 
-    def _check_schema(self, value, local, name='Database'):
+    def _check_schema(self, value, local, name='Database', update=None):
         if self.settings is None:
             with self.cursor(self.log) as cursor:
                 if cursor.execute("""SELECT data
@@ -1046,11 +1037,14 @@ class DBCache( MythSchema ):
             sver = int(self.settings['NULL'][value])
 
         if local != sver:
-            self.log(MythLog.DATABASE|MythLog.IMPORTANT,
+            if update is None:
+                self.log(MythLog.DATABASE|MythLog.IMPORTANT,
                     "%s schema mismatch: we speak %d but database speaks %s" \
                     % (name, local, sver))
-            self.db = None
-            raise MythDBError(MythError.DB_SCHEMAMISMATCH, value, sver, local)
+                self.db = None
+                raise MythDBError(MythError.DB_SCHEMAMISMATCH, value, sver, local)
+            else:
+                update(self).run()
 
     def gethostname(self):
         return self.dbconn['LocalHostName']
@@ -1080,6 +1074,40 @@ class DBCache( MythSchema ):
 
             for row in cursor:
                 yield StorageGroup.fromRaw(row, self)
+
+    def literal(self, query, args=None):
+        """
+        obj.literal(query, args=None) -> processed query
+        """
+        conv = {int: str,
+                str: lambda x: '"%s"'%x,
+                long: str,
+                float: str,
+                unicode: lambda x: '"%s"'%x,
+                bool: str,
+                type(None): lambda x: 'NULL',
+                _pydt.datetime: lambda x: x.strftime('"%Y-%m-%d %H:%M:%S"'),
+                _pydt.date: lambda x: x.strftime('"%Y-%m-%d"'),
+                _pydt.time: lambda x: x.strftime('"%H:%M:%S"'),
+                _pydt.timedelta: lambda x: '"%d:%02d:%02d"' % \
+                                                (x.seconds/3600+x.days*24,
+                                                 x.seconds%3600/60,
+                                                 x.seconds%60),
+                _pyt.struct_time: lambda x: _pyt.\
+                                        strftime('"%Y-%m-%d %H:%M:%S"',x)}
+        
+        if args is None:
+            return query
+        args = list(args)
+        for i, arg in enumerate(args):
+            for k,v in conv.items():
+                if isinstance(arg, k):
+                    args[i] = v(arg)
+                    break
+            else:
+                args[i] = str(arg)
+
+        return query % tuple(args)
 
     def cursor(self, log=None):
         if not log:

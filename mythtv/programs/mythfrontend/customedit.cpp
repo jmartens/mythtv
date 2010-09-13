@@ -717,7 +717,7 @@ bool CustomEdit::checkSyntax(void)
     }
     else if (desc.contains(';'))
     {
-        msg  = tr("Power Search rules can not include semicolon ( ; ) ");
+        msg  = tr("Power Search rules cannot include semicolon ( ; ) ");
         msg += tr("statement terminators.");
     }
     else
@@ -840,15 +840,16 @@ void CustomEdit::customEvent(QEvent *event)
 
         if (resultid == "storeruledialog")
         {
-             if (resulttext.startsWith(tr("Delete")))
-             {
-                 deleteRule();
-             }
-             else if (!resulttext.isEmpty())
-             {
-                 storeRule(resulttext.contains(tr("as a search")),
-                           !resulttext.startsWith(tr("Replace")));
-             }
+            if (resulttext.startsWith(tr("Delete")))
+            {
+                deleteRule();
+            }
+            else if (!resulttext.isEmpty())
+            {
+                storeRule(resulttext.contains(tr("as a search")),
+                        !resulttext.startsWith(tr("Replace")));
+                loadData();
+            }
         }
     }
 }

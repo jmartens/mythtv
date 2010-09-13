@@ -468,6 +468,10 @@ MythMainWindow::MythMainWindow(const bool useDB)
     d->repaintRegion = QRegion(QRect(0,0,0,0));
 
     d->m_drawEnabled = true;
+
+    connect(this, SIGNAL(signalRemoteScreenShot(QString,int,int)),
+            this, SLOT(doRemoteScreenShot(QString,int,int)),
+            Qt::BlockingQueuedConnection);
 }
 
 MythMainWindow::~MythMainWindow()
@@ -791,6 +795,19 @@ bool MythMainWindow::screenShot(QString fname, int w, int h)
     return false;
 }
 
+void MythMainWindow::remoteScreenShot(QString fname, int w, int h)
+{
+    // This will be running from the MythFEXML handler, primarily
+    // Since QPixmap must be running in the GUI thread, we need to cross
+    // threads here.
+    emit signalRemoteScreenShot(fname, w, h);
+}
+
+void MythMainWindow::doRemoteScreenShot(QString fname, int w, int h)
+{
+    // This will be running in the GUI thread
+    screenShot(fname, w, h);
+}
 
 bool MythMainWindow::screenShot(void)
 {
@@ -1961,11 +1978,6 @@ void MythMainWindow::customEvent(QEvent *ce)
                 QCoreApplication::sendEvent(key_target, &key);
         }
     }
-    else if (ce->type() == LircMuteEvent::kEventType)
-    {
-        LircMuteEvent *lme = static_cast<LircMuteEvent *>(ce);
-        d->ignore_lirc_keys = lme->eventsMuted();
-    }
 #endif
 #ifdef USE_JOYSTICK_MENU
     else if (ce->type() == JoystickKeycodeEvent::kEventType &&
@@ -2007,11 +2019,6 @@ void MythMainWindow::customEvent(QEvent *ce)
                             "mappings.")
                     .arg(jke->getJoystickMenuText().toLocal8Bit().constData()));
         }
-    }
-    else if (ce->type() == JoystickMenuMuteEvent::kEventType)
-    {
-        JoystickMenuMuteEvent *jme = static_cast<JoystickMenuMuteEvent *>(ce);
-        d->ignore_joystick_keys = jme->eventsMuted();
     }
 #endif
     else if (ce->type() == ScreenSaverEvent::kEventType)
@@ -2057,6 +2064,14 @@ void MythMainWindow::customEvent(QEvent *ce)
     else if (ce->type() == MythEvent::kEnableDrawingEventType)
     {
         SetDrawEnabled(true);
+    }
+    else if (ce->type() == MythEvent::kLockInputDevicesEventType)
+    {
+        LockInputDevices(true);
+    }
+    else if (ce->type() == MythEvent::kUnlockInputDevicesEventType)
+    {
+        LockInputDevices(false);
     }
     else if ((MythEvent::Type)(ce->type()) == MythEvent::MythEventMessage)
     {
@@ -2219,6 +2234,22 @@ void MythMainWindow::StartLIRC(void)
         d->lircThread->deleteLater();
         d->lircThread = NULL;
     }
+#endif
+}
+
+void MythMainWindow::LockInputDevices( bool locked )
+{
+    if( locked )
+        VERBOSE(VB_IMPORTANT, "Locking input devices");
+    else
+        VERBOSE(VB_IMPORTANT, "Unlocking input devices");
+
+#ifdef USE_LIRC
+    d->ignore_lirc_keys = locked;
+#endif
+
+#ifdef USE_JOYSTICK_MENU
+    d->ignore_joystick_keys = locked;
 #endif
 }
 

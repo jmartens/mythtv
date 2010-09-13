@@ -23,8 +23,9 @@ class QSize;
 typedef enum ImageCacheMode
 {
     kCacheNormal          = 0x0,
-    kCacheIgnoreDisk,
-    kCacheCheckMemoryOnly
+    kCacheIgnoreDisk      = 0x1,
+    kCacheCheckMemoryOnly = 0x2,
+    kCacheForceStat       = 0x4,
 } ImageCacheMode;
 
 struct MPUBLIC MythUIMenuCallbacks
@@ -93,9 +94,6 @@ class MPUBLIC MythUIHelper
     QString GetMenuThemeDir(void);
 
     bool FindThemeFile(QString &filename);
-
-    QString GetLanguage(void);
-    QString GetLanguageAndVariant(void);
 
     QFont GetBigFont(void);
     QFont GetMediumFont(void);

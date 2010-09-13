@@ -86,7 +86,7 @@ class DesiredServices : public ComboBoxSetting, public TransientStorage
                         "TV - Adds A/V services only, "
                         "TV+Radio - Adds all services with audio, "
                         "All - Adds all services "
-                        "(including data only serices)."));
+                        "(including data only services)."));
         addSelection(QObject::tr("TV"),       "tv", true);
         addSelection(QObject::tr("TV+Radio"), "audio");
         addSelection(QObject::tr("All"),      "all");
@@ -112,7 +112,7 @@ class FreeToAirOnly : public CheckBoxSetting, public TransientStorage
     FreeToAirOnly() : CheckBoxSetting(this)
     {
         setValue(true);
-        setLabel(QObject::tr("Only Free"));
+        setLabel(QObject::tr("Unencrypted Only"));
         setHelpText(
             QObject::tr(
                 "If set, only non-encrypted channels will be "

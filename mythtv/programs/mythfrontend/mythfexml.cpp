@@ -13,6 +13,7 @@
 
 #include "mythmainwindow.h"
 
+#include <QCoreApplication>
 #include <QTextStream>
 #include <QDir>
 #include <QFile>
@@ -111,19 +112,29 @@ void MythFEXML::GetScreenShot( HTTPRequest *pRequest )
 
     // Optional Parameters
 
-    int     nWidth    = pRequest->m_mapParams[ "Width"     ].toInt();
-    int     nHeight   = pRequest->m_mapParams[ "Height"    ].toInt();
+    int     nWidth    = pRequest->m_mapParams[ "width"     ].toInt();
+    int     nHeight   = pRequest->m_mapParams[ "height"    ].toInt();
+    QString sFormat   = pRequest->m_mapParams[ "format"    ].toLower();
 
-    // Read Icon file path from database
-
-    QString sFileName = QString("/%1/myth-screenshot-XML.jpg")
-                    .arg(gCoreContext->GetSetting("ScreenShotPath","/tmp/"));
-
-    if (!GetMythMainWindow()->screenShot(sFileName,nWidth, nHeight))
+    if (sFormat == "")
     {
-        VERBOSE(VB_GENERAL, "MythFEXML: Failed to take screenshot. Aborting");
+        sFormat = "png";
+    }
+
+    if (sFormat != "jpg" && sFormat != "png" && sFormat != "gif") {
+        VERBOSE(VB_GENERAL, QString("Invalid screen shot format: %1") 
+            .arg(sFormat));
         return;
     }
+   
+    VERBOSE(VB_GENERAL, QString("Screen shot requested - %1") .arg(sFormat));
+
+    QString sFileName = QString("/%1/myth-screenshot-XML.%2")
+                    .arg(gCoreContext->GetSetting("ScreenShotPath","/tmp/"))
+                    .arg(sFormat);
+
+    MythMainWindow *window = GetMythMainWindow();
+    emit window->remoteScreenShot(sFileName, nWidth, nHeight);
 
     pRequest->m_sFileName = sFileName;
 }

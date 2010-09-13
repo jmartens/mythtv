@@ -195,16 +195,19 @@
 
     <!-- Base definition of a progressbar -->
     <progressbar name="baseprogressbar">
-        <area>0,0,10,10</area>
+        <area>0,0,519,16</area>
         <layout>horizontal</layout>
         <style>reveal</style>
         <imagetype name="background">
+            <area>0,0,100%,100%</area>
             <filename>popups/progress_bar_background.png</filename>
         </imagetype>
         <imagetype name="progressimage">
+            <area>0,0,100%,100%</area>
             <filename>popups/progress_bar_fill.png</filename>
         </imagetype>
         <imagetype name="overlay">
+            <area>0,0,100%,100%</area>
             <filename>popups/progress_bar_overlay.png</filename>
         </imagetype>
     </progressbar>
@@ -627,7 +630,7 @@
 
         <button name="ok" from="basebutton">
             <position>653,360</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
     </window>
 
@@ -653,7 +656,7 @@
 
         <button name="ok" from="basebutton">
             <position>528,360</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
     </window>
 
@@ -827,7 +830,7 @@
 
         <button name="ok" from="basebutton">
             <position>573,495</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
 
         <imagetype name="preview">

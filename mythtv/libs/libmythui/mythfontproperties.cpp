@@ -271,17 +271,9 @@ MythFontProperties *MythFontProperties::ParseFromXml(
             {
                 newFont->m_outlineAlpha = getFirstText(info).toInt();
             }
-            else if (info.tagName() == "bold")
-            {
-                newFont->m_face.setBold(parseBool(info));
-            }
             else if (info.tagName() == "italics")
             {
                 newFont->m_face.setItalic(parseBool(info));
-            }
-            else if (info.tagName() == "underline")
-            {
-                newFont->m_face.setUnderline(parseBool(info));
             }
             else if (info.tagName() == "letterspacing")
             {

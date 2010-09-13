@@ -453,12 +453,23 @@ int main(int argc, char *argv[])
             cout << "--refresh-day <number>";
             cout << "   (Only valid for selected grabbers: e.g. DataDirect)\n";
             cout << "   Force a refresh today, two days, every day, or a specific day from now,\n";
-            cout << "   to catch the latest changes\n";
+            cout << "   to catch the latest changes.  --refresh-all will update every day except\n";
+            cout << "   the current day. To refresh today and all following days, XMLTV users\n";
+            cout << "   should combine --refresh-today and --refresh-all.  Schedules Direct/\n";
+            cout << "   DataDirect users should use --dd-grab-all.\n";
             cout << "--dont-refresh-tomorrow\n";
             cout << "   Tomorrow will always be refreshed unless this argument is used\n";
             cout << "--dont-refresh-tba\n";
             cout << "   \"To be announced\" programs will always be refreshed \n";
             cout << "   unless this argument is used\n";
+            cout << "\n";
+            cout << "--dd-grab-all\n";
+            cout << "   The DataDirect grabber will grab all available data\n";
+            cout << "   in a single pull. This will ensure you always have\n";
+            cout << "   the most up-to-date data, but requires significantly\n";
+            cout << "   more CPU and RAM. It is not expected to work on all\n";
+            cout << "   backend systems and with all lineups, and may\n";
+            cout << "   interfere with recording due to resource starvation.\n";
             cout << "\n";
             cout << "--export-icon-map [<filename>]\n";
             cout << "   Exports your current icon map to <filename> (default: "
@@ -481,15 +492,11 @@ int main(int argc, char *argv[])
             cout << "   Use '-v help' for level info\n";
             cout << "\n";
 
-#if 0
-            cout << "--dd-grab-all\n";
-            cout << "   The DataDirect grabber will grab all available data\n";
-#endif
             cout << "--help\n";
             cout << "   This text\n";
             cout << "\n";
             cout << "\n";
-            cout << "  --manual and --update can not be used together.\n";
+            cout << "  --manual and --update cannot be used together.\n";
             cout << "\n";
             return FILLDB_EXIT_INVALID_CMDLINE;
         }

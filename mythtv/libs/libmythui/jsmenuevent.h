@@ -32,30 +32,4 @@ class JoystickKeycodeEvent : public QEvent
     bool m_keydown;
 };
 
-class JoystickMenuMuteEvent : public QEvent
-{
-  public:
-    JoystickMenuMuteEvent(bool mute_events) :
-        QEvent(kEventType), m_muteJsmenuEvents(mute_events) {}
-
-    bool eventsMuted() const { return m_muteJsmenuEvents; }
-
-    static Type kEventType;
-
-  private:
-    bool m_muteJsmenuEvents;
-};
-
-class JoystickMenuEventLock
-{
-  public:
-    JoystickMenuEventLock(bool lock_events = true);
-    ~JoystickMenuEventLock();
-    void lock();
-    void unlock();
-
-  private:
-    bool m_eventsLocked;
-};
-
 #endif

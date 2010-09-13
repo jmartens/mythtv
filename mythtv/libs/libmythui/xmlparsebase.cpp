@@ -190,7 +190,7 @@ QBrush XMLParseBase::parseGradient(const QDomElement &element)
     QLinearGradient gradient;
     QString gradientStart = element.attribute("start", "");
     QString gradientEnd = element.attribute("end", "");
-    int gradientAlpha = element.attribute("alpha", "100").toInt();
+    int gradientAlpha = element.attribute("alpha", "255").toInt();
     QString direction = element.attribute("direction", "vertical");
 
     float x1, y1, x2, y2 = 0.0;
@@ -259,6 +259,30 @@ QBrush XMLParseBase::parseGradient(const QDomElement &element)
     gradient.setStops(stops);
 
     return QBrush(gradient);
+}
+
+QString XMLParseBase::parseText(QDomElement &element)
+{
+    QString text = getFirstText(element);
+
+    // Escape xml-escaped newline
+    text.replace("\\n", QString("<newline>"));
+
+    // Remove newline whitespace added by
+    // xml formatting
+    QStringList lines = text.split('\n');
+    QStringList::iterator lineIt;
+
+    for (lineIt = lines.begin(); lineIt != lines.end(); ++lineIt)
+    {
+        (*lineIt) = (*lineIt).trimmed();
+    }
+
+    text = lines.join(" ");
+
+    text.replace(QString("<newline>"), QString("\n"));
+
+    return text;
 }
 
 static MythUIType *globalObjectStore = NULL;
@@ -747,7 +771,7 @@ bool XMLParseBase::LoadBaseTheme(void)
                     QString("No theme file '%1'").arg(themefile));
         }
     }
-    
+
     return ok;
 }
 

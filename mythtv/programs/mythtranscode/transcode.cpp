@@ -82,7 +82,7 @@ class AudioReencodeBuffer : public AudioOutput
     }
 
     // timecode is in milliseconds.
-    virtual bool AddFrames(void *buffer, int frames, long long timecode)
+    virtual bool AddFrames(void *buffer, int frames, int64_t timecode)
     {
         int freebuf = bufsize - audiobuffer_len;
 
@@ -111,9 +111,13 @@ class AudioReencodeBuffer : public AudioOutput
         return true;
     }
 
-    virtual void SetTimecode(long long timecode)
+    virtual void SetTimecode(int64_t timecode)
     {
         last_audiotime = timecode;
+    }
+    virtual bool CanPassthrough(int) const
+    {
+        return false;
     }
     virtual bool IsPaused(void) const
     {
@@ -132,7 +136,7 @@ class AudioReencodeBuffer : public AudioOutput
         // Do nothing
     }
 
-    virtual int GetAudiotime(void)
+    virtual int64_t GetAudiotime(void)
     {
         return last_audiotime;
     }

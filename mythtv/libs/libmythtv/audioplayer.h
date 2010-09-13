@@ -1,6 +1,8 @@
 #ifndef AUDIOPLAYER_H
 #define AUDIOPLAYER_H
 
+#include <stdint.h>
+
 class MythPlayer;
 class AudioOutput;
 
@@ -37,11 +39,11 @@ class MPUBLIC AudioPlayer
     float GetStretchFactor(void) { return m_stretchfactor;   }
     void  SetStretchFactor(float factor);
     bool  ToggleUpmix(void);
-    bool  CanPassthrough(void);
+    bool  CanPassthrough(int samplerate);
     bool  CanAC3(void);
     bool  CanDTS(void);
     uint  GetMaxChannels(void);
-    long long GetAudioTime(void);
+    int64_t GetAudioTime(void);
 
     bool      IsMuted(void) { return GetMuteState() == kMuteAll; }
     bool      SetMuted(bool mute);
@@ -49,7 +51,7 @@ class MPUBLIC AudioPlayer
     MuteState SetMuteState(MuteState);
     MuteState IncrMuteState(void);
 
-    void AddAudioData(char *buffer, int len, long long timecode);
+    void AddAudioData(char *buffer, int len, int64_t timecode);
     bool GetBufferStatus(uint &fill, uint &total);
 
   private:

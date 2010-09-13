@@ -10,6 +10,13 @@
             <value>Watch Recordings</value>
         </textarea>
 
+        <clock name="clock">
+            <area>1050,10,250,30</area>
+            <font>basesmall_normal</font>
+            <align>vcenter,left</align>
+            <format>%DATE% %TIME%</format>
+        </clock>
+
         <imagetype name="listbackground">
             <filename>reclist_background.png</filename>
             <position>0,60</position>
@@ -288,11 +295,16 @@
         </textarea>
 
         <textarea name="channel" from="basetextarea">
-            <area>24,444,160,30</area>
+            <area>24,444,256,30</area>
         </textarea>
 
         <textarea name="timedate" from="basetextarea">
-            <area>194,444,480,30</area>
+            <area>364,444,480,30</area>
+        </textarea>
+
+        <textarea name="filesize_str" from="basetextarea">
+            <area>710,444,190,30</area>
+            <align>right</align>
         </textarea>
 
         <textarea name="description" from="basetextarea">
@@ -315,6 +327,7 @@
             <multiline>yes</multiline>
             <align>allcenter</align>
         </textarea>
+
     </window>
 
     <window name="deleterecordings">
@@ -603,7 +616,7 @@
         </textarea>
 
         <textarea name="channel" from="basetextarea">
-            <area>24,444,160,30</area>
+            <area>24,444,256,30</area>
         </textarea>
 
         <textarea name="timedate" from="basetextarea">
@@ -617,7 +630,7 @@
         </textarea>
 
         <textarea name="description" from="basetextarea">
-            <area>24,484,890,220</area>
+            <area>24,480,890,200</area>
             <multiline>yes</multiline>
             <cutdown>yes</cutdown>
             <template>%|"SUBTITLE|"% %STARS% %DESCRIPTION%</template>
@@ -652,7 +665,8 @@
 
         <textarea name="freereport">
             <area>24,666,526,34</area>
-            <font>baselarge</font>
+            <align>center</align>
+            <font>basemedium</font>
         </textarea>
 
     </window>

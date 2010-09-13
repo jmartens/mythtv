@@ -1,6 +1,8 @@
 #ifndef AVFORMATDECODER_H_
 #define AVFORMATDECODER_H_
 
+#include <stdint.h>
+
 #include <QString>
 #include <QMap>
 #include <QList>
@@ -131,12 +133,12 @@ class AvFormatDecoder : public DecoderBase
     long UpdateStoredFrameNum(long frame) { (void)frame; return 0;}
 
     QString      GetCodecDecoderName(void) const;
-    QString      GetEncodingType(void) const;
+    QString      GetRawEncodingType(void);
     MythCodecID  GetVideoCodecID(void) const { return video_codec_id; }
     void        *GetVideoCodecPrivate(void);
 
     virtual void SetDisablePassThrough(bool disable);
-    void AddTextData(unsigned char *buf, int len, long long timecode, char type);
+    void AddTextData(unsigned char *buf, int len, int64_t timecode, char type);
 
     virtual QString GetTrackDesc(uint type, uint trackNo) const;
     virtual int SetTrack(uint type, int trackNo);
@@ -280,7 +282,6 @@ class AvFormatDecoder : public DecoderBase
     bool pts_detected;
 
     bool using_null_videoout;
-    enum CodecID raw_codec_id;
     MythCodecID video_codec_id;
     bool no_hardware_decoders;
     bool allow_private_decoders;

@@ -3,8 +3,13 @@
 
 #include <QString>
 #include <QSize>
+#include <QMetaType>
+#include <QHash>
+#include <QFileInfo>
 
 #include "mythexp.h"
+
+#include "xmlparsebase.h" // for VERBOSE_XML && Xml Parsing helpers
 
 typedef enum {
     THEME_UNKN  = 0x00,
@@ -13,9 +18,7 @@ typedef enum {
     THEME_MENU  = 0x04
 } ThemeType;
 
-class QFileInfo;
-
-class MPUBLIC ThemeInfo
+class MPUBLIC ThemeInfo : public XMLParseBase
 {
   public:
     ThemeInfo(QString theme);
@@ -23,7 +26,7 @@ class MPUBLIC ThemeInfo
 
     bool IsWide() const;
     QString GetAspect() const { return m_aspect; }
-    QSize   *GetBaseRes() { return &m_baseres; }
+    const QSize   *GetBaseRes() const { return &m_baseres; }
     QString GetName() const { return m_name; }
     QString GetDescription() const { return m_description; }
     QString GetErrata() const { return m_errata; }
@@ -34,6 +37,11 @@ class MPUBLIC ThemeInfo
 
     QString GetDownloadURL() const { return m_downloadurl; }
     QString GetThemeWebSite() const { return m_themesite; }
+
+    QString GetLocalURL() const { return m_themeurl; }
+    QString GetDirectoryName() const { return m_theme->baseName(); }
+
+    void ToMap(QHash<QString, QString> &infoMap) const;
 
   private:
     bool parseThemeInfo();
@@ -50,8 +58,13 @@ class MPUBLIC ThemeInfo
     int       m_majorver;
     int       m_minorver;
 
+    QString   m_authorName;
+    QString   m_authorEmail;
+
     QString   m_downloadurl;  // URL to download theme package from
     QString   m_themesite;    // Theme's website
 };
+
+Q_DECLARE_METATYPE(ThemeInfo*)
 
 #endif

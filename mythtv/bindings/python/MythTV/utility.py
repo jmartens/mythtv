@@ -18,49 +18,45 @@ import re
 def _donothing(*args, **kwargs):
     pass
 
-class schemaUpdate( object ):
+class SchemaUpdate( object ):
     # TODO: do locking and lock checking
     #       if interactive terminal, ask for update permission
     #       perform database backup (partial?)
     """
-    Decorator class
-
-    Acquires name of database variable by calling function with input of '-1'.
-    Recursively calls decorated function with the current schema version.
-        Expects (updates, newver) in return, where:
-                updates -- tuple of (sql commands, values)
-                newver -- new schema revision
-        Stops when StopIteration is called.
+    Iteratively calls methods named 'up<schema version>' to update
+        schema. Methods must return an integer of the new schema
+        version.
     """
-    def __init__(self, func):
-        self.func = func
-        self.__doc__ = self.func.__doc__
-        self.__name__ = self.func.__name__
-        self.__module__ = self.func.__module__
+    _schema_name = None
+    def __init__(self, db):
+        self.db = db
+        self.log = MythLog('Schema Update (%s)' % self._schema_name)
 
-        self.schemavar = func(-1)
-
-    def __call__(self, db):
-        log = MythLog('Schema Update')
-
-        with db as cursor:
-          while True:
-            try:
-                updates, newver = self.func(db.settings.NULL[self.schemavar])
-            except StopIteration:
-                break
-
-            log(log.IMPORTANT, 'Updating %s from %s to %s' % \
-                        (schemaname, db.settings.NULL[self.schemavar], newver))
-
-            try:
-                for sql, values in updates:
-                    cursor.execute(sql, values)
-            except Exception, e:
-                log(log.IMPORTANT, 'Update of %s failed' % self.schemavar)
-                raise MythDBError(MythError.DB_SCHEMAUPDATE, e.args)
-
-            db.settings.NULL[self.schemavar] = newver
+    def run(self):
+        if self._schema_name is None:
+            raise MythDBError('Schema update failed, variable name not set')
+        origschema = int(self.db.settings.NULL[self._schema_name])
+        schema = origschema
+        try:
+            while True:
+                newschema = eval('self.up%d()' % schema)
+                self.log(MythLog.DATABASE,
+                         'successfully updated from %d to %d' %\
+                                (schema, newschema))
+                schema = newschema
+                self.db.settings.NULL[self._schema_name] = schema
+        except AttributeError, e:
+            self.log(MythLog.DATABASE|MythLog.IMPORTANT,
+                     'failed at %d' % schema, 'no handler method')
+            raise MythDBError('Schema update failed, ' 
+                    "SchemaUpdate has no function 'up%s'" % schema)
+        except StopIteration:
+            if schema != origschema:
+                self.log(MythLog.DATABASE,
+                         '%s update complete' % self._schema_name)
+            pass
+        except Exception, e:
+            raise MythDBError(MythError.DB_SCHEMAUPDATE, e.args)
 
 class databaseSearch( object ):
     # decorator class for database searches
@@ -131,6 +127,20 @@ class databaseSearch( object ):
         return self
 
     def __call__(self, **kwargs):
+        where,fields,joinbit = self.parseInp(kwargs)
+
+        # process query
+        query = self.buildQuery(where, joinbit=joinbit)
+        with self.inst.cursor(self.inst.log) as cursor:
+            if len(where) > 0:
+                cursor.execute(query, fields)
+            else:
+                cursor.execute(query)
+
+        for row in cursor:
+            yield self.dbclass.fromRaw(row, self.inst)
+
+    def parseInp(self, kwargs):
         where = []
         fields = []
         joinbit = 0
@@ -139,6 +149,7 @@ class databaseSearch( object ):
         for key, val in kwargs.items():
             if val is None:
                 continue
+
             # process custom query
             if key == 'custom':
                 custwhere = {}
@@ -147,22 +158,26 @@ class databaseSearch( object ):
                     where.append(k)
                     fields.append(v)
                 continue
+
             # let function process remaining queries
             res = self.func(self.inst, key=key, value=val)
             errstr = "%s got an unexpected keyword argument '%s'"
             if res is None:
                 if 'not' not in key:
                     raise TypeError(errstr % (self.__name__, key))
+                # try inverted argument
                 res = list(self.func(self.inst, key=key[3:], value=val))
                 if res is None:
                     raise TypeError(errstr % (self.__name__, key))
                 res[0] = 'NOT '+res[0]
 
             if len(res) == 3:
+                # normal processing
                 where.append(res[0])
                 fields.append(res[1])
                 joinbit = joinbit|res[2]
             elif len(res) == 4:
+                # special format for crossreferenced data
                 lval = val.split(',')
                 where.append('(%s)=%d' %\
                     (self.buildQuery(
@@ -185,16 +200,7 @@ class databaseSearch( object ):
                 fields.append(res[1])
                 joinbit = joinbit|res[2]
 
-        # process query
-        query = self.buildQuery(where, joinbit=joinbit)
-        with self.inst.cursor(self.inst.log) as cursor:
-            if len(where) > 0:
-                cursor.execute(query, fields)
-            else:
-                cursor.execute(query)
-
-        for row in cursor:
-            yield self.dbclass.fromRaw(row, self.inst)
+        return where,fields,joinbit
 
     def buildJoinOn(self, i):
         if len(self.joins[i]) == 3:
@@ -213,6 +219,15 @@ class databaseSearch( object ):
                                     self.joins[i][3])])
         return on
 
+    def buildJoin(self, joinbit):
+        join = ''
+        if joinbit:
+            for i,v in enumerate(self.joins):
+                if (2**i)&joinbit:
+                    join += ' JOIN %s ON %s' % \
+                            (v[0], self.buildJoinOn(i))
+        return join
+
     def buildQuery(self, where, select=None, tfrom=None, joinbit=0):
         sql = 'SELECT '
         if select:
@@ -228,11 +243,7 @@ class databaseSearch( object ):
         else:
             sql += self.table
 
-        if joinbit:
-            for i,v in enumerate(self.joins):
-                if (2**i)&joinbit:
-                    sql += ' JOIN %s ON %s' % \
-                            (v[0], self.buildJoinOn(i))
+        sql += self.buildJoin(joinbit)
 
         if len(where):
             sql += ' WHERE '

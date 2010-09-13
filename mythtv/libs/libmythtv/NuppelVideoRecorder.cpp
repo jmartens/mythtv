@@ -822,7 +822,7 @@ int NuppelVideoRecorder::AudioInit(bool skipdevice)
  *  \brief Determines MJPEG capture resolution.
  *
  *   This function requires an file descriptor for the device, which
- *   means Channel can not be open when NVR::Initialize() is called.
+ *   means Channel cannot be open when NVR::Initialize() is called.
  *   It is safe for the recorder to be open.
  *
  *  \return true on success
@@ -2652,7 +2652,7 @@ void NuppelVideoRecorder::FormatCC(struct cc *cc)
 }
 
 void NuppelVideoRecorder::AddTextData(unsigned char *buf, int len,
-                                      long long timecode, char /*type*/)
+                                      int64_t timecode, char /*type*/)
 {
     int act = act_text_buffer;
     if (!textbuffer[act]->freeToBuffer)
@@ -2952,7 +2952,7 @@ void NuppelVideoRecorder::doWriteThread(void)
                            audiobuffer[act_audio_encode]->sample,
                            audiobuffer[act_audio_encode]->timecode);
                 if (IsErrored()) {
-                    VERBOSE(VB_IMPORTANT, LOC_ERR + "ACTION_AUDIO can not be completed due to error.");
+                    VERBOSE(VB_IMPORTANT, LOC_ERR + "ACTION_AUDIO cannot be completed due to error.");
                     StopRecording();
                     break;
                 }

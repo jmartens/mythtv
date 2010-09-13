@@ -3,10 +3,10 @@
 // Created     : Mar. 19, 2007
 //
 // Purpose     : Myth XML protocol client
-//                                                                            
+//
 // Copyright (c) 2007 David Blain <mythtv@theblains.net>
-//                                          
-// This library is free software; you can redistribute it and/or 
+//
+// This library is free software; you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public
 // License as published by the Free Software Foundation; either
 // version 2.1 of the License, or at your option any later version of the LGPL.
@@ -23,8 +23,10 @@
 
 #include "mythxmlclient.h"
 
+#include <QObject>
+
 /////////////////////////////////////////////////////////////////////////////
-// 
+//
 /////////////////////////////////////////////////////////////////////////////
 
 MythXMLClient::MythXMLClient( const QUrl &url, bool bInQtThread )
@@ -39,12 +41,12 @@ MythXMLClient::MythXMLClient( const QUrl &url, bool bInQtThread )
 //
 /////////////////////////////////////////////////////////////////////////////
 
-MythXMLClient::~MythXMLClient() 
+MythXMLClient::~MythXMLClient()
 {
 }
 
 /////////////////////////////////////////////////////////////////////////////
-// 
+//
 /////////////////////////////////////////////////////////////////////////////
 
 UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabaseParams *pParams, QString &sMsg )
@@ -56,7 +58,7 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
     QString       sErrDesc;
     QStringMap    list;
 
-    sMsg = "";
+    sMsg.clear();
 
     list.insert( "Pin", sPin );
 
@@ -70,11 +72,11 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
 
         if ( !doc.setContent( sXml, false, &sErrDesc, &nErrCode ))
         {
-            sMsg = QString( "Error Requesting Connection Info : (%1) - %2" )
-                                 .arg( nErrCode )
-                                 .arg( sErrDesc );
+            sMsg = QObject::tr("Error Requesting Connection Info");
 
-            VERBOSE( VB_UPNP, sMsg );
+            VERBOSE( VB_UPNP, QString( "Error Requesting Connection Info : (%1) - %2" )
+                                 .arg( nErrCode )
+                                 .arg( sErrDesc ) );
 
             return UPnPResult_ActionFailed;
         }
@@ -89,26 +91,26 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
         {
             QDomNode dbNode = infoNode.namedItem( "Database" );
 
-            pParams->dbHostName     = GetNodeValue( dbNode, "Host"     , QString( "" ));
-            pParams->dbPort         = GetNodeValue( dbNode, "Port"     , 0            );
-            pParams->dbUserName     = GetNodeValue( dbNode, "UserName" , QString( "" ));
-            pParams->dbPassword     = GetNodeValue( dbNode, "Password" , QString( "" ));
-            pParams->dbName         = GetNodeValue( dbNode, "Name"     , QString( "" ));
-            pParams->dbType         = GetNodeValue( dbNode, "Type"     , QString( "" ));
+            pParams->dbHostName     = GetNodeValue( dbNode, "Host"     , QString( ));
+            pParams->dbPort         = GetNodeValue( dbNode, "Port"     , 0         );
+            pParams->dbUserName     = GetNodeValue( dbNode, "UserName" , QString( ));
+            pParams->dbPassword     = GetNodeValue( dbNode, "Password" , QString( ));
+            pParams->dbName         = GetNodeValue( dbNode, "Name"     , QString( ));
+            pParams->dbType         = GetNodeValue( dbNode, "Type"     , QString( ));
 
             QDomNode wolNode = infoNode.namedItem( "WOL" );
 
-            pParams->wolEnabled     = GetNodeValue( wolNode, "Enabled"  , false        );
-            pParams->wolReconnect   = GetNodeValue( wolNode, "Reconnect", 0            );
-            pParams->wolRetry       = GetNodeValue( wolNode, "Retry"    , 0            );
-            pParams->wolCommand     = GetNodeValue( wolNode, "Command"  , QString( "" ));
+            pParams->wolEnabled     = GetNodeValue( wolNode, "Enabled"  , false     );
+            pParams->wolReconnect   = GetNodeValue( wolNode, "Reconnect", 0         );
+            pParams->wolRetry       = GetNodeValue( wolNode, "Retry"    , 0         );
+            pParams->wolCommand     = GetNodeValue( wolNode, "Command"  , QString( ));
 
             return UPnPResult_Success;
         }
         else
         {
             if (sMsg.isEmpty())
-                sMsg = "Unexpected Response";
+                sMsg = QObject::tr("Unexpected Response");
 
             VERBOSE( VB_IMPORTANT, QString( "MythXMLClient::GetConnectionInfo Failed : Unexpected Response - %1" )
                                       .arg( sXml   ));
@@ -119,13 +121,13 @@ UPnPResultCode MythXMLClient::GetConnectionInfo( const QString &sPin, DatabasePa
         sMsg = sErrDesc;
 
         if (sMsg.isEmpty())
-            sMsg = "Access Denied";
+            sMsg = QObject::tr("Access Denied");
 
         VERBOSE( VB_IMPORTANT, QString( "MythXMLClient::GetConnectionInfo Failed - (%1) %2" )
                              .arg( nErrCode )
                              .arg( sErrDesc ));
     }
-    
+
     if (UPnPResult_HumanInterventionRequired == nErrCode
            || UPnPResult_ActionNotAuthorized == nErrCode)
         return (UPnPResultCode)nErrCode;

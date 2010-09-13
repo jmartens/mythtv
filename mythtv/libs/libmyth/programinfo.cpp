@@ -791,15 +791,19 @@ ProgramInfo::ProgramInfo(const QString &_title, uint _chanid,
     clear();
 
     MSqlQuery query(MSqlQuery::InitCon());
-    query.prepare("SELECT chanid, channum, callsign, name "
-                  "FROM channel "
-                  "WHERE chanid=:CHANID");
+    query.prepare(
+        "SELECT chanid, channum, callsign, name, outputfilters, commmethod "
+        "FROM channel "
+        "WHERE chanid=:CHANID");
     query.bindValue(":CHANID", _chanid);
     if (query.exec() && query.next())
     {
         chanstr  = query.value(1).toString();
         chansign = query.value(2).toString();
         channame = query.value(3).toString();
+        chanplaybackfilters = query.value(4).toString();
+        set_flag(programflags, FL_CHANCOMMFREE,
+                 query.value(5).toInt() == COMM_DETECT_COMMFREE);
     }
 
     chanid  = _chanid;
@@ -1361,6 +1365,7 @@ void ProgramInfo::ToMap(InfoMap &progMap,
 
     progMap["channum"] = chanstr;
     progMap["chanid"] = chanid;
+    progMap["channame"] = channame;
     progMap["channel"] = ChannelText(channelFormat);
     progMap["longchannel"] = ChannelText(longChannelFormat);
 
@@ -1974,9 +1979,7 @@ QString ProgramInfo::GetPlaybackURL(
 
     bool alwaysStream = gCoreContext->GetNumSetting("AlwaysStreamFiles", 0);
 
-    if ((!alwaysStream) ||
-        (forceCheckLocal) ||
-        (hostname == gCoreContext->GetHostName()))
+    if ((!alwaysStream) || (forceCheckLocal))
     {
         // Check to see if the file exists locally
         StorageGroup sgroup(storagegroup);
@@ -2680,12 +2683,14 @@ void ProgramInfo::QueryCutList(frm_dir_map_t &delMap) const
 {
     QueryMarkupMap(delMap, MARK_CUT_START);
     QueryMarkupMap(delMap, MARK_CUT_END, true);
+    QueryMarkupMap(delMap, MARK_PLACEHOLDER, true);
 }
 
 void ProgramInfo::SaveCutList(frm_dir_map_t &delMap) const
 {
     ClearMarkupMap(MARK_CUT_START);
     ClearMarkupMap(MARK_CUT_END);
+    ClearMarkupMap(MARK_PLACEHOLDER);
     SaveMarkupMap(delMap);
 
     if (IsRecording())
@@ -3370,6 +3375,7 @@ void ProgramInfo::SaveResolutionProperty(VideoProperty vid_flags)
     query.bindValue(":FLAGS",      vid_flags);
     query.bindValue(":CHANID",     chanid);
     query.bindValue(":STARTTIME",  recstartts);
+    query.exec();
 
     uint videoproperties = GetVideoProperties();
     videoproperties &= (uint16_t) ~(VID_1080|VID_720);
@@ -3487,6 +3493,11 @@ uint ProgramInfo::QueryTranscoderID(void) const
     return 0;
 }
 
+/**
+ *
+ *  \note This method sometimes initiates a QUERY_CHECKFILE MythProto
+ *        call and so should not be called from the UI thread.
+ */
 QString ProgramInfo::DiscoverRecordingDirectory(void) const
 {
     if (!IsLocal())
@@ -3537,8 +3548,12 @@ QString ProgramInfo::DiscoverRecordingDirectory(void) const
 }
 
 #include <cassert>
-/// Tracks a recording's in use status, to prevent deletion and to
-/// allow the storage scheduler to perform IO load balancing.
+/** Tracks a recording's in use status, to prevent deletion and to
+ *  allow the storage scheduler to perform IO load balancing.
+ *
+ *  \note This method sometimes initiates a QUERY_CHECKFILE MythProto
+ *        call and so should not be called from the UI thread.
+ */
 void ProgramInfo::MarkAsInUse(bool inuse, QString usedFor)
 {
     if (!IsRecording())
@@ -3849,6 +3864,8 @@ QString ProgramInfo::i18n(const QString &msg)
 /** \fn ProgramInfo::SubstituteMatches(QString &str)
  *  \brief Subsitute %MATCH% type variable names in the given string
  *  \param str QString to substitute matches in
+ *  \note This method sometimes initiates a QUERY_CHECKFILE MythProto
+ *        call and so should not be called from the UI thread.
  */
 void ProgramInfo::SubstituteMatches(QString &str)
 {

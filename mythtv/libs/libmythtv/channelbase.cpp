@@ -588,6 +588,9 @@ bool ChannelBase::IsInputAvailable(int inputid, uint &mplexid_restriction) const
     if (inputid < 0)
         return false;
 
+    if (!m_pParent)
+        return false;
+
     // Check each input to make sure it doesn't belong to an
     // input group which is attached to a busy recorder.
     QMap<uint,bool>           busygrp;
@@ -724,16 +727,15 @@ bool ChannelBase::ChangeExternalChannel(const QString &channum)
 
     QString command = QString("%1 %2").arg(changer).arg(channum);
 
-    int  flags = 0;
-    bool ready_to_lock;
+    uint  flags = kMSNone;
     uint result;
 
     // Use myth_system, but since we need abort support, do it in pieces
-    myth_system_pre_flags(flags, ready_to_lock);
+    myth_system_pre_flags(flags);
     m_changer_pid = myth_system_fork(command, result); 
     if( result == GENERIC_EXIT_RUNNING )
         result = myth_system_wait(m_changer_pid, 30);
-    myth_system_post_flags(flags, ready_to_lock);
+    myth_system_post_flags(flags);
 
     return( result == 0 );
 #endif // !USING_MINGW

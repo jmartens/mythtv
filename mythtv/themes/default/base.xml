@@ -834,7 +834,7 @@
 
         <button name="ok" from="basebutton">
             <position>338,110</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
     </window>
 
@@ -856,7 +856,7 @@
 
         <button name="ok" from="basebutton">
             <position>109,110</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
     </window>
 
@@ -905,7 +905,7 @@
 
         <button name="ok" from="basebutton">
             <position>315,435</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
 
     </window>
@@ -927,7 +927,7 @@
             <statetype name="buttonitem">
                 <state name="active">
                     <area>0,0,165,105</area>
-                    <imagetype name="buttonbackground" />
+                    <shape name="buttonbackground" />
                     <statetype name="nodetype">
                         <state name="folder">
                             <imagetype name="icon">
@@ -1000,7 +1000,7 @@
 
         <button name="ok" from="basebutton">
             <position>530,440</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
 
     </window>

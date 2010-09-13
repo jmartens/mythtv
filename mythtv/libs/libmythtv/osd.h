@@ -71,12 +71,11 @@ class ChannelEditor : public MythScreenType
     Q_OBJECT
 
   public:
-    ChannelEditor(const char * name);
+    ChannelEditor(QObject *retobject, const char * name);
 
     virtual bool Create(void);
     virtual bool keyPressEvent(QKeyEvent *event);
 
-    void SetReturnEvent(QObject *retobject, const QString &resultid);
     void SetText(QHash<QString,QString>&map);
     void GetText(QHash<QString,QString>&map);
 
@@ -88,7 +87,7 @@ class ChannelEditor : public MythScreenType
 
     QObject *m_retObject;
 
-    void sendResult(int result, bool confirm);
+    void sendResult(int result);
 
   public slots:
     void Confirm();
@@ -135,7 +134,7 @@ class OSD
     void    SetTimeouts(int _short, int _medium, int _long);
 
     bool    IsVisible(void);
-    void    HideAll(bool keepsubs = true);
+    void    HideAll(bool keepsubs = true, MythScreenType *except = NULL);
 
     MythScreenType *GetWindow(const QString &window);
     void    SetExpiry(const QString &window, enum OSDTimeout timeout,

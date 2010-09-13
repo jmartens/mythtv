@@ -15,8 +15,9 @@
 #include "globals.h"
 #include "dbaccess.h"
 #include "dirscan.h"
-#include "metadatalistmanager.h"
+#include "videometadatalistmanager.h"
 #include "videoscan.h"
+#include "videoutils.h"
 
 namespace
 {
@@ -65,7 +66,7 @@ namespace
     };
 }
 
-class MetadataListManager;
+class VideoMetadataListManager;
 class MythUIProgressDialog;
 
 class VideoScannerThread : public QThread
@@ -75,9 +76,9 @@ class VideoScannerThread : public QThread
     VideoScannerThread() : m_RemoveAll(false), m_KeepAll(false),
         m_DBDataChanged(false)
     {
-        m_dbmetadata = new MetadataListManager;
-        MetadataListManager::metadata_list ml;
-        MetadataListManager::loadAllFromDatabase(ml);
+        m_dbmetadata = new VideoMetadataListManager;
+        VideoMetadataListManager::metadata_list ml;
+        VideoMetadataListManager::loadAllFromDatabase(ml);
         m_dbmetadata->setList(ml);
 
         m_ListUnknown = gCoreContext->GetNumSetting("VideoListUnknownFiletypes", 0);
@@ -160,44 +161,13 @@ class VideoScannerThread : public QThread
     typedef std::vector<std::pair<unsigned int, QString> > PurgeList;
     typedef std::map<QString, CheckStruct> FileCheckList;
 
-    void promptForRemoval(unsigned int id, const QString &filename)
+    void removeOrphans(unsigned int id, const QString &filename)
     {
         (void) filename;
 
         // TODO: use single DB connection for all calls
         if (m_RemoveAll)
             m_dbmetadata->purgeByID(id);
-
-    //     QStringList buttonText;
-    //     buttonText += QObject::tr("No");
-    //     buttonText += QObject::tr("No to all");
-    //     buttonText += QObject::tr("Yes");
-    //     buttonText += QObject::tr("Yes to all");
-    //
-    //     DialogCode result = MythPopupBox::ShowButtonPopup(
-    //         GetMythMainWindow(),
-    //         QObject::tr("File Missing"),
-    //         QObject::tr("%1 appears to be missing.\n"
-    //                     "Remove it from the database?").arg(filename),
-    //         buttonText, kDialogCodeButton0);
-    //
-    //     switch (result)
-    //     {
-    //         case kDialogCodeRejected:
-    //         case kDialogCodeButton0:
-    //         default:
-    //             break;
-    //         case kDialogCodeButton1:
-    //             m_KeepAll = true;
-    //             break;
-    //         case kDialogCodeButton2:
-    //             m_dbmetadata->purgeByID(id);
-    //             break;
-    //         case kDialogCodeButton3:
-    //             m_RemoveAll = true;
-    //             m_dbmetadata->purgeByID(id);
-    //             break;
-    //     };
 
         if (!m_KeepAll && !m_RemoveAll)
         {
@@ -215,7 +185,7 @@ class VideoScannerThread : public QThread
                           tr("Verifying video files"));
 
         // For every file we know about, check to see if it still exists.
-        for (MetadataListManager::metadata_list::const_iterator p =
+        for (VideoMetadataListManager::metadata_list::const_iterator p =
              m_dbmetadata->getList().begin();
              p != m_dbmetadata->getList().end(); ++p)
         {
@@ -232,8 +202,8 @@ class VideoScannerThread : public QThread
                 }
                 else
                 {
-                    // If it's only in the database mark it as such for removal
-                    // later and NOT a remote backend.
+                    // If it's only in the database, and not on a host we cannot reach,
+                    //  mark it as for removal later.
                     if (lhost == "")
                     {
                         remove.push_back(std::make_pair((*p)->GetID(), lname));
@@ -301,7 +271,7 @@ class VideoScannerThread : public QThread
                                      VIDEO_YEAR_DEFAULT,
                                      QDate::fromString("0000-00-00","YYYY-MM-DD"), 
                                      VIDEO_INETREF_DEFAULT, QString(),
-                                     VIDEO_DIRECTOR_DEFAULT, VIDEO_PLOT_DEFAULT,
+                                     VIDEO_DIRECTOR_DEFAULT, QString(), VIDEO_PLOT_DEFAULT,
                                      0.0, VIDEO_RATING_DEFAULT, 0,
                                      VideoMetadata::FilenameToMeta(p->first, 2).toInt(), 
                                      VideoMetadata::FilenameToMeta(p->first, 3).toInt(), 
@@ -325,7 +295,7 @@ class VideoScannerThread : public QThread
                 ++p)
         {
             if (!preservelist.contains(p->first))
-                promptForRemoval(p->first, p->second);
+                removeOrphans(p->first, p->second);
             SendProgressEvent(++counter);
         }
 
@@ -362,7 +332,7 @@ class VideoScannerThread : public QThread
     QStringList m_directories;
     QStringList failedSGHosts;
 
-    MetadataListManager *m_dbmetadata;
+    VideoMetadataListManager *m_dbmetadata;
     MythUIProgressDialog *m_dialog;
 
     bool m_DBDataChanged;
@@ -406,6 +376,11 @@ void VideoScanner::doScan(const QStringList &dirs)
     m_scanThread->SetDirs(dirs);
     m_scanThread->SetProgressDialog(progressDlg);
     m_scanThread->start();
+}
+
+void VideoScanner::doScanAll()
+{
+    doScan(GetVideoDirs());
 }
 
 void VideoScanner::finishedScan()

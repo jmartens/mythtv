@@ -18,7 +18,7 @@ SubtitleScreen::SubtitleScreen(MythPlayer *player, const char * name) :
     m_player(player),  m_subreader(NULL),   m_608reader(NULL),
     m_708reader(NULL), m_safeArea(QRect()), m_useBackground(false),
     m_removeHTML(QRegExp("</?.+>")),        m_subtitleType(kDisplayNone),
-    m_708fontZoom(100),                     m_refreshArea(false)
+    m_textFontZoom(100),                    m_refreshArea(false)
 {
     m_708fontSizes[0] = 36;
     m_708fontSizes[1] = 45;
@@ -64,7 +64,7 @@ bool SubtitleScreen::Create(void)
     if (!m_708reader)
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Failed to get CEA-708 reader.");
     m_useBackground = (bool)gCoreContext->GetNumSetting("CCBackground", 0);
-    m_708fontZoom   = gCoreContext->GetNumSetting("OSDCC708TextZoom", 100);
+    m_textFontZoom  = gCoreContext->GetNumSetting("OSDCC708TextZoom", 100);
     return true;
 }
 
@@ -117,7 +117,7 @@ void SubtitleScreen::ExpireSubtitles(void)
 {
     VideoOutput    *videoOut = m_player->getVideoOutput();
     VideoFrame *currentFrame = videoOut ? videoOut->GetLastShownFrame() : NULL;
-    long long now = currentFrame ? currentFrame->timecode : INT64_MAX;
+    long long now = currentFrame ? currentFrame->timecode : LLONG_MAX;
     QMutableHashIterator<MythUIType*, long long> it(m_expireTimes);
     while (it.hasNext())
     {
@@ -204,8 +204,10 @@ void SubtitleScreen::DisplayAVSubtitles(void)
                 // AVSubtitleRect's image data's not guaranteed to be 4 byte
                 // aligned.
 
-                QRect qrect(rect->x, rect->y, rect->w, rect->h);
-                QRect scaled = videoOut->GetImageRect(qrect);
+                QSize img_size(rect->w, rect->h);
+                QRect img_rect(rect->x, rect->y, rect->w, rect->h);
+                QRect display(rect->display_x, rect->display_y,
+                              rect->display_w, rect->display_h);
 
                 // XSUB images are based on the original video size before
                 // they were converted to DivX. We need to guess the original
@@ -216,13 +218,11 @@ void SubtitleScreen::DisplayAVSubtitles(void)
                                  (currentFrame->height <= 720)  ? 720 : 1080;
                     int width  = (currentFrame->width  <= 720)  ? 720 :
                                  (currentFrame->width  <= 1280) ? 1280 : 1920;
-                    QMatrix m;
-                    m.scale((float)currentFrame->width / width,
-                            (float)currentFrame->height / height);
-                    scaled = m.mapRect(scaled);
+                    display = QRect(0, 0, width, height);
                 }
 
-                QImage qImage(rect->w, rect->h, QImage::Format_ARGB32);
+                QRect scaled = videoOut->GetImageRect(img_rect, &display);
+                QImage qImage(img_size, QImage::Format_ARGB32);
                 for (int y = 0; y < rect->h; ++y)
                 {
                     for (int x = 0; x < rect->w; ++x)
@@ -233,7 +233,7 @@ void SubtitleScreen::DisplayAVSubtitles(void)
                     }
                 }
 
-                if (scaled.size() != qrect.size())
+                if (scaled.size() != img_size)
                 {
                     qImage = qImage.scaled(scaled.width(), scaled.height(),
                              Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
@@ -295,7 +295,8 @@ void SubtitleScreen::DisplayTextSubtitles(void)
         if (oldsafe != m_safeArea)
         {
             changed = true;
-            gTextSubFont->GetFace()->setPixelSize(m_safeArea.height() / 18);
+            int height = (m_safeArea.height() * m_textFontZoom) / 1800;
+            gTextSubFont->GetFace()->setPixelSize(height);
             gTextSubFont->SetColor(Qt::white);
             gTextSubFont->SetOutline(true, Qt::black, 2, 255);
         }
@@ -374,7 +375,8 @@ void SubtitleScreen::DisplayRawTextSubtitles(void)
         m_safeArea = m_player->getVideoOutput()->GetSafeRect();
         if (oldsafe != m_safeArea)
         {
-            gTextSubFont->GetFace()->setPixelSize(m_safeArea.height() / 18);
+            int height = (m_safeArea.height() * m_textFontZoom) / 1800;
+            gTextSubFont->GetFace()->setPixelSize(height);
             gTextSubFont->SetColor(Qt::white);
             gTextSubFont->SetOutline(true, Qt::black, 2, 255);
         }
@@ -624,7 +626,7 @@ void SubtitleScreen::DisplayCC708Subtitles(void)
         {
             for (uint i = 0; i < 8; i++)
                 cc708service->windows[i].changed = true;
-            int size = (m_safeArea.height() * m_708fontZoom) / 2000;
+            int size = (m_safeArea.height() * m_textFontZoom) / 2000;
             m_708fontSizes[1] = size;
             m_708fontSizes[0] = size * 32 / 42;
             m_708fontSizes[2] = size * 42 / 32;

@@ -539,9 +539,7 @@ bool MythCoreContext::BackendIsRunning(void)
 #else
     const char *command = "ps -ae | grep mythbackend > /dev/null";
 #endif
-    bool res = myth_system(command,
-                           MYTH_SYSTEM_DONT_BLOCK_LIRC |
-                           MYTH_SYSTEM_DONT_BLOCK_JOYSTICK_MENU);
+    bool res = myth_system(command, kMSDontBlockInputDevs);
     return !res;
 }
 
@@ -672,7 +670,7 @@ MDBManager *MythCoreContext::GetDBManager(void)
 /** /brief Returns true if database is being ignored.
  *
  *  This was created for some command line only programs which
- *  still need myth libraries, such as channel scanners, channel
+ *  still need MythTV libraries, such as channel scanners, channel
  *  change programs, and the off-line commercial flagger.
  */
 bool MythCoreContext::IsDatabaseIgnored(void) const
@@ -918,8 +916,8 @@ bool MythCoreContext::CheckProtoVersion(MythSocket *socket, uint timeout_ms,
     if (!socket)
         return false;
 
-    QStringList strlist(QString("MYTH_PROTO_VERSION %1")
-                        .arg(MYTH_PROTO_VERSION));
+    QStringList strlist(QString("MYTH_PROTO_VERSION %1 %2")
+                        .arg(MYTH_PROTO_VERSION).arg(MYTH_PROTO_TOKEN));
     socket->writeStringList(strlist);
 
     if (!socket->readStringList(strlist, timeout_ms) || strlist.empty())
@@ -933,9 +931,12 @@ bool MythCoreContext::CheckProtoVersion(MythSocket *socket, uint timeout_ms,
     }
     else if (strlist[0] == "REJECT" && strlist.size() >= 2)
     {
-        VERBOSE(VB_GENERAL, QString("Protocol version mismatch (frontend=%1,"
-                                    "backend=%2)\n")
-                                    .arg(MYTH_PROTO_VERSION).arg(strlist[1]));
+        VERBOSE(VB_GENERAL, QString("Protocol version or token mismatch "
+                                    "(frontend=%1/%2,"
+                                    "backend=%3/??)\n")
+                                    .arg(MYTH_PROTO_VERSION)
+                                    .arg(MYTH_PROTO_TOKEN)
+                                    .arg(strlist[1]));
 
         if (error_dialog_desired && d->m_GUIcontext)
         {

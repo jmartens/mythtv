@@ -20,10 +20,11 @@
 #include "mythverbose.h"
 
 AppleRemote*      AppleRemote::_instance = 0;
-const char* const AppleRemote::AppleRemoteDeviceName = "AppleIRController";
 const int         AppleRemote::REMOTE_SWITCH_COOKIE = 19;
 
 const QString     LOC = "AppleRemote::";
+
+static io_object_t _findAppleRemoteDevice(const char *devName);
 
 AppleRemote::Listener::~Listener()
 {
@@ -56,19 +57,21 @@ void AppleRemote::startListening()
 {
     if (queue != NULL)   // already listening
         return;
- 
-    io_object_t hidDevice = _findAppleRemoteDevice();
 
-    if (hidDevice == 0) goto error;
-    if (!_createDeviceInterface(hidDevice)) goto error;
-    if (!_initCookies()) goto error;
-    if (!_openDevice()) goto error;
-    goto cleanup;
+    io_object_t hidDevice = _findAppleRemoteDevice("AppleIRController");
 
-  error:
-    stopListening();
+    if (!hidDevice)
+        hidDevice = _findAppleRemoteDevice("AppleTVIRReceiver");
 
-  cleanup:
+    if (!hidDevice ||
+        !_createDeviceInterface(hidDevice) ||
+        !_initCookies() || !_openDevice())
+    {
+        VERBOSE(VB_IMPORTANT, LOC + "startListening() failed");
+        stopListening();
+        return;
+    }
+
     IOObjectRelease(hidDevice);
 }
 
@@ -110,51 +113,94 @@ AppleRemote::AppleRemote() : openInExclusiveMode(true),
     _initCookieMap();
 }
 
-// private
+/// Apple keeps changing the "interface" between the remote and the OS.
+/// This initialises a table that stores those mappings.
+///
+/// The white plastic remote has a Play+Pause button in the middle of the
+/// navigation ring, but for menu navigation, we send an "enter" event instead.
+/// Ideally we would remap that for TV/videos, but MythTV can't easily do that.
+///
+/// The new Aluminium remote has separate Select and Play+Pause buttons.
+///
 void AppleRemote::_initCookieMap()
 {
     // 10.4 sequences:
-    cookieToButtonMapping["14_12_11_6_5_"]        = VolumePlus;
-    cookieToButtonMapping["14_13_11_6_5_"]        = VolumeMinus;
+    cookieToButtonMapping["14_12_11_6_5_"]        = Up;
+    cookieToButtonMapping["14_13_11_6_5_"]        = Down;
     cookieToButtonMapping["14_7_6_5_14_7_6_5_"]   = Menu;
-    cookieToButtonMapping["14_8_6_5_14_8_6_5_"]   = Play;
+    cookieToButtonMapping["14_8_6_5_14_8_6_5_"]   = Select;
     cookieToButtonMapping["14_9_6_5_14_9_6_5_"]   = Right;
     cookieToButtonMapping["14_10_6_5_14_10_6_5_"] = Left;
     cookieToButtonMapping["14_6_5_4_2_"]          = RightHold;
     cookieToButtonMapping["14_6_5_3_2_"]          = LeftHold;
     cookieToButtonMapping["14_6_5_14_6_5_"]       = MenuHold;
-    cookieToButtonMapping["18_14_6_5_18_14_6_5_"] = PlaySleep;
+    cookieToButtonMapping["18_14_6_5_18_14_6_5_"] = PlayHold;
     cookieToButtonMapping["19_"]                  = ControlSwitched;
 
     // 10.5 sequences:
-    cookieToButtonMapping["31_29_28_18_"]         = VolumePlus;
-    cookieToButtonMapping["31_30_28_18_"]         = VolumeMinus;
+    cookieToButtonMapping["31_29_28_18_"]         = Up;
+    cookieToButtonMapping["31_30_28_18_"]         = Down;
     cookieToButtonMapping["31_20_18_31_20_18_"]   = Menu;
-    cookieToButtonMapping["31_21_18_31_21_18_"]   = Play;
+    cookieToButtonMapping["31_21_18_31_21_18_"]   = Select;
     cookieToButtonMapping["31_22_18_31_22_18_"]   = Right;
     cookieToButtonMapping["31_23_18_31_23_18_"]   = Left;
     cookieToButtonMapping["31_18_4_2_"]           = RightHold;
     cookieToButtonMapping["31_18_3_2_"]           = LeftHold;
     cookieToButtonMapping["31_18_31_18_"]         = MenuHold;
-    cookieToButtonMapping["35_31_18_35_31_18_"]   = PlaySleep;
+    cookieToButtonMapping["35_31_18_35_31_18_"]   = PlayHold;
     cookieToButtonMapping["39_"]                  = ControlSwitched;
 
+    // ATV 1.0, 2.0-2.02
+    cookieToButtonMapping["14_12_11_6_"]          = Up;
+    cookieToButtonMapping["14_13_11_6_"]          = Down;
+    cookieToButtonMapping["14_7_6_14_7_6_"]       = Menu;
+    cookieToButtonMapping["14_8_6_14_8_6_"]       = Select;
+    cookieToButtonMapping["14_9_6_14_9_6_"]       = Right;
+    cookieToButtonMapping["14_10_6_14_10_6_"]     = Left;
+    cookieToButtonMapping["14_6_4_2_"]            = RightHold;
+    cookieToButtonMapping["14_6_3_2_"]            = LeftHold;
+    cookieToButtonMapping["14_6_14_6_"]           = MenuHold;
+    cookieToButtonMapping["18_14_6_18_14_6_"]     = PlayHold;
+
+    // ATV 1.0, 2.1-2.2
+    cookieToButtonMapping["15_13_12_"]            = Up;
+    cookieToButtonMapping["15_14_12_"]            = Down;
+    cookieToButtonMapping["15_8_15_8_"]           = Menu;
+    cookieToButtonMapping["15_9_15_9_"]           = Select;
+    cookieToButtonMapping["15_10_15_10_"]         = Right;
+    cookieToButtonMapping["15_11_15_11_"]         = Left;
+    cookieToButtonMapping["15_5_3_"]              = RightHold;
+    cookieToButtonMapping["15_4_3_"]              = LeftHold;
+    cookieToButtonMapping["15_6_15_6_"]           = MenuHold;
+    cookieToButtonMapping["19_15_19_15_"]         = PlayHold;
+
+    // ATV 2.30
+    cookieToButtonMapping["80"]                   = Up;
+    cookieToButtonMapping["48"]                   = Down;
+    cookieToButtonMapping["64"]                   = Menu;
+    cookieToButtonMapping["32"]                   = Select;
+    cookieToButtonMapping["96"]                   = Right;
+    cookieToButtonMapping["16"]                   = Left;
+
     // 10.6 sequences:
-    cookieToButtonMapping["33_31_30_21_20_2_"]    = VolumePlus;
-    cookieToButtonMapping["33_32_30_21_20_2_"]    = VolumeMinus;
+    cookieToButtonMapping["33_31_30_21_20_2_"]            = Up;
+    cookieToButtonMapping["33_32_30_21_20_2_"]            = Down;
     cookieToButtonMapping["33_22_21_20_2_33_22_21_20_2_"] = Menu;
-    cookieToButtonMapping["33_23_21_20_2_33_23_21_20_2_"] = Play;
+    cookieToButtonMapping["33_23_21_20_2_33_23_21_20_2_"] = Select;
     cookieToButtonMapping["33_24_21_20_2_33_24_21_20_2_"] = Right;
     cookieToButtonMapping["33_25_21_20_2_33_25_21_20_2_"] = Left;
-    cookieToButtonMapping["33_21_20_14_12_2_"]    = RightHold;
-    cookieToButtonMapping["33_21_20_13_12_2_"]    = LeftHold;
-    cookieToButtonMapping["33_21_20_2_33_21_20_2_"] = MenuHold;
-    cookieToButtonMapping["37_33_21_20_2_37_33_21_20_2_"] = PlaySleep;
-    cookieToButtonMapping["19_"]                  = ControlSwitched;
+    cookieToButtonMapping["33_21_20_14_12_2_"]            = RightHold;
+    cookieToButtonMapping["33_21_20_13_12_2_"]            = LeftHold;
+    cookieToButtonMapping["33_21_20_2_33_21_20_2_"]       = MenuHold;
+    cookieToButtonMapping["37_33_21_20_2_37_33_21_20_2_"] = PlayHold;
+
+    // Aluminium remote which has an extra button:
+    cookieToButtonMapping["33_21_20_8_2_33_21_20_8_2_"]   = PlayPause;
+    cookieToButtonMapping["33_21_20_3_2_33_21_20_3_2_"]   = Select;
+    cookieToButtonMapping["33_21_20_11_2_33_21_20_11_2_"] = PlayHold;
 }
 
-// private
-io_object_t AppleRemote::_findAppleRemoteDevice()
+static io_object_t _findAppleRemoteDevice(const char *devName)
 {
     CFMutableDictionaryRef hidMatchDictionary = 0;
     io_iterator_t          hidObjectIterator = 0;
@@ -162,15 +208,18 @@ io_object_t AppleRemote::_findAppleRemoteDevice()
     IOReturn               ioReturnValue;
 
 
-    hidMatchDictionary = IOServiceMatching(AppleRemoteDeviceName);
+    hidMatchDictionary = IOServiceMatching(devName);
 
     // check for matching devices
-    ioReturnValue = IOServiceGetMatchingServices(kIOMasterPortDefault, 
-                                                 hidMatchDictionary, 
+    ioReturnValue = IOServiceGetMatchingServices(kIOMasterPortDefault,
+                                                 hidMatchDictionary,
                                                  &hidObjectIterator);
 
     if ((ioReturnValue == kIOReturnSuccess) && (hidObjectIterator != 0))
         hidDevice = IOIteratorNext(hidObjectIterator);
+    else
+        VERBOSE(VB_IMPORTANT, (LOC + "_findAppleRemoteDevice(%1) failed")
+                              .arg(devName));
 
     // IOServiceGetMatchingServices consumes a reference to the dictionary,
     // so we don't need to release the dictionary ref.
@@ -278,7 +327,7 @@ bool AppleRemote::_openDevice()
     if (result != S_OK || !queue)
         VERBOSE(VB_IMPORTANT, LOC + "_openDevice() - error creating queue");
 
-    for (std::vector<int>::iterator iter = cookies.begin(); 
+    for (std::vector<int>::iterator iter = cookies.begin();
          iter != cookies.end();
          ++iter)
     {
@@ -309,7 +358,7 @@ bool AppleRemote::_openDevice()
     return true;
 }
 
-void AppleRemote::QueueCallbackFunction(void* target, IOReturn result, 
+void AppleRemote::QueueCallbackFunction(void* target, IOReturn result,
                                    void* refcon, void* sender)
 {
     AppleRemote* remote = static_cast<AppleRemote*>(target);
@@ -347,7 +396,7 @@ void AppleRemote::_queueCallbackFunction(IOReturn result,
     _handleEventWithCookieString(cookieString.str(), sumOfValues);
 }
 
-void AppleRemote::_handleEventWithCookieString(std::string cookieString, 
+void AppleRemote::_handleEventWithCookieString(std::string cookieString,
                                           SInt32 sumOfValues)
 {
     std::map<std::string,AppleRemote::Event>::iterator ii;

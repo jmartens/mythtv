@@ -3,13 +3,13 @@
 #include "themeinfo.h"
 
 // QT headers
+#include <QCoreApplication>
 #include <QFile>
 #include <QDir>
 #include <QDomElement>
 
 // MythTV headers
 #include "mythverbose.h"
-#include "xmlparsebase.h" // for VERBOSE_XML
 #include "mythdownloadmanager.h"
 
 #define LOC      QString("ThemeInfo: ")
@@ -17,6 +17,7 @@
 #define LOC_WARN QString("ThemeInfo, Warning: ")
 
 ThemeInfo::ThemeInfo(QString theme)
+          :XMLParseBase()
 {
     m_theme = new QFileInfo (theme);
     m_type = THEME_UNKN;
@@ -98,15 +99,15 @@ bool ThemeInfo::parseThemeInfo()
         {
             if (e.tagName() == "name")
             {
-                m_name = e.firstChild().toText().data();
+                m_name = getFirstText(e);
             }
             else if (e.tagName() == "aspect")
             {
-                m_aspect = e.firstChild().toText().data();
+                m_aspect = getFirstText(e);
             }
             else if (e.tagName() == "baseres")
             {
-                    QString size = e.firstChild().toText().data();
+                    QString size = getFirstText(e);
                     m_baseres = QSize(size.section('x', 0, 0).toInt(),
                                             size.section('x', 1, 1).toInt());
             }
@@ -120,7 +121,7 @@ bool ThemeInfo::parseThemeInfo()
                     {
                         if (ce.tagName() == "type")
                         {
-                            QString type = ce.firstChild().toText().data();
+                            QString type = getFirstText(ce);
 
                             if (type == "UI")
                             {
@@ -154,13 +155,30 @@ bool ThemeInfo::parseThemeInfo()
                     {
                         if (ce.tagName() == "major")
                         {
-                            m_majorver = ce.firstChild().toText()
-                                                    .data().toInt();
+                            m_majorver = getFirstText(ce).toInt();
                         }
                         else if (ce.tagName() == "minor")
                         {
-                            m_minorver = ce.firstChild().toText()
-                                                    .data().toInt();
+                            m_minorver = getFirstText(ce).toInt();
+                        }
+                    }
+                }
+            }
+            else if (e.tagName() == "author")
+            {
+                for (QDomNode child = e.firstChild(); !child.isNull();
+                        child = child.nextSibling())
+                {
+                    QDomElement ce = child.toElement();
+                    if (!ce.isNull())
+                    {
+                        if (ce.tagName() == "name")
+                        {
+                            m_authorName = getFirstText(ce);
+                        }
+                        else if (ce.tagName() == "email")
+                        {
+                            m_authorEmail = getFirstText(ce);
                         }
                     }
                 }
@@ -177,26 +195,29 @@ bool ThemeInfo::parseThemeInfo()
                         {
                             if (ce.attribute("name") == "preview")
                             {
-                                QString thumbnail = ce.firstChild().toText()
-                                                                    .data();
+                                QString thumbnail = getFirstText(ce);
                                 m_previewpath = m_themeurl + '/' + thumbnail;
                             }
                         }
                         else if (ce.tagName() == "description")
                         {
-                            m_description = ce.firstChild().toText().data();
+                            m_description = qApp->translate("ThemeUI",
+                                                 parseText(ce).toUtf8(), NULL,
+                                                 QCoreApplication::UnicodeUTF8);
                         }
                         else if (ce.tagName() == "errata")
                         {
-                            m_errata = ce.firstChild().toText().data();
+                            m_errata = qApp->translate("ThemeUI",
+                                                parseText(ce).toUtf8(), NULL,
+                                                QCoreApplication::UnicodeUTF8);
                         }
                         else if (ce.tagName() == "downloadurl")
                         {
-                            m_downloadurl = ce.firstChild().toText().data();
+                            m_downloadurl = getFirstText(ce);
                         }
                         else if (ce.tagName() == "themesite")
                         {
-                            m_themesite = ce.firstChild().toText().data();
+                            m_themesite = getFirstText(ce);
                         }
                     }
                 }
@@ -209,9 +230,24 @@ bool ThemeInfo::parseThemeInfo()
 
 bool ThemeInfo::IsWide() const
 {
-
     if (m_aspect == "16:9" || m_aspect == "16:10")
         return true;
 
     return false;
+}
+
+void ThemeInfo::ToMap(QHash<QString, QString> &infoMap) const
+{
+    infoMap["description"] = m_description;
+    infoMap["name"] = m_name;
+    infoMap["aspect"] = m_aspect;
+    infoMap["resolution"] = QString("%1x%2").arg(m_baseres.width())
+                                            .arg(m_baseres.height());
+    infoMap["errata"] = m_errata;
+    infoMap["majorversion"] = m_majorver;
+    infoMap["minorversion"] = m_minorver;
+    infoMap["version"] = QString("%1.%2").arg(m_majorver).arg(m_minorver);
+
+    infoMap["authorname"] = m_authorName;
+    infoMap["authoremail"] = m_authorEmail;
 }

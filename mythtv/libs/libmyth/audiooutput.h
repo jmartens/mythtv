@@ -4,6 +4,7 @@
 #include <QString>
 #include <QVector>
 
+#include "compat.h"
 #include "audiosettings.h"
 #include "audiooutputsettings.h"
 #include "mythcorecontext.h"
@@ -63,17 +64,16 @@ class MPUBLIC AudioOutput : public VolumeBase, public OutputListeners
         { return new AudioOutputSettings; }
     virtual AudioOutputSettings* GetOutputSettingsUsers(void)
         { return new AudioOutputSettings; }
-    virtual bool CanPassthrough(bool willreencode __attribute__ ((unused))) const
-        { return false; }
+    virtual bool CanPassthrough(int samplerate) const = 0;
 
     // dsprate is in 100 * samples/second
     virtual void SetEffDsp(int dsprate) = 0;
 
     virtual void Reset(void) = 0;
 
-    virtual bool AddFrames(void *buffer, int samples, long long timecode) = 0;
+    virtual bool AddFrames(void *buffer, int samples, int64_t timecode) = 0;
 
-    virtual void SetTimecode(long long timecode) = 0;
+    virtual void SetTimecode(int64_t timecode) = 0;
     virtual bool IsPaused(void) const = 0;
     virtual void Pause(bool paused) = 0;
     virtual void PauseUntilBuffered(void) = 0;
@@ -81,10 +81,10 @@ class MPUBLIC AudioOutput : public VolumeBase, public OutputListeners
     // Wait for all data to finish playing
     virtual void Drain(void) = 0;
 
-    virtual int GetAudiotime(void) = 0;
+    virtual int64_t GetAudiotime(void) = 0;
 
     /// report amount of audio buffered in milliseconds.
-    virtual int GetAudioBufferedTime(void) { return 0; }
+    virtual int64_t GetAudioBufferedTime(void) { return 0; }
 
     virtual void SetSourceBitrate(int ) { }
 

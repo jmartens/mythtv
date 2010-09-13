@@ -1216,6 +1216,13 @@ RecordingProfile::RecordingProfile(QString profName)
     addChild(profile);
 };
 
+RecordingProfile::~RecordingProfile()
+{
+    id->deleteLater();
+    delete name;
+    name = NULL;
+}
+
 void RecordingProfile::ResizeTranscode(bool resize)
 {
     MythWizard *wizard = (MythWizard *)dialog;
@@ -1303,7 +1310,7 @@ void RecordingProfile::FiltersChanged(const QString &val)
     if (!tr_filters || !tr_lossless)
       return;
 
-    // If there are filters, we can not do lossless transcoding
+    // If there are filters, we cannot do lossless transcoding
     if (!val.trimmed().isEmpty())
     {
        tr_lossless->setValue(false);

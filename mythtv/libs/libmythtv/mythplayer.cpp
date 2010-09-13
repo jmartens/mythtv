@@ -935,14 +935,24 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
     SetDecoder(NULL);
     int testreadsize = 2048;
 
+    MythTimer bigTimer; bigTimer.start();
+    int timeout = (retries + 1) * 500;
     while (testreadsize <= kDecoderProbeBufferSize)
     {
-        if (player_ctx->buffer->Peek(testbuf, testreadsize) != testreadsize)
+        MythTimer peekTimer; peekTimer.start();
+        while (player_ctx->buffer->Peek(testbuf, testreadsize) != testreadsize)
         {
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    QString("OpenFile(): Error, couldn't read file: %1")
-                    .arg(player_ctx->buffer->GetFilename()));
-            return -1;
+            if (peekTimer.elapsed() > 1000 || bigTimer.elapsed() > timeout)
+            {
+                VERBOSE(VB_IMPORTANT, LOC_ERR +
+                        QString("OpenFile(): Could not read "
+                                "first %1 bytes of '%2'")
+                        .arg(testreadsize)
+                        .arg(player_ctx->buffer->GetFilename()));
+                return -1;
+            }
+            VERBOSE(VB_IMPORTANT, LOC_WARN + "OpenFile() waiting on data");
+            usleep(50 * 1000);
         }
 
         player_ctx->LockPlayingInfo(__FILE__, __LINE__);
@@ -959,7 +969,7 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
                                            player_ctx->GetSpecialDecode()));
         }
         player_ctx->UnlockPlayingInfo(__FILE__, __LINE__);
-        if (GetDecoder())
+        if (GetDecoder() || (bigTimer.elapsed() > timeout))
             break;
         testreadsize <<= 1;
     }
@@ -1102,11 +1112,11 @@ VideoFrame *MythPlayer::GetNextVideoFrame(bool allow_unsafe)
     return videoOutput->GetNextFreeFrame(false, allow_unsafe);
 }
 
-/** \fn MythPlayer::ReleaseNextVideoFrame(VideoFrame*,long long)
+/** \fn MythPlayer::ReleaseNextVideoFrame(VideoFrame*, int64_t)
  *  \brief Places frame on the queue of frames ready for display.
  */
 void MythPlayer::ReleaseNextVideoFrame(VideoFrame *buffer,
-                                       long long timecode,
+                                       int64_t timecode,
                                        bool wrap)
 {
     if (wrap)
@@ -1753,7 +1763,7 @@ void MythPlayer::AVSync(bool limit_delay)
 
     if (audio.HasAudioOut() && normal_speed)
     {
-        long long currentaudiotime = audio.GetAudioTime();
+        int64_t currentaudiotime = audio.GetAudioTime();
         VERBOSE(VB_TIMESTAMP, QString(
                     "A/V timecodes audio %1 video %2 frameinterval %3 "
                     "avdel %4 avg %5 tcoffset %6")
@@ -2167,12 +2177,15 @@ void MythPlayer::SwitchToProgram(void)
         return;
     }
 
-    uint retries = 10; // about 5 seconds of retries
-    player_ctx->buffer->OpenFile(pginfo->GetPlaybackURL(), retries);
+    player_ctx->buffer->OpenFile(
+        pginfo->GetPlaybackURL(), RingBuffer::kDefaultOpenTimeout);
 
     if (!player_ctx->buffer->IsOpen())
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "SwitchToProgram's OpenFile failed.");
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "SwitchToProgram's OpenFile failed " +
+                QString("(card type: %1).")
+                .arg(player_ctx->tvchain->GetCardType(newid)));
+        VERBOSE(VB_IMPORTANT, QString("\n") + player_ctx->tvchain->toString());
         eof = true;
         SetErrored(QObject::tr("Error opening switch program buffer"));
         delete pginfo;
@@ -2289,10 +2302,16 @@ void MythPlayer::JumpToProgram(void)
 
     SendMythSystemPlayEvent("PLAY_CHANGED", pginfo);
 
-    player_ctx->buffer->OpenFile(pginfo->GetPlaybackURL());
+    player_ctx->buffer->OpenFile(
+        pginfo->GetPlaybackURL(), RingBuffer::kDefaultOpenTimeout);
+
     if (!player_ctx->buffer->IsOpen())
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "JumpToProgram's OpenFile failed.");
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "JumpToProgram's OpenFile failed " +
+                QString("(card type: %1).")
+                .arg(player_ctx->tvchain->GetCardType(newid)));
+        VERBOSE(VB_IMPORTANT, QString("\n") + player_ctx->tvchain->toString());
+
         eof = true;
         SetErrored(QObject::tr("Error opening jump program file buffer"));
         delete pginfo;
@@ -2469,7 +2488,7 @@ void MythPlayer::EventLoop(void)
         JumpToProgram();
     }
 
-    // Disable fastforward if we are too close the end of the buffer
+    // Disable fastforward if we are too close to the end of the buffer
     if (ffrew_skip > 1 && (CalcMaxFFTime(100, false) < 100))
     {
         VERBOSE(VB_PLAYBACK, LOC + "Near end, stopping fastforward.");
@@ -2477,7 +2496,7 @@ void MythPlayer::EventLoop(void)
     }
 
     // Disable rewind if we are too close to the beginning of the buffer
-    if (CalcRWTime(-ffrew_skip) >= 0 &&
+    if (CalcRWTime(-ffrew_skip) > 0 &&
        (!noVideoTracks && (framesPlayed <= keyframedist)))
     {
         VERBOSE(VB_PLAYBACK, LOC + "Near start, stopping rewind.");
@@ -2882,11 +2901,11 @@ PIPLocation MythPlayer::GetNextPIPLocation(void) const
     return kPIP_END;
 }
 
-void MythPlayer::WrapTimecode(long long &timecode, TCTypes tc_type)
+void MythPlayer::WrapTimecode(int64_t &timecode, TCTypes tc_type)
 {
     if ((tc_type == TC_AUDIO) && (tc_wrap[TC_AUDIO] == INT64_MIN))
     {
-        long long newaudio;
+        int64_t newaudio;
         newaudio = tc_lastval[TC_VIDEO];
         tc_wrap[TC_AUDIO] = newaudio - timecode;
         timecode = newaudio;
@@ -2897,7 +2916,7 @@ void MythPlayer::WrapTimecode(long long &timecode, TCTypes tc_type)
     timecode += tc_wrap[tc_type];
 }
 
-bool MythPlayer::PrepareAudioSample(long long &timecode)
+bool MythPlayer::PrepareAudioSample(int64_t &timecode)
 {
     WrapTimecode(timecode, TC_AUDIO);
     return false;
@@ -3189,29 +3208,8 @@ bool MythPlayer::IsReallyNearEnd(void) const
     if (!videoOutput)
         return false;
 
-    int    sz              = player_ctx->buffer->DataInReadAhead();
-    uint   rbs             = player_ctx->buffer->GetReadBlockSize();
-    uint   kbits_per_sec   = player_ctx->buffer->GetBitrate();
-    uint   vvf             = videoOutput->ValidVideoFrames();
-    double inv_fps         = 1.0 / GetDecoder()->GetFPS();
-    double bytes_per_frame = kbits_per_sec * (1000.0/8.0) * inv_fps;
-    double rh_frames       = sz / bytes_per_frame;
-
-    // WARNING: rh_frames can greatly overestimate or underestimate
-    //          the number of frames available in the read ahead buffer
-    //          when rh_frames is less than the keyframe distance.
-
-    bool near_end = ((vvf + rh_frames) < 10.0) || (sz < rbs*1.5);
-
-    VERBOSE(VB_PLAYBACK, LOC + "IsReallyNearEnd()"
-            <<" br("<<(kbits_per_sec/8)<<"KB)"
-            <<" fps("<<((uint)(1.0/inv_fps))<<")"
-            <<" sz("<<(sz / 1000)<<"KB)"
-            <<" vfl("<<vvf<<")"
-            <<" frh("<<((uint)rh_frames)<<")"
-            <<" ne:"<<near_end);
-
-    return near_end;
+    return player_ctx->buffer->IsNearEnd(
+        GetDecoder()->GetFPS(), videoOutput->ValidVideoFrames());
 }
 
 /** \brief Returns true iff near end of recording.
@@ -3277,7 +3275,7 @@ bool MythPlayer::DoFastForward(uint64_t frames, bool override_seeks,
     uint64_t number = frames - 1;
     uint64_t desiredFrame = framesPlayed + number;
 
-    if (!deleteMap.IsEditing() && deleteMap.IsInDelete(desiredFrame))
+    if (!deleteMap.IsEditing() && IsInDelete(desiredFrame))
     {
         uint64_t endcheck = deleteMap.GetLastFrame(totalFrames);
         if (desiredFrame > endcheck)
@@ -3386,15 +3384,26 @@ bool MythPlayer::EnableEdit(void)
     deleteMap.UpdateOSD(framesPlayed, totalFrames, video_frame_rate,
                         player_ctx, osd);
     deleteMap.SetFileEditing(player_ctx, true);
+    player_ctx->LockPlayingInfo(__FILE__, __LINE__);
+    if (player_ctx->playingInfo)
+        player_ctx->playingInfo->SaveEditing(true);
+    player_ctx->UnlockPlayingInfo(__FILE__, __LINE__);
     return deleteMap.IsEditing();
 }
 
-void MythPlayer::DisableEdit(void)
+void MythPlayer::DisableEdit(bool save)
 {
     deleteMap.SetEditing(false, osd);
-    deleteMap.SaveMap(totalFrames, player_ctx);
+    if (save)
+        deleteMap.SaveMap(totalFrames, player_ctx);
+    else
+        deleteMap.LoadMap(totalFrames, player_ctx);
     deleteMap.TrackerReset(framesPlayed, totalFrames);
     deleteMap.SetFileEditing(player_ctx, false);
+    player_ctx->LockPlayingInfo(__FILE__, __LINE__);
+    if (player_ctx->playingInfo)
+        player_ctx->playingInfo->SaveEditing(false);
+    player_ctx->UnlockPlayingInfo(__FILE__, __LINE__);
     if (!pausedBeforeEdit)
         Play();
     else
@@ -3475,8 +3484,35 @@ bool MythPlayer::HandleProgrameEditorActions(QStringList &actions,
                 DoFastForward(fps * FFREW_MULTICOUNT / 2, true, true);
             }
         }
-        else if (action == "ESCAPE" || action == "MENU" ||
-                 action == "EDIT")
+        else if (action == "SELECT")
+        {
+            deleteMap.NewCut(frame, totalFrames);
+            refresh = true;
+        }
+        else if (action == "DELETE")
+        {
+            if (IsInDelete(frame))
+            {
+                deleteMap.Delete(frame, totalFrames);
+                refresh = true;
+            }
+        }
+        else if (action == "REVERT")
+        {
+            deleteMap.LoadMap(totalFrames, player_ctx);
+            refresh = true;
+        }
+        else if (action == "REVERTEXIT")
+        {
+            DisableEdit(false);
+            refresh = false;
+        }
+        else if (action == "SAVEMAP")
+        {
+            deleteMap.SaveMap(totalFrames, player_ctx);
+            refresh = true;
+        }
+        else if (action == "EDIT" || action == "SAVEEXIT")
         {
             DisableEdit();
             refresh = false;
@@ -3495,12 +3531,24 @@ bool MythPlayer::HandleProgrameEditorActions(QStringList &actions,
     return handled;
 }
 
-bool MythPlayer::IsNearDeletePoint(int &direction, bool &cutAfter,
-                                   uint64_t &nearestMark)
+bool MythPlayer::IsInDelete(uint64_t frame)
 {
-    return deleteMap.IsNearDeletePoint(framesPlayed, totalFrames,
-                                       (int)ceil(20 * video_frame_rate),
-                                       direction, cutAfter, nearestMark);
+    return deleteMap.IsInDelete(frame);
+}
+
+uint64_t MythPlayer::GetNearestMark(uint64_t frame, bool right)
+{
+    return deleteMap.GetNearestMark(frame, totalFrames, right);
+}
+
+bool MythPlayer::IsTemporaryMark(uint64_t frame)
+{
+    return deleteMap.IsTemporaryMark(frame);
+}
+
+bool MythPlayer::HasTemporaryMark(void)
+{
+    return deleteMap.HasTemporaryMark();
 }
 
 void MythPlayer::HandleArbSeek(bool right)
@@ -3799,7 +3847,7 @@ void MythPlayer::SeekForScreenGrab(uint64_t &number, uint64_t frameNum,
 
             bool started_in_break_map = false;
             while (commBreakMap.IsInCommBreak(number) ||
-                   deleteMap.IsInDelete(number))
+                   IsInDelete(number))
             {
                 started_in_break_map = true;
                 number += (uint64_t) (30 * video_frame_rate);
@@ -3876,7 +3924,8 @@ void MythPlayer::GetCodecDescription(InfoMap &infoMap)
 
     int width  = video_disp_dim.width();
     int height = video_disp_dim.height();
-    infoMap["videocodec"]     = GetDecoder()->GetEncodingType();
+    infoMap["videocodec"]     = GetEncodingType();
+    infoMap["videocodecdesc"] = GetDecoder()->GetRawEncodingType();
     infoMap["videowidth"]     = QString::number(width);
     infoMap["videoheight"]    = QString::number(height);
     infoMap["videoframerate"] = QString::number(video_frame_rate, 'f', 2);

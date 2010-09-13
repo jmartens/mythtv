@@ -228,7 +228,8 @@ bool AudioOutputALSA::IncPreallocBufferSize(int buffer_time)
 
     if (!pfile.open(QIODevice::ReadOnly))
     {
-        VBERROR(QString("Error opening %1").arg(pf));
+        VBERROR(QString("Error opening %1. Try doing as root: "
+                        "echo 512 > %1").arg(pf));
         return false;
     }
 
@@ -412,7 +413,7 @@ bool AudioOutputALSA::OpenDevice()
     }
 
     period_time = 50000;  // aim for an interrupt every 50ms
-    buffer_time = period_time << 1; // buffer 100ms worth of samples
+    buffer_time = period_time << 2; // buffer 200ms worth of samples
 
     err = SetParameters(pcm_handle, format, channels, samplerate,
                         buffer_time, period_time);

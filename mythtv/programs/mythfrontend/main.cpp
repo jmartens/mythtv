@@ -19,6 +19,7 @@ using namespace std;
 #include <QApplication>
 #include <QTimer>
 
+#include "previewgeneratorqueue.h"
 #include "mythconfig.h"
 #include "tv.h"
 #include "proglist.h"
@@ -26,6 +27,7 @@ using namespace std;
 #include "scheduleeditor.h"
 #include "manualschedule.h"
 #include "playbackbox.h"
+#include "themechooser.h"
 #include "customedit.h"
 #include "viewscheduled.h"
 #include "programrecpriority.h"
@@ -542,6 +544,16 @@ static void TVMenuCallback(void *data, QString &selection)
             GetMythMainWindow()->JumpTo("Reload Theme");
         }
     }
+    else if (sel == "settings themechooser")
+    {
+        MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
+        ThemeChooser *tp = new ThemeChooser(mainStack);
+
+        if (tp->Create())
+            mainStack->AddScreen(tp);
+        else
+            delete tp;
+    }
     else if (sel == "screensetupwizard")
     {
        startAppearWiz();
@@ -778,11 +790,6 @@ static int internal_play_media(const QString &mrl, const QString &plot,
 
 static void gotoMainMenu(void)
 {
-    // If we got to this callback, we're back on the menu.  So, send a CTRL-L
-    // to cause the menu to reload
-    QKeyEvent *event =
-        new QKeyEvent(QEvent::KeyPress, Qt::Key_L, Qt::ControlModifier);
-    QCoreApplication::postEvent((QObject*)(GetMythMainWindow()), event);
 }
 
 // If the theme specified in the DB is somehow broken, try a standard one:
@@ -1027,7 +1034,7 @@ static int log_rotate(int report_error)
         /* If we can't open the new logfile, send data to /dev/null */
         if (report_error)
         {
-            VERBOSE(VB_IMPORTANT, QString("Can not open logfile '%1'")
+            VERBOSE(VB_IMPORTANT, QString("Cannot open logfile '%1'")
                     .arg(logfile));
             return -1;
         }
@@ -1447,7 +1454,12 @@ int main(int argc, char **argv)
 
     BackendConnectionManager bcm;
 
+    PreviewGeneratorQueue::CreatePreviewGeneratorQueue(
+        PreviewGenerator::kRemote, 50, 60);
+
     int ret = qApp->exec();
+
+    PreviewGeneratorQueue::TeardownPreviewGeneratorQueue();
 
     delete sysEventHandler;
 

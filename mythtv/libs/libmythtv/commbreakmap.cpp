@@ -287,7 +287,7 @@ bool CommBreakMap::DoSkipCommercials(uint64_t &jumpToFrame,
          ((totalFrames) &&
           ((commBreakIter.key() + (10 * video_frame_rate)) > totalFrames))))
     {
-        comm_msg = QObject::tr("At End, can not Skip.");
+        comm_msg = QObject::tr("At End, cannot Skip.");
         return false;
     }
 
@@ -295,8 +295,8 @@ bool CommBreakMap::DoSkipCommercials(uint64_t &jumpToFrame,
     {
         commBreakIter--;
 
-        int skipped_seconds = (int)((commBreakIter.key() -
-                framesPlayed) / video_frame_rate);
+        int skipped_seconds = (int)(((int64_t)(commBreakIter.key()) -
+                              (int64_t)framesPlayed) / video_frame_rate);
 
         // special case when hitting 'skip backwards' <3 seconds after break
         if (skipped_seconds > -3)
@@ -311,13 +311,18 @@ bool CommBreakMap::DoSkipCommercials(uint64_t &jumpToFrame,
                 commBreakIter--;
         }
     }
-    else if (*commBreakIter == MARK_COMM_START)
+    else
     {
-        int skipped_seconds = (int)((commBreakIter.key() -
-                framesPlayed) / video_frame_rate);
+        int skipped_seconds = (int)(((int64_t)(commBreakIter.key()) -
+                              (int64_t)framesPlayed) / video_frame_rate);
 
-        // special case when hitting 'skip' < 20 seconds before break
-        if (skipped_seconds < 20)
+        // special case when hitting 'skip' within 20 seconds of the break
+        // start or within commrewindamount of the break end
+        // Even though commrewindamount has a max of 10 per the settings UI,
+        // check for MARK_COMM_END to make the code generic
+        MarkTypes type = *commBreakIter;
+        if (((type == MARK_COMM_START) && (skipped_seconds < 20)) ||
+            ((type == MARK_COMM_END) && (skipped_seconds < commrewindamount)))
         {
             commBreakIter++;
 
@@ -326,7 +331,7 @@ bool CommBreakMap::DoSkipCommercials(uint64_t &jumpToFrame,
                  ((commBreakIter.key() + (10 * video_frame_rate)) >
                                                                 totalFrames)))
             {
-                comm_msg = QObject::tr("At End, can not Skip.");
+                comm_msg = QObject::tr("At End, cannot Skip.");
                 return false;
             }
         }
@@ -334,9 +339,8 @@ bool CommBreakMap::DoSkipCommercials(uint64_t &jumpToFrame,
 
     if (skipcommercials > 0)
         MergeShortCommercials(video_frame_rate);
-
-    int skipped_seconds = (int)((commBreakIter.key() -
-                          framesPlayed) / video_frame_rate);
+    int skipped_seconds = (int)(((int64_t)(commBreakIter.key()) -
+                          (int64_t)framesPlayed) / video_frame_rate);
     QString skipTime;
     skipTime.sprintf("%d:%02d", skipped_seconds / 60,
                      abs(skipped_seconds) % 60);

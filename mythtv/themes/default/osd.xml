@@ -1,3 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE mythuitheme SYSTEM "../mythuitheme.dtd">
 <mythuitheme>
     <window name="osd_message">
         <fontdef name="medium" face="DejaVu Sans">
@@ -125,7 +127,7 @@
         <textarea name="videowidth">
             <font>smaller</font>
             <area>300,42,300,25</area>
-            <template>%VIDEOWIDTH%x%VIDEOHEIGHT%, %VIDEOFRAMERATE%fps, %VIDEOCODEC%</template>
+            <template>%VIDEOWIDTH%x%VIDEOHEIGHT%, %VIDEOFRAMERATE%fps, %VIDEOCODECDESC%</template>
             <align>left,top</align>
         </textarea>
         <clock name="clock">
@@ -329,7 +331,7 @@
         </button>
         <button name="ok" from="probe">
             <position>305,367</position>
-            <value>Ok</value>
+            <value>OK</value>
         </button>
     </window>
 

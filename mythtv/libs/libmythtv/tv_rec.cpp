@@ -7,9 +7,9 @@
 #include <sched.h> // for sched_yield
 
 // MythTV headers
+#include "previewgeneratorqueue.h"
 #include "dtvsignalmonitor.h"
 #include "recordingprofile.h"
-#include "previewgenerator.h"
 #include "mythcorecontext.h"
 #include "mythsystemevent.h"
 #include "atscstreamdata.h"
@@ -98,7 +98,7 @@ TVRec::TVRec(int capturecardnum)
       stateChangeLock(QMutex::Recursive),
       pendingRecLock(QMutex::Recursive),
       internalState(kState_None), desiredNextState(kState_None),
-      changeState(false), pauseNotify(true),
+      changeState(false), m_SMpending(false), pauseNotify(true),
       stateFlags(0), lastTuningRequest(0),
       triggerEventLoopLock(QMutex::NonRecursive),
       triggerEventLoopSignal(false),
@@ -915,6 +915,14 @@ void TVRec::TeardownRecorder(bool killFile)
         curRecording->SaveResolutionProperty(
             (avg_height > 1000) ? VID_1080 :
             ((avg_height > 700) ? VID_720 : VID_UNKNOWN));
+        VERBOSE(VB_IMPORTANT, "*********************************************");
+        VERBOSE(VB_IMPORTANT, "*********************************************");
+        VERBOSE(VB_IMPORTANT, QString("avg_height: %1").arg(avg_height));
+        VERBOSE(VB_IMPORTANT, QString("vidprop: 0x%1")
+                .arg((avg_height > 1000) ? VID_1080 :
+                     ((avg_height > 700) ? VID_720 : VID_UNKNOWN)));
+        VERBOSE(VB_IMPORTANT, "*********************************************");
+        VERBOSE(VB_IMPORTANT, "*********************************************");
 
         int secsSince = curRecording->GetRecordingStartTime()
             .secsTo(QDateTime::currentDateTime());
@@ -945,10 +953,7 @@ void TVRec::TeardownRecorder(bool killFile)
         if (!killFile)
         {
             if (curRecording->IsLocal())
-            {
-                (new PreviewGenerator(
-                    curRecording, PreviewGenerator::kLocal))->Start();
-            }
+                PreviewGeneratorQueue::GetPreviewImage(*curRecording, "");
 
             if (!tvchain)
             {
@@ -1362,7 +1367,7 @@ bool TVRec::WaitForEventThreadSleep(bool wake, ulong time)
         stateChangeLock.lock();
 
         // verify that we were triggered.
-        ok = (tuningRequests.empty() && !changeState);
+        ok = (tuningRequests.empty() && !m_SMpending && !changeState);
     }
     return ok;
 }
@@ -3239,6 +3244,8 @@ void TVRec::HandleTuning(void)
 
         // The dequeue isn't safe to do until now because we
         // release the stateChangeLock to teardown a recorder
+        if (request.flags & kFlagRecording)
+            m_SMpending = true;
         tuningRequests.dequeue();
 
         // Now we start new stuff
@@ -3273,6 +3280,8 @@ void TVRec::HandleTuning(void)
     MPEGStreamData *streamData = NULL;
     if (HasFlags(kFlagWaitingForSignal) && !(streamData = TuningSignalCheck()))
         return;
+
+    m_SMpending = false;
 
     if (HasFlags(kFlagNeedToStartRecorder))
     {
@@ -3518,36 +3527,9 @@ void TVRec::TuningFrequency(const TuningRequest &request)
     if (!channum.isEmpty())
     {
         if (!input.isEmpty())
-            ok = channel->SelectInput(input, channum, true);
+            channel->SelectInput(input, channum, true);
         else
-        {
             channel->SelectChannel(channum, true);
-            ok = true;
-        }
-    }
-
-    if (!ok)
-    {
-        if (!(request.flags & kFlagLiveTV) || !(request.flags & kFlagEITScan))
-        {
-            if (curRecording)
-                curRecording->SetRecordingStatus(rsFailed);
-
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    QString("Failed to set channel to %1. "
-                            "Reverting to kState_None")
-                    .arg(channum));
-            if (kState_None != internalState)
-                ChangeState(kState_None);
-            else
-                tuningRequests.enqueue(TuningRequest(kFlagKillRec));
-            return;
-        }
-        else
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR +
-                    QString("Failed to set channel to %1.").arg(channum));
-        }
     }
 
     // Start signal (or channel change) monitoring
@@ -4271,10 +4253,7 @@ bool TVRec::SwitchLiveTVRingBuffer(const QString & channum,
             if (!oldinfo->IsLocal())
                 oldinfo->SetPathname(oldinfo->GetPlaybackURL(false,true));
             if (oldinfo->IsLocal())
-            {
-                (new PreviewGenerator(
-                    oldinfo, PreviewGenerator::kLocal))->Start();
-            }
+                PreviewGeneratorQueue::GetPreviewImage(*oldinfo, "");
         }
         delete oldinfo;
     }

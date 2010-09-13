@@ -1,10 +1,11 @@
 #ifndef MAINSERVER_H_
 #define MAINSERVER_H_
 
-#include <QMap>
-#include <QMutex>
 #include <QReadWriteLock>
 #include <QEvent>
+#include <QMutex>
+#include <QHash>
+#include <QMap>
 
 #include <vector>
 using namespace std;
@@ -157,7 +158,7 @@ class MainServer : public QObject, public MythSocketCBs
     void HandleSetBookmark(QStringList &tokens, PlaybackSock *pbs);
     void HandleSettingQuery(QStringList &tokens, PlaybackSock *pbs);
     void HandleSetSetting(QStringList &tokens, PlaybackSock *pbs);
-    void HandleVersion(MythSocket *socket, QString version);
+    void HandleVersion(MythSocket *socket, const QStringList &slist);
     void HandleBackendRefresh(MythSocket *socket);
     void HandleQueryLoad(PlaybackSock *pbs);
     void HandleQueryUptime(PlaybackSock *pbs);
@@ -248,6 +249,9 @@ class MainServer : public QObject, public MythSocketCBs
     QMap<QString, QString>     m_downloadURLs;
 
     int m_exitCode;
+
+    typedef QHash<QString,QString> RequestedBy;
+    RequestedBy                m_previewRequestedBy;
 
     static const uint kMasterServerReconnectTimeout;
 };

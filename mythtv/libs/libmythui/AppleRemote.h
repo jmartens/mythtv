@@ -15,21 +15,24 @@
 class AppleRemote : public QThread
 {
 public:
-    enum Event {
-        VolumePlus = 0,
-        VolumeMinus,
+    enum Event
+    { // label/meaning on White ... and Aluminium remote
+        Up = 0,        // VolumePlus    Up
+        Down,          // VolumeMinus   Down
         Menu,
-        Play,
+        Select,        // Play          Select
         Right,
         Left,
         RightHold,
         LeftHold,
         MenuHold,
-        PlaySleep,
-        ControlSwitched
+        PlayHold,  // was PlaySleep
+        ControlSwitched,
+        PlayPause      // Play or Pause
     };
 
-    class Listener {
+    class Listener
+    {
     public:
         virtual      ~Listener();
         virtual void appleRemoteButton(Event button, bool pressedDown) = 0;
@@ -51,7 +54,6 @@ protected:
     AppleRemote(); // will be a singleton class
 
     static AppleRemote*      _instance;
-    static const char* const AppleRemoteDeviceName;
     static const int         REMOTE_SWITCH_COOKIE;
 
 
@@ -65,7 +67,6 @@ private:
     Listener*              _listener;
 
     void        _initCookieMap();
-    io_object_t _findAppleRemoteDevice();
     bool        _initCookies();
     bool        _createDeviceInterface(io_object_t hidDevice);
     bool        _openDevice();

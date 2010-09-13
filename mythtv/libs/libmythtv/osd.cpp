@@ -29,10 +29,10 @@
 QEvent::Type OSDHideEvent::kEventType =
     (QEvent::Type) QEvent::registerEventType();
 
-ChannelEditor::ChannelEditor(const char *name)
+ChannelEditor::ChannelEditor(QObject *retobject, const char *name)
   : MythScreenType((MythScreenType*)NULL, name)
 {
-    m_retObject    = NULL;
+    m_retObject    = retobject;
     m_callsignEdit = NULL;
     m_channumEdit  = NULL;
     m_channameEdit = NULL;
@@ -72,20 +72,14 @@ bool ChannelEditor::Create(void)
     return true;
 }
 
-void ChannelEditor::SetReturnEvent(QObject *retobject, const QString &resultid)
-{
-    (void)resultid;
-    m_retObject = retobject;
-}
-
 void ChannelEditor::Confirm(void)
 {
-    sendResult(1, true);
+    sendResult(1);
 }
 
 void ChannelEditor::Probe(void)
 {
-    sendResult(1, false);
+    sendResult(2);
 }
 
 void ChannelEditor::SetText(QHash<QString,QString>&map)
@@ -122,8 +116,7 @@ bool ChannelEditor::keyPressEvent(QKeyEvent *event)
         QString action = actions[i];
         if (action == "ESCAPE" )
         {
-            sendResult(-1, false);
-            Close();
+            sendResult(3);
             handled = true;
         }
     }
@@ -134,22 +127,23 @@ bool ChannelEditor::keyPressEvent(QKeyEvent *event)
     return handled;
 }
 
-void ChannelEditor::sendResult(int result, bool ok)
+void ChannelEditor::sendResult(int result)
 {
     if (!m_retObject)
         return;
 
     QString  message = "";
-    if (result < 0)
+    switch (result)
     {
-    }
-    else if (ok)
-    {
-        message = "DIALOG_EDITOR_OK_0";
-    }
-    else // probe
-    {
-        message = "DIALOG_EDITOR_PROBE_0";
+        case 1:
+            message = "DIALOG_EDITOR_OK_0";
+            break;
+        case 2:
+            message = "DIALOG_EDITOR_PROBE_0";
+            break;
+        case 3:
+            message = "DIALOG_EDITOR_QUIT_0";
+            break;
     }
 
     DialogCompletionEvent *dce = new DialogCompletionEvent("", result,
@@ -264,14 +258,15 @@ bool OSD::IsVisible(void)
     return false;
 }
 
-void OSD::HideAll(bool keepsubs)
+void OSD::HideAll(bool keepsubs, MythScreenType* except)
 {
     QMutableHashIterator<QString, MythScreenType*> it(m_Children);
     while (it.hasNext())
     {
         it.next();
-        if (!(keepsubs && (it.key() == OSD_WIN_SUBTITLE ||
-            it.key() == OSD_WIN_TELETEXT)))
+        if (!((keepsubs && (it.key() == OSD_WIN_SUBTITLE ||
+            it.key() == OSD_WIN_TELETEXT)) ||
+            it.value() == except))
             HideWindow(it.key());
     }
 }
@@ -480,6 +475,10 @@ void OSD::SetRegions(const QString &window, frm_dir_map_t &map,
                 error = true;
             end = it.key();
         }
+        else if (it.value() == MARK_PLACEHOLDER)
+        {
+            start = end = it.key();
+        }
         first = false;
 
         if (error)
@@ -675,11 +674,12 @@ void OSD::CheckExpiry(void)
         {
             if (!m_PulsedDialogText.isEmpty() && now > m_NextPulseUpdate)
             {
+                QString replace = QObject::tr("%n second(s)", NULL,
+                                              now.secsTo(it.value()));
                 QString newtext = m_PulsedDialogText;
-                newtext.replace("%d", QString::number(now.secsTo(it.value())));
                 MythDialogBox *dialog = dynamic_cast<MythDialogBox*>(m_Dialog);
                 if (dialog)
-                    dialog->SetText(newtext);
+                    dialog->SetText(newtext.replace("%d", replace));
                 m_NextPulseUpdate = now.addSecs(1);
             }
         }
@@ -872,7 +872,7 @@ void OSD::DialogShow(const QString &window, const QString &text, int updatefor)
         OverrideUIScale();
         MythScreenType *dialog;
         if (window == OSD_DLG_EDITOR)
-            dialog = new ChannelEditor(window.toLatin1());
+            dialog = new ChannelEditor(m_ParentObject, window.toLatin1());
         else
             dialog = new MythDialogBox(text, NULL, window.toLatin1(), false, true);
 
@@ -902,7 +902,7 @@ void OSD::DialogShow(const QString &window, const QString &text, int updatefor)
     }
 
     DialogBack();
-    HideAll();
+    HideAll(true, m_Dialog);
     m_Dialog->SetVisible(true);
 }
 

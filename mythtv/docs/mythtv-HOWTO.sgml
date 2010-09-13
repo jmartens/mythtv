@@ -18,7 +18,7 @@ necessary.
 <img src="stop.png">
 <caption>
 <bf>NOTE</bf>: Please note that I, Robert Kulagowski, am <em>NOT</em> the
-author/programmer of the MythTV application!  I can not give you
+author/programmer of the MythTV application!  I cannot give you
 personalized installation support.  If you are having issues installing
 MythTV you should examine the archives, or post your question to the
 MythTV-users mailing list.  If you send me "Does MythTV work with 'X'"?
@@ -67,11 +67,10 @@ Other modules in MythTV include:
 <itemize>
 <item>MythArchive, a tool to create DVDs
 <item>MythBrowser, a web browser
-<item>MythFlix, a Netflix module
-<item>MythGallery, a picture-viewing application
+<item>MythGallery, a photo-viewing application
 <item>MythGame
-<item>MythMusic, a music playing / ripping application which supports MP3
-and FLAC
+<item>MythMusic, a music playing / ripping application
+<item>MythNetVision, an internet video browser and viewer
 <item>MythNews, a RSS news grabber
 <item>MythVideo, DVD ripper and a media-viewer for content not created within MythTV
 <item>MythWeather
@@ -91,10 +90,6 @@ like to install a custom version of Arch Linux optimized for MythTV.
 
 See <url url="http://www.minimyth.org" name="http://www.minimyth.org"> for a
 small MythTV distribution which can be booted over a network.
-
-See <url url="http://wilsonet.com/mythtv/"
-name="http://wilsonet.com/mythtv/"> for instructions tailored to RedHat's
-Fedora Core distribution.
 
 See <url url="http://www.mythbuntu.org/" name="http://www.mythbuntu.org/">
 for a distribution using a customized Ubuntu.
@@ -538,7 +533,7 @@ For 720p content (1280x720), a 2.4GHz P4 should be sufficient.
 
 For 1920x1080i->1920x1080p with the better deinterlacing methods done in
 real time a 2.4GHz CPU is taxed, but should work if you use "Bob and Weave"
-deinterlacing, or if you have an NVIDIA card with video decode acceleration. 
+deinterlacing, or if you have an NVIDIA card with video decode acceleration.
 
 <sect2>Playback of HDTV using VDPAU
 <p>NVIDIA now incorporates MPEG-2 and H.264 decode acceleration in their
@@ -550,7 +545,7 @@ at 1.6Ghz is sufficient to decode and deinterlace MPEG-2 and H.264 if it has
 VDPAU supported video.
 
 <sect3>Firewire.
-<p>You may use the Firewire output of the Motorola DCT6200 or the SA3250. 
+<p>You may use the Firewire output of the Motorola DCT6200 or the SA3250.
 If your provider uses 5C encryption on a particular channel, you won't be
 able to get any content.  Many users have resorted to using Firewire to
 change channels on their set-top-box and capture the High Def video using
@@ -847,11 +842,11 @@ The reference compilation system for MythTV is Ubuntu.
 <p>The runtime manager for shared libraries, <bf>/lib/ld.so</bf>, gets
 information about the locations and contents of shared libraries from
 <tt>/etc/ld.so.cache</tt>, a file created by <bf>ldconfig</bf> from
-information in <tt>/etc/ld.so.conf</tt>.  Because MythTV installs 
+information in <tt>/etc/ld.so.conf</tt>.  Because MythTV installs
 shared libraries in <tt>/usr/local/lib</tt>, that directory needs to be
 added to the list of directories for <bf>ld.so</bf> to search when doing
 runtime linking of programs, if it is not already there.  You do this, as
-root, by editing <tt>/etc/ld.so.conf</tt>, then running <bf>ldconfig</bf>. 
+root, by editing <tt>/etc/ld.so.conf</tt>, then running <bf>ldconfig</bf>.
 There are many ways to do this; to determine the way that your distribution
 is configured, type:
 
@@ -1176,7 +1171,7 @@ you must grant access to the database from remote systems.  By default, the
 
 To allow other hosts access to your master database, you can either
 configure MySQL database access with no security or with additional
-granularity. 
+granularity.
 
 <figure loc="here">
 <eps file="stop.eps" height="1cm">
@@ -1231,7 +1226,7 @@ TODO:  UPDATE FOR NEW SOUND CODE in 0.24
 <sect>Setting up a remote control.
 <p>MythTV does not have native remote control receiver and decoder software
 built-in.  Instead, remote control functions are implemented by cooperating
-with <bf>lirc</bf>, the Linux Infrared Remote Control program. 
+with <bf>lirc</bf>, the Linux Infrared Remote Control program.
 <bf>lirc</bf> handles the IR hardware and passes keystrokes to MythTV, which
 then acts as if the user had pressed the keys on the keyboard.  The file
 <tt>keys.txt</tt> describes the keys used to control MythTV.
@@ -1253,7 +1248,7 @@ receiver senses the pulses and sends them to the lirc daemon.  The lircd
 loads a file called <tt>lircd.conf</tt> which instructs it how interpret the
 IR pulses that it received and convert them to a human-readable name.
 
-For example, the hardware may receive pulses may correlate to "Channel Up". 
+For example, the hardware may receive pulses may correlate to "Channel Up".
 The <tt>lircd.conf</tt> file will then contain a line that looks something
 like this:
 
@@ -1782,7 +1777,7 @@ go into the Default Storage Group where they'll be the first programs
 eligible for expiration if the system needs free space for recordings.
 
 Usage information for all Storage Group directories is visible on the
-mythfrontend status screen as well as the mythbackend status webpage. 
+mythfrontend status screen as well as the mythbackend status webpage.
 MythTV is smart enough to determine which directories are on shared
 filesystems so it should not count free or used space multiple times if you
 have more than one directory on the same filesystem.
@@ -2526,7 +2521,7 @@ X	        | queues the current recording for transcoding			    @
 O	        | brings up menu to allow toggling settings such as Commercial&nbsp;
                   Auto-Skip, Auto-Expire, etc.					    @
 D		| exits the current recording and displays the Delete menu @
-E or M	        | enters/exits edit mode.					    @
+E	        | enters/exits edit mode.					    @
                 | @
                 | @
                 | <bf>In edit mode</bf>                                             @
@@ -2537,10 +2532,14 @@ Up/Down	        | alter the amount of time you jump forward and backward.&nbsp;
                   and 10 minutes.						    @
 PageUp/PageDown	| move forward and backward to the nearest cut point		    @
 < or >	        | move forward or backward by 10 times the normal jump amount	    @
-Space/Enter	| allows you to set or delete a cut point			    @
-Z	        | loads the commercial skip list (if one exists) into the cutlist  @
-C or Q	        | clear all cut points in the cutlist			    @
-I		| Inverts the cutlist
+M	        | shows a menu allowing you to add, move, or delete a cut&nbsp;
+                  or to save or revert changes					    @
+Space/Enter	| adds a cut or, if in a cut area, prompts for action		    @
+D	        | deletes the cut						    @
+Z	        | loads the commercial skip list (if one exists) into the cut list  @
+C or Q	        | clear all cut points in the cut list				    @
+I		| inverts the cut list						    @
+Escape		| prompts whether to save or cancel changes and allows exit
 </tabular>
 </table>
 <sect2>EPG
@@ -3134,7 +3133,7 @@ schedule.
 
 <itemize>
 <item>Currently recording beats not currently recording -- A recording
-in progress can not be moved to another input or time so it "wins"
+in progress cannot be moved to another input or time so it "wins"
 its current timeslot.
 
 <item>Single, Daily, or Weekly rules with no match are marked Not Listed --
@@ -3142,7 +3141,7 @@ If these or Overrides do not match the current listings because the
 listings have changed, they are added to the schedule and marked to
 indicate that they will not record.
 
-<item>Rules that could record beat rules that can not record a showing --
+<item>Rules that could record beat rules that cannot record a showing --
 If two rules match the same showing of a program, a rule marked as inactive
 or a showing marked as a repeat, for example, yield to the other rule.
 
@@ -3686,7 +3685,7 @@ to the same set top cable box.
 </verb></tscreen>
 
 Input 1 and input 2 receive content from the same set top box and the
-channels can not be tuned independently. Therefore only one of these two
+channels cannot be tuned independently. Therefore only one of these two
 inputs should be used at any given time. The solution is to create an "Input
 Group" with <bf>mythtv-setup</bf> in "Input connections". Including these
 two inputs in the same Input Group will tell the scheduler that these are
@@ -5069,7 +5068,7 @@ You can now continue troubleshooting using <bf>gdb</bf> as detailed in the
 instructions.
 
 <sect2>MythTV is crashing your system
-<p>When run as a non-privileged user, MythTV <em>can not</em> crash your
+<p>When run as a non-privileged user, MythTV <em>cannot</em> crash your
 system.  If your system is crashing when you run MythTV, then you have some
 issue with the drivers for your capture card or other hardware, or the CPU
 fan has fallen off/broken and your system is overheating when asked to
@@ -5273,7 +5272,7 @@ often appear to hang, when in fact it is trying to manipulate the audio
 subsystem and failing.  You may or may not receive error messages indicating
 that the source of the error is the audio subsystem.
 
-You can not use <bf>xawtv</bf> to determine if your audio is working
+You cannot use <bf>xawtv</bf> to determine if your audio is working
 correctly, since <bf>xawtv</bf> is simply using the analog sound patched
 through line-in to line-out. It doesn't need to digitize the sound unless
 you are using the recording function.
@@ -5414,7 +5413,7 @@ libmp3lame library.
 <sect2>Can't change the channel when watching Live TV.
 <p>Something's wrong with your program database.  Did mythfilldatabase run
 with no major errors?  Or, MythTV may not have permissions to the
-appropriate video4linux devices. 
+appropriate video4linux devices.
 
 <sect2>Screen goes black when you try to play something
 <p>MythTV prints error and status messages to the shell that was used to
@@ -5640,7 +5639,7 @@ by the settings for the television set. Many sets have these adjustments in
 a 'service mode'. If you cannot make these adjustments, there will be black
 borders around the edges of the X desktop, MythTV GUI and TV playback.
 
-MythTV has settings for "Overscan" in Setup->Playback. These can not, and do
+MythTV has settings for "Overscan" in Setup->Playback. These cannot, and do
 not, cause the image to display beyond the edge of the X display area. The
 purpose of these settings are to cut off rough edges and to expand the image
 so that objects will appear to be the same size as a normal overscanned TV
@@ -5792,7 +5791,7 @@ masterbackend:/var/video /var/video nfs hard,intr,nfsvers=3,actimeo=0
 
 Then run <tt># mount -a</tt> to re-read the file to mount the file system.
 
-<bf>NOTE</bf>:  Previous versions of this HOWTO gave specific values for 
+<bf>NOTE</bf>:  Previous versions of this HOWTO gave specific values for
 variables like the "rsize".  Best common practice at this point is to <em>not</em>
 specify these and allow the server and the client to autonegotiate.
 
@@ -6064,7 +6063,7 @@ content even if the slave backend that recorded a program is not available.
 another.  The transcoder has three primary uses; it can transcode MPEG-2
 files captured using a hardware encoder (PVR cards, DVB cards, ATSC HD,
 etc.) to MPEG-4, it can be used to transcode RTjpeg files (usually only used
-on systems that can not real-time encode to MPEG-4 using a framegrabber) to
+on systems that cannot real-time encode to MPEG-4 using a framegrabber) to
 MPEG-4, and finally it can be used to remove commercials from a MPEG-2 file
 while leaving the file in MPEG-2 format.
 
@@ -6091,7 +6090,7 @@ A recording can be transcoded in two ways:
 <item>Automatically transcode the file once it has completed
 recording.</item>
 <item>Manually choosing to transcode a recording, usually after
-importing a cutlist or manually marking commercials to be
+importing a cut list or manually marking commercials to be
 removed.</item>
 </itemize>
 

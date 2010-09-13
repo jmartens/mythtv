@@ -1333,6 +1333,12 @@ void MythUIButtonList::SetPositionArrowStates()
     }
 }
 
+void MythUIButtonList::ItemVisible(MythUIButtonListItem* item)
+{
+    if (item)
+        emit itemVisible(item);
+}
+
 void MythUIButtonList::InsertItem(MythUIButtonListItem *item)
 {
     bool wasEmpty = m_itemList.isEmpty();
@@ -1491,7 +1497,7 @@ uint MythUIButtonList::GetVisibleCount()
     if (m_needsUpdate)
         SetPositionArrowStates();
 
-    return m_itemsVisible; 
+    return m_itemsVisible;
 }
 
 bool MythUIButtonList::IsEmpty() const
@@ -1767,6 +1773,11 @@ bool MythUIButtonList::MoveUp(MovementUnit unit, uint amount)
         case MoveColumn:
             if (pos % m_columns > 0)
                 --m_selPosition;
+            else if (m_wrapStyle == WrapFlowing)
+                if (m_selPosition == 0)
+                    --m_selPosition = m_itemList.size() - 1;
+                else
+                    --m_selPosition;
             else if (m_wrapStyle > WrapNone)
                 m_selPosition = pos + (m_columns-1);
             else if (m_wrapStyle == WrapCaptive)
@@ -1849,6 +1860,11 @@ bool MythUIButtonList::MoveDown(MovementUnit unit, uint amount)
         case MoveColumn:
             if ((pos+1) % m_columns > 0)
                 ++m_selPosition;
+            else if (m_wrapStyle == WrapFlowing)
+                if (m_selPosition < m_itemList.size() - 1)
+                    ++m_selPosition;
+                else
+                    m_selPosition = 0;
             else if (m_wrapStyle > WrapNone)
                 m_selPosition = pos - (m_columns-1);
             else if (m_wrapStyle == WrapCaptive)
@@ -2336,6 +2352,8 @@ bool MythUIButtonList::ParseElement(
             m_wrapStyle = WrapNone;
         else if (wrapstyle == "selection")
             m_wrapStyle = WrapSelect;
+        else if (wrapstyle == "flowing")
+            m_wrapStyle = WrapFlowing;
         else if (wrapstyle == "items")
             m_wrapStyle = WrapItems;
     }
@@ -2944,5 +2962,5 @@ void MythUIButtonListItem::SetToRealButton(MythUIStateType *button, bool selecte
         ++state_it;
     }
 
-
+    m_parent->ItemVisible(this);
 }

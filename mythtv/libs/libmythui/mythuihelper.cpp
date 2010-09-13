@@ -31,6 +31,7 @@
 #include "mythprogressdialog.h"
 #include "mythimage.h"
 #include "remotefile.h"
+#include "mythcorecontext.h"
 
 #define LOC      QString("MythUIHelper: ")
 #define LOC_ERR  QString("MythUIHelper, Error: ")
@@ -92,8 +93,6 @@ class MythUIHelperPrivate
     QString   m_themename;
     QPalette  m_palette;           ///< Colour scheme
 
-    QString language;
-
     float m_wmult, m_hmult;
     float m_pixelAspectRatio;
 
@@ -148,7 +147,6 @@ int MythUIHelperPrivate::h_override = -1;
 MythUIHelperPrivate::MythUIHelperPrivate(MythUIHelper *p)
     : m_qtThemeSettings(new Settings()),
       m_themeloaded(false),
-      language(""),
       m_wmult(1.0), m_hmult(1.0), m_pixelAspectRatio(-1.0),
       m_xbase(0), m_ybase(0), m_height(0), m_width(0),
       m_baseWidth(800), m_baseHeight(600), m_isWide(false),
@@ -406,7 +404,7 @@ bool MythUIHelper::IsTopScreenInitialized(void)
 
 void MythUIHelper::LoadQtConfig(void)
 {
-    d->language.clear();
+    gCoreContext->ResetLanguage();
     d->themecachedir.clear();
 
     if (GetMythDB()->GetNumSetting("UseVideoModes", 0))
@@ -1395,18 +1393,21 @@ MythImage *MythUIHelper::LoadCacheImage(QString srcfile, QString label,
     if (srcfile.isEmpty() || label.isEmpty())
         return NULL;
 
-    // Some screens include certain images dozens or even hundreds of
-    // times.  Even if the image is in the cache, there is still a
-    // stat system call on the original file to see if it has changed.
-    // This code relaxes the original-file check so that the check
-    // isn't repeated if it was already done within kImageCacheTimeout
-    // seconds.
-    const uint kImageCacheTimeout = 5;
-    uint now = QDateTime::currentDateTime().toTime_t();
-    if (d->imageCache.contains(label) &&
-        d->CacheTrack[label] + kImageCacheTimeout > now)
+    if (!(kCacheForceStat & cacheMode))
     {
-        return d->imageCache[label];
+        // Some screens include certain images dozens or even hundreds of
+        // times.  Even if the image is in the cache, there is still a
+        // stat system call on the original file to see if it has changed.
+        // This code relaxes the original-file check so that the check
+        // isn't repeated if it was already done within kImageCacheTimeout
+        // seconds.
+        const uint kImageCacheTimeout = 5;
+        uint now = QDateTime::currentDateTime().toTime_t();
+        if (d->imageCache.contains(label) &&
+            d->CacheTrack[label] + kImageCacheTimeout > now)
+        {
+            return d->imageCache[label];
+        }
     }
 
     QString cachefilepath = GetThemeCacheDir() + '/' + label;
@@ -1414,10 +1415,10 @@ MythImage *MythUIHelper::LoadCacheImage(QString srcfile, QString label,
 
     MythImage *ret = NULL;
 
-    if ((cacheMode == kCacheIgnoreDisk) || fi.exists())
+    if (!!(cacheMode & kCacheIgnoreDisk) || fi.exists())
     {
         // Now compare the time on the source versus our cached copy
-        if (cacheMode != kCacheIgnoreDisk)
+        if (!(cacheMode & kCacheIgnoreDisk))
             FindThemeFile(srcfile);
 
         QDateTime srcLastModified;
@@ -1435,12 +1436,12 @@ MythImage *MythUIHelper::LoadCacheImage(QString srcfile, QString label,
         else if (original.exists())
             srcLastModified = original.lastModified();
 
-        if ((cacheMode == kCacheIgnoreDisk) ||
+        if (!!(cacheMode & kCacheIgnoreDisk) ||
             (fi.lastModified() > srcLastModified))
         {
             // Check Memory Cache
             ret = GetImageFromCache(label);
-            if (!ret && (cacheMode == kCacheNormal))
+            if (!ret && (!!(kCacheNormal & cacheMode)))
             {
                 // Load file from disk cache to memory cache
                 ret = GetMythPainter()->GetFormatImage();
@@ -1497,30 +1498,6 @@ QFont MythUIHelper::GetSmallFont(void)
     font.setWeight(QFont::Bold);
 
     return font;
-}
-
-/** \fn MythUIHelper::GetLanguage()
- *  \brief Returns two character ISO-639 language descriptor for UI language.
- *  \sa iso639_get_language_list()
- */
-QString MythUIHelper::GetLanguage(void)
-{
-    return GetLanguageAndVariant().left(2);
-}
-
-/** \fn MythUIHelper::GetLanguageAndVariant()
- *  \brief Returns the user-set language and variant.
- *
- *   The string has the form ll or ll_vv, where ll is the two character
- *   ISO-639 language code, and vv (which may not exist) is the variant.
- *   Examples include en_AU, en_CA, en_GB, en_US, fr_CH, fr_DE, pt_BR, pt_PT.
- */
-QString MythUIHelper::GetLanguageAndVariant(void)
-{
-    if (d->language.isEmpty())
-        d->language = GetMythDB()->GetSetting("Language", "EN_US").toLower();
-
-    return d->language;
 }
 
 void MythUIHelper::DisableScreensaver(void)

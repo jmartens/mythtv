@@ -87,7 +87,7 @@ YUVInfo::YUVInfo(uint w, uint h, uint sz, const int *p, const int *o)
  *  is being held by VideoOutput and we don't want to lose
  *  it if the stream is reset. The displayed state indicates
  *  that DoneDisplayingFrame() has been called for the frame,
- *  but it can not yet be added to available because it is
+ *  but it cannot yet be added to available because it is
  *  still being displayed. VideoOutputXv calls
  *  DiscardFrame(VideoFrame*) on the frames no longer
  *  being displayed at the end of the next
@@ -1136,6 +1136,11 @@ bool VideoBuffers::CreateBuffers(VideoFrameType type, int width, int height,
     while (bufs.size() < allocSize())
     {
         unsigned char *data = (unsigned char*)av_malloc(buf_size + 64);
+        if (!data)
+        {
+            VERBOSE(VB_IMPORTANT, "Failed to allocate memory for frame.");
+            return false;
+        }
 
         bufs.push_back(data);
         yuvinfo.push_back(YUVInfo(width, height, buf_size, NULL, NULL));

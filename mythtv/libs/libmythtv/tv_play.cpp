@@ -57,6 +57,7 @@ using namespace std;
 #include "mythsystemevent.h"
 #include "videometadatautil.h"
 #include "mythdialogbox.h"
+#include "mythdirs.h"
 
 #if ! HAVE_ROUND
 #define round(x) ((int) ((x) + 0.5))
@@ -540,6 +541,8 @@ void TV::InitKeys(void)
     REG_KEY("TV Frontend", "CHANGEGROUPVIEW", QT_TRANSLATE_NOOP("MythControls",
             "Change Group View"), "");
 
+    REG_KEY("TV Playback", "BACK", QT_TRANSLATE_NOOP("MythControls",
+            "Exit or return to DVD menu"), "");
     REG_KEY("TV Playback", "CLEAROSD", QT_TRANSLATE_NOOP("MythControls",
             "Clear OSD"), "Backspace");
     REG_KEY("TV Playback", "PAUSE", QT_TRANSLATE_NOOP("MythControls",
@@ -759,6 +762,8 @@ void TV::InitKeys(void)
             "Clear editing cut points"), "C,Q,Home");
     REG_KEY("TV Editing", "INVERTMAP",   QT_TRANSLATE_NOOP("MythControls",
             "Invert Begin/End cut points"),"I");
+    REG_KEY("TV Editing", "SAVEMAP",     QT_TRANSLATE_NOOP("MythControls",
+            "Save cut list"),"");
     REG_KEY("TV Editing", "LOADCOMMSKIP",QT_TRANSLATE_NOOP("MythControls",
             "Load cut list from commercial skips"), "Z,End");
     REG_KEY("TV Editing", "NEXTCUT",     QT_TRANSLATE_NOOP("MythControls",
@@ -873,7 +878,7 @@ TV::TV(void)
       switchToInputId(0),
       wantsToQuit(true),
       stretchAdjustment(false),
-      audiosyncAdjustment(false), audiosyncBaseline(INT64_MIN),
+      audiosyncAdjustment(false), audiosyncBaseline(LLONG_MIN),
       editmode(false),     zoomMode(false),
       sigMonMode(false),
       endOfRecording(false),
@@ -1971,7 +1976,7 @@ void TV::HandleStateChange(PlayerContext *mctx, PlayerContext *ctx)
                     .arg(playbackURL).arg(ctx->tvchain->GetCardType(-1)));
 
             ctx->SetRingBuffer(new RingBuffer(playbackURL, false, true,
-                                      opennow ? 12 : (uint)-1));
+                                              opennow ? 2000 : -1));
             ctx->buffer->SetLiveMode(ctx->tvchain);
         }
 
@@ -2001,6 +2006,7 @@ void TV::HandleStateChange(PlayerContext *mctx, PlayerContext *ctx)
         }
         else if (!ctx->IsPIP())
         {
+            GetMythUI()->DisableScreensaver();
             if (!lastLockSeenTime.isValid() ||
                 (lastLockSeenTime < timerOffTime))
             {
@@ -3523,7 +3529,8 @@ void TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
         if (handled || actions.isEmpty())
             return;
 
-        bool esc   = has_action("ESCAPE", actions);
+        bool esc   = has_action("ESCAPE", actions) ||
+                     has_action("BACK", actions);
         bool pause = has_action("PAUSE",  actions);
         bool play  = has_action("PLAY",   actions);
 
@@ -3545,14 +3552,31 @@ void TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
 
         if (!handled)
         {
-            if(has_action("SELECT", actions))
+            if (has_action("MENU", actions))
             {
-                ShowOSDCutpoint(actx, true);
+                ShowOSDCutpoint(actx, "EDIT_CUT_POINTS");
+                handled = true;
+            }
+            if (has_action("ESCAPE", actions))
+            {
+                ShowOSDCutpoint(actx, "EXIT_EDIT_MODE");
                 handled = true;
             }
             else
             {
-                handled |= actx->player->HandleProgrameEditorActions(actions);
+                actx->LockDeletePlayer(__FILE__, __LINE__);
+                int64_t current_frame = actx->player->GetFramesPlayed();
+                actx->UnlockDeletePlayer(__FILE__, __LINE__);
+                if ((has_action("SELECT", actions)) &&
+                    (actx->player->IsInDelete(current_frame)) &&
+                    (!(actx->player->HasTemporaryMark())))
+                {
+                    ShowOSDCutpoint(actx, "EDIT_CUT_REGION");
+                    handled = true;
+                }
+                else
+                    handled |= actx->player->HandleProgrameEditorActions(
+                                                      actions, current_frame);
             }
         }
         if (handled)
@@ -3691,6 +3715,7 @@ bool TV::BrowseHandleAction(PlayerContext *ctx, const QStringList &actions)
     }
     else if (has_action("CLEAROSD",     actions) ||
              has_action("ESCAPE",       actions) ||
+             has_action("BACK",         actions) ||
              has_action("TOGGLEBROWSE", actions))
     {
         BrowseEnd(ctx, false);
@@ -3760,7 +3785,8 @@ bool TV::ManualZoomHandleAction(PlayerContext *actx, const QStringList &actions)
         actx->player->Zoom(kZoomAspectUp);
     else if (has_action("VOLUMEDOWN", actions))
         actx->player->Zoom(kZoomAspectDown);
-    else if (has_action("ESCAPE", actions))
+    else if (has_action("ESCAPE", actions) ||
+             has_action("BACK", actions))
     {
         actx->player->Zoom(kZoomHome);
         end_manual_zoom = true;
@@ -4092,7 +4118,8 @@ bool TV::ActiveHandleAction(PlayerContext *ctx,
         PrepareToExitPlayer(ctx, __LINE__);
         SetExitPlayer(true, true);
     }
-    else if (has_action("ESCAPE", actions))
+    else if (has_action("ESCAPE", actions) ||
+             has_action("BACK", actions))
     {
         if (StateIsLiveTV(ctx->GetState()) &&
             (ctx->lastSignalMsgTime.elapsed() <
@@ -4153,6 +4180,19 @@ bool TV::ActiveHandleAction(PlayerContext *ctx,
             }
             else
             {
+                // If it's a DVD, and we're not trying to execute a
+                // jumppoint, and it's not in a menu, then first try
+                // jumping to the title or root menu.
+                if (isDVD &&
+                    !GetMythMainWindow()->IsExitingToMain() &&
+                    has_action("BACK", actions) &&
+                    !ctx->buffer->DVD()->IsInMenu() &&
+                    (ctx->player->GoToDVDMenu("title") ||
+                     ctx->player->GoToDVDMenu("root"))
+                    )
+                {
+                    return handled;
+                }
                 SetExitPlayer(true, true);
             }
         }
@@ -4492,112 +4532,107 @@ void TV::ProcessNetworkControlCommand(PlayerContext *ctx,
             if (!ctx->paused)
                 DoTogglePause(ctx, true);
         }
-        else if (tokens[2].contains(QRegExp("^\\-*\\d+x$")))
+        else
         {
-            QString speed = tokens[2].left(tokens[2].length()-1);
+            float tmpSpeed;
             bool ok = false;
-            int tmpSpeed = speed.toInt(&ok);
-            int searchSpeed = abs(tmpSpeed);
-            unsigned int index;
 
-            if (ctx->paused)
-                DoTogglePause(ctx, true);
-
-            if (tmpSpeed == 1)
+            if (tokens[2].contains(QRegExp("^\\-*\\d+x$")))
             {
-                StopFFRew(ctx);
-                ctx->ts_normal = 1.0f;
-                ChangeTimeStretch(ctx, 0, false);
-
-                ReturnPlayerLock(ctx);
-                return;
+                QString speed = tokens[2].left(tokens[2].length()-1);
+                tmpSpeed = speed.toFloat(&ok);
             }
-
-            NormalSpeed(ctx);
-
-            for (index = 0; index < ff_rew_speeds.size(); index++)
-                if (ff_rew_speeds[index] == searchSpeed)
-                    break;
-
-            if ((index < ff_rew_speeds.size()) &&
-                (ff_rew_speeds[index] == searchSpeed))
+            else if (tokens[2].contains(QRegExp("^\\-*\\d*\\.\\d+x$")))
             {
-                if (tmpSpeed < 0)
-                    ctx->ff_rew_state = -1;
-                else if (tmpSpeed > 1)
-                    ctx->ff_rew_state = 1;
-                else
-                    StopFFRew(ctx);
-
-                if (ctx->ff_rew_state)
-                    SetFFRew(ctx, index);
+                QString speed = tokens[2].left(tokens[2].length() - 1);
+                tmpSpeed = speed.toFloat(&ok);
             }
             else
             {
-                VERBOSE(VB_IMPORTANT, QString("Couldn't find %1 speed in "
-                    "FFRewSpeed settings array, changing to default speed "
-                    "of 1x").arg(searchSpeed));
+                QRegExp re = QRegExp("^(\\-*\\d+)\\/(\\d+)x$");
+                if (tokens[2].contains(re))
+                {
+                    QStringList matches = re.capturedTexts();
 
-                ctx->ff_rew_state = 0;
-                SetFFRew(ctx, kInitFFRWSpeed);
+                    int numerator, denominator;
+                    numerator = matches[1].toInt(&ok);
+                    denominator = matches[2].toInt(&ok);
+
+                    if (ok && denominator != 0)
+                        tmpSpeed = static_cast<float>(numerator) /
+                                   static_cast<float>(denominator);
+                    else
+                        ok = false;
+                }
             }
-        }
-        else if (tokens[2].contains(QRegExp("^\\d*\\.\\d+x$")))
-        {
-            QString tmpSpeed = tokens[2].left(tokens[2].length() - 1);
 
-            if (ctx->paused)
-                DoTogglePause(ctx, true);
-
-            StopFFRew(ctx);
-
-            bool floatRead;
-            float stretch = tmpSpeed.toFloat(&floatRead);
-            if (floatRead &&
-                stretch <= 2.0 &&
-                stretch >= 0.48)
+            if (ok)
             {
-                ctx->ts_normal = stretch;   // alter speed before display
-                ChangeTimeStretch(ctx, 0, false);
+                float searchSpeed = fabs(tmpSpeed);
+                unsigned int index;
+
+                if (ctx->paused)
+                    DoTogglePause(ctx, true);
+
+                if (tmpSpeed == 0.0f)
+                {
+                    NormalSpeed(ctx);
+                    StopFFRew(ctx);
+
+                    if (!ctx->paused)
+                        DoTogglePause(ctx, true);
+                }
+                else if (tmpSpeed == 1.0f)
+                {
+                    StopFFRew(ctx);
+                    ctx->ts_normal = 1.0f;
+                    ChangeTimeStretch(ctx, 0, false);
+
+                    ReturnPlayerLock(ctx);
+                    return;
+                }
+
+                NormalSpeed(ctx);
+
+                for (index = 0; index < ff_rew_speeds.size(); index++)
+                    if (float(ff_rew_speeds[index]) == searchSpeed)
+                        break;
+
+                if ((index < ff_rew_speeds.size()) &&
+                    (float(ff_rew_speeds[index]) == searchSpeed))
+                {
+                    if (tmpSpeed < 0)
+                        ctx->ff_rew_state = -1;
+                    else if (tmpSpeed > 1)
+                        ctx->ff_rew_state = 1;
+                    else
+                        StopFFRew(ctx);
+
+                    if (ctx->ff_rew_state)
+                        SetFFRew(ctx, index);
+                }
+                else if (0.48 <= tmpSpeed && tmpSpeed <= 2.0) {
+                    StopFFRew(ctx);
+
+                    ctx->ts_normal = tmpSpeed;   // alter speed before display
+                    ChangeTimeStretch(ctx, 0, false);
+                }
+                else
+                {
+                    VERBOSE(VB_IMPORTANT, QString("Couldn't find %1 speed"
+                                                  "Setting Speed to"
+                                                  "1x").arg(searchSpeed));
+
+                    ctx->ff_rew_state = 0;
+                    SetFFRew(ctx, kInitFFRWSpeed);
+                }
             }
-        }
-        else if (tokens[2].contains(QRegExp("^\\d+\\/\\d+x$")))
-        {
-            if (ctx->buffer && ctx->buffer->InDVDMenuOrStillFrame())
+            else
             {
-                ReturnPlayerLock(ctx);
-                return;
+                VERBOSE(VB_IMPORTANT,
+                        QString("Found an unknown speed of %1").arg(tokens[2]));
             }
-
-            if (ctx->paused)
-                DoTogglePause(ctx, true);
-
-            if (tokens[2] == "16x")
-                ChangeSpeed(ctx, 5 - ctx->ff_rew_speed);
-            else if (tokens[2] == "8x")
-                ChangeSpeed(ctx, 4 - ctx->ff_rew_speed);
-            else if (tokens[2] == "4x")
-                ChangeSpeed(ctx, 3 - ctx->ff_rew_speed);
-            else if (tokens[2] == "3x")
-                ChangeSpeed(ctx, 2 - ctx->ff_rew_speed);
-            else if (tokens[2] == "2x")
-                ChangeSpeed(ctx, 1 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1x")
-                ChangeSpeed(ctx, 0 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1/2x")
-                ChangeSpeed(ctx, -1 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1/3x")
-                ChangeSpeed(ctx, -2 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1/4x")
-                ChangeSpeed(ctx, -3 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1/8x")
-                ChangeSpeed(ctx, -4 - ctx->ff_rew_speed);
-            else if (tokens[2] == "1/16x")
-                ChangeSpeed(ctx, -5 - ctx->ff_rew_speed);
         }
-        else
-            VERBOSE(VB_IMPORTANT,
-                QString("Found an unknown speed of %1").arg(tokens[2]));
     }
     else if (tokens.size() == 2 && tokens[1] == "STOP")
     {
@@ -4683,24 +4718,27 @@ void TV::ProcessNetworkControlCommand(PlayerContext *ctx,
         {
             QString speedStr;
 
-            switch (ctx->ff_rew_speed)
+            if (ctx->paused)
             {
-                case  4: speedStr = "16x"; break;
-                case  3: speedStr = "8x";  break;
-                case  2: speedStr = "3x";  break;
-                case  1: speedStr = "2x";  break;
-                case  0: speedStr = "1x";  break;
-                case -1: speedStr = "1/3x"; break;
-                case -2: speedStr = "1/8x"; break;
-                case -3: speedStr = "1/16x"; break;
-                case -4: speedStr = "0x"; break;
-                default: speedStr = "1x"; break;
+                speedStr = "pause";
             }
-
-            if (ctx->ff_rew_state == -1)
-                speedStr = QString("-%1").arg(speedStr);
-            else if (ctx->ts_normal != 1.0)
-                speedStr = QString("%1X").arg(ctx->ts_normal);
+            else if (ctx->ff_rew_state)
+            {
+                speedStr = QString("%1x").arg(ctx->ff_rew_speed);
+            }
+            else
+            {
+                QRegExp re = QRegExp("Play (.*)x");
+                if (QString(ctx->GetPlayMessage()).contains(re))
+                {
+                    QStringList matches = re.capturedTexts();
+                    speedStr = QString("%1x").arg(matches[1]);
+                }
+                else
+                {
+                    speedStr = "1x";
+                }
+            }
 
             osdInfo info;
             ctx->CalcPlayerSliderPosition(info, true);
@@ -5083,7 +5121,7 @@ void TV::PxPCreateView(PlayerContext *actx, bool wantPBP)
     }
 
     if ((player.size() > 1) && (wantPBP ^ actx->IsPBP()))
-        err_msg = tr("Sorry, can not mix PBP and PIP views");
+        err_msg = tr("Sorry, cannot mix PBP and PIP views");
 
     if (!err_msg.isEmpty())
     {
@@ -5644,9 +5682,9 @@ bool TV::DoPlayerSeek(PlayerContext *ctx, float time)
 
     bool res = false;
 
-    if (INT64_MIN != audiosyncBaseline)
+    if (LLONG_MIN != audiosyncBaseline)
     {
-        long long aud_tc = ctx->player->GetAudioTimecodeOffset();
+        int64_t aud_tc = ctx->player->GetAudioTimecodeOffset();
         ctx->player->SaveAudioTimecodeOffset(aud_tc - audiosyncBaseline);
     }
 
@@ -5918,11 +5956,13 @@ void TV::SetFFRew(PlayerContext *ctx, int index)
     {
         mesg = tr("Forward %1X").arg(ff_rew_speeds[ctx->ff_rew_index]);
         speed = ff_rew_speeds[ctx->ff_rew_index];
+        ctx->ff_rew_speed = speed;
     }
     else
     {
         mesg = tr("Rewind %1X").arg(ff_rew_speeds[ctx->ff_rew_index]);
         speed = -ff_rew_speeds[ctx->ff_rew_index];
+        ctx->ff_rew_speed = speed;
     }
 
     ctx->LockDeletePlayer(__FILE__, __LINE__);
@@ -6365,7 +6405,7 @@ void TV::SwitchCards(PlayerContext *ctx,
             QString playbackURL = ctx->playingInfo->GetPlaybackURL(true);
             bool opennow = (ctx->tvchain->GetCardType(-1) != "DUMMY");
             ctx->SetRingBuffer(new RingBuffer(playbackURL, false, true,
-                                              opennow ? 12 : (uint)-1));
+                                              opennow ? 2000 : -1));
 
             ctx->tvchain->SetProgram(*ctx->playingInfo);
             ctx->buffer->SetLiveMode(ctx->tvchain);
@@ -7878,9 +7918,9 @@ void TV::DoEditSchedule(int editType)
     MythMainWindow *mwnd = GetMythMainWindow();
     if (!db_use_gui_size_for_tv || !db_use_fixed_size)
     {
+        mwnd->setFixedSize(saved_gui_bounds.size());
         mwnd->setGeometry(saved_gui_bounds.left(), saved_gui_bounds.top(),
                           saved_gui_bounds.width(), saved_gui_bounds.height());
-        mwnd->setFixedSize(saved_gui_bounds.size());
     }
 
     // Actually show the pop-up UI
@@ -8056,7 +8096,7 @@ void TV::ChangeAudioSync(PlayerContext *ctx, int dir, bool allowEdit)
         return;
     }
 
-    if (!audiosyncAdjustment && INT64_MIN == audiosyncBaseline)
+    if (!audiosyncAdjustment && LLONG_MIN == audiosyncBaseline)
         audiosyncBaseline = ctx->player->GetAudioTimecodeOffset();
 
     audiosyncAdjustment = allowEdit;
@@ -8616,6 +8656,9 @@ void TV::customEvent(QEvent *e)
         MythMainWindow *mwnd = GetMythMainWindow();
 
         StopEmbedding(actx);                // Undo any embedding
+        MythPainter *painter = GetMythPainter();
+        if (painter)
+            painter->FreeResources();
 
         mctx = GetPlayerReadLock(0, __FILE__, __LINE__);
         mctx->LockDeletePlayer(__FILE__, __LINE__);
@@ -8931,8 +8974,8 @@ void TV::ToggleRecord(PlayerContext *ctx)
             recinfo.ToggleRecord();
         recinfo.ToMap(infoMap);
         infoMap["iconpath"] = ChannelUtil::GetIcon(recinfo.GetChanID());
-        if (recinfo.IsVideoFile() &&
-            recinfo.GetPathname() != recinfo.GetBasename())
+        if ((recinfo.IsVideoFile() || recinfo.IsVideoDVD() ||
+            recinfo.IsVideoBD()) && recinfo.GetPathname() != recinfo.GetBasename())
         {
             infoMap["coverartpath"] = VideoMetaDataUtil::GetArtPath(
                 recinfo.GetPathname(), "Coverart");
@@ -9187,7 +9230,7 @@ void TV::SetActive(PlayerContext *lctx, int index, bool osd_msg)
     VERBOSE(VB_PLAYBACK, loc + " -- end");
 }
 
-void TV::ShowOSDCutpoint(PlayerContext *ctx, bool allowSelectNear)
+void TV::ShowOSDCutpoint(PlayerContext *ctx, const QString &type)
 {
     OSD *osd = GetOSDLock(ctx);
     if (!osd)
@@ -9196,39 +9239,108 @@ void TV::ShowOSDCutpoint(PlayerContext *ctx, bool allowSelectNear)
         return;
     }
 
-    bool cut_after   = false;
-    int  direction   = 0;
-    bool deletepoint = false;
-    uint64_t frame   = 0;
-    uint64_t nearest_mark = 0;
 
-    deletepoint = ctx->player->IsNearDeletePoint(direction, cut_after,
-                                              nearest_mark);
-    frame = ctx->player->GetFramesPlayed();
+    if (("EDIT_CUT_POINTS" == type) || ("EDIT_CUT_REGION" == type))
+    {
+        uint64_t frame   = ctx->player->GetFramesPlayed();
+        uint64_t previous_cut = ctx->player->GetNearestMark(frame, false);
+        uint64_t next_cut = ctx->player->GetNearestMark(frame, true);
+        uint64_t total_frames = ctx->player->GetTotalFrameCount();
 
-    if (deletepoint && nearest_mark > 0 && allowSelectNear)
+        osd->DialogShow(OSD_DLG_CUTPOINT,
+                        QObject::tr("Edit Cut Points"));
+        if (ctx->player->IsInDelete(frame))
+        {
+            if (ctx->player->IsTemporaryMark(frame))
+            {
+                if (previous_cut > 0)
+                    osd->DialogAddButton(QObject::tr("Move Previous Cut End "
+                                                     "Here"),
+                                         QString("DIALOG_CUTPOINT_MOVEPREV_%1")
+                                                 .arg(frame));
+                else
+                    osd->DialogAddButton(QObject::tr("Cut to Beginning"),
+                                   QString("DIALOG_CUTPOINT_CUTTOBEGINNING_%1")
+                                           .arg(frame));
+
+                if (next_cut == total_frames)
+                    osd->DialogAddButton(QObject::tr("Cut to End"),
+                                         QString("DIALOG_CUTPOINT_CUTTOEND_%1")
+                                                 .arg(frame));
+                else
+                    osd->DialogAddButton(QObject::tr("Move Next Cut Start "
+                                                     "Here"),
+                                         QString("DIALOG_CUTPOINT_MOVENEXT_%1")
+                                                 .arg(frame));
+            }
+            else
+            {
+                osd->DialogAddButton(QObject::tr("Move Start of Cut Here"),
+                                     QString("DIALOG_CUTPOINT_MOVEPREV_%1")
+                                             .arg(frame));
+                osd->DialogAddButton(QObject::tr("Move End of Cut Here"),
+                                     QString("DIALOG_CUTPOINT_MOVENEXT_%1")
+                                             .arg(frame));
+            }
+            osd->DialogAddButton(QObject::tr("Delete This Cut"),
+                                 QString("DIALOG_CUTPOINT_DELETE_%1")
+                                         .arg(frame));
+        }
+        else
+        {
+            if (previous_cut > 0)
+                osd->DialogAddButton(QObject::tr("Move Previous Cut End Here"),
+                                     QString("DIALOG_CUTPOINT_MOVEPREV_%1")
+                                             .arg(frame));
+            else
+                osd->DialogAddButton(QObject::tr("Cut to Beginning"),
+                                  QString("DIALOG_CUTPOINT_CUTTOBEGINNING_%1")
+                                          .arg(frame));
+            if (next_cut == total_frames)
+                osd->DialogAddButton(QObject::tr("Cut to End"),
+                                     QString("DIALOG_CUTPOINT_CUTTOEND_%1")
+                                             .arg(frame));
+            else
+                osd->DialogAddButton(QObject::tr("Move Next Cut Start Here"),
+                                     QString("DIALOG_CUTPOINT_MOVENEXT_%1")
+                                             .arg(frame));
+            osd->DialogAddButton(QObject::tr("Add New Cut"),
+                                 QString("DIALOG_CUTPOINT_NEWCUT_%1")
+                                         .arg(frame));
+        }
+        if ("EDIT_CUT_POINTS" == type)
+            osd->DialogAddButton(QObject::tr("Cut List Options"),
+                                 "DIALOG_CUTPOINT_CUTLISTOPTIONS_0", true);
+    }
+    else if ("CUT_LIST_OPTIONS" == type)
     {
         osd->DialogShow(OSD_DLG_CUTPOINT,
-                        QObject::tr("You are close to an existing cut point. "
-                                    "Would you like to:"));
-        osd->DialogAddButton(QObject::tr("Delete this cut point"),
-                             QString("DIALOG_CUTPOINT_DELETE_%1").arg(nearest_mark));
-        osd->DialogAddButton(QObject::tr("Move this cut point to the current position"),
-                             QString("DIALOG_CUTPOINT_MOVETOCURRENT_%1").arg(nearest_mark));
-        osd->DialogAddButton(QObject::tr("Flip directions - delete to the %1")
-                             .arg(direction ? QObject::tr("left") : QObject::tr("right")),
-                             QString("DIALOG_CUTPOINT_REVERSE_%1").arg(nearest_mark));
-        osd->DialogAddButton(QObject::tr("Insert a new cut point"),
-                             QString("DIALOG_CUTPOINT_INSERTNEW_%1").arg(frame));
+                        QObject::tr("Cut List Options"));
+        osd->DialogAddButton(QObject::tr("Clear Cut List"),
+                             "DIALOG_CUTPOINT_CLEARMAP_0");
+        osd->DialogAddButton(QObject::tr("Invert Cut List"),
+                             "DIALOG_CUTPOINT_INVERTMAP_0");
+        osd->DialogAddButton(QObject::tr("Undo Changes"),
+                             "DIALOG_CUTPOINT_REVERT_0");
+        osd->DialogAddButton(QObject::tr("Exit Without Saving"),
+                             "DIALOG_CUTPOINT_REVERTEXIT_0");
+        osd->DialogAddButton(QObject::tr("Save Cut List"),
+                             "DIALOG_CUTPOINT_SAVEMAP_0");
+        osd->DialogAddButton(QObject::tr("Save Cut List and Exit"),
+                             "DIALOG_CUTPOINT_SAVEEXIT_0");
     }
-    else
+    else if ("EXIT_EDIT_MODE" == type)
     {
-        osd->DialogShow(OSD_DLG_CUTPOINT, QObject::tr("Insert a new cut point?"));
-        osd->DialogAddButton(QObject::tr("Delete before this frame"),
-                             QString("DIALOG_CUTPOINT_NEWCUTTOLEFT_%1").arg(frame));
-        osd->DialogAddButton(QObject::tr("Delete after this frame"),
-                             QString("DIALOG_CUTPOINT_NEWCUTTORIGHT_%1").arg(frame),
-                             false, cut_after);
+        osd->DialogShow(OSD_DLG_CUTPOINT,
+                        QObject::tr("Exit Cut List Editor"));
+        osd->DialogAddButton(QObject::tr("Save Cut List and Exit"),
+                             "DIALOG_CUTPOINT_SAVEEXIT_0");
+        osd->DialogAddButton(QObject::tr("Exit Without Saving"),
+                             "DIALOG_CUTPOINT_REVERTEXIT_0");
+        osd->DialogAddButton(QObject::tr("Save Cut List"),
+                             "DIALOG_CUTPOINT_SAVEMAP_0");
+        osd->DialogAddButton(QObject::tr("Undo Changes"),
+                             "DIALOG_CUTPOINT_REVERT_0");
     }
     osd->DialogBack("", "DIALOG_CUTPOINT_DONOTHING_0", true);
     QHash<QString,QString> map;
@@ -9244,9 +9356,9 @@ bool TV::HandleOSDCutpoint(PlayerContext *ctx, QString action, long long frame)
         return res;
 
     OSD *osd = GetOSDLock(ctx);
-    if (action == "INSERTNEW" && osd)
+    if (action == "CUTLISTOPTIONS" && osd)
     {
-        ShowOSDCutpoint(ctx, false);
+        ShowOSDCutpoint(ctx, "CUT_LIST_OPTIONS");
         res = false;
     }
     else if (action == "DONOTHING" && osd)
@@ -9257,6 +9369,8 @@ bool TV::HandleOSDCutpoint(PlayerContext *ctx, QString action, long long frame)
         QStringList actions(action);
         if (!ctx->player->HandleProgrameEditorActions(actions, frame))
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Unrecognised cutpoint action");
+        else
+            editmode = ctx->player->GetEditMode();
     }
     ReturnOSDLock(ctx, osd);
     return res;
@@ -9416,7 +9530,7 @@ bool TV::HandleOSDChannelEdit(PlayerContext *ctx, QString action)
     QMutexLocker locker(&chanEditMapLock);
     bool hide = false;
 
-    if (!DialogIsVisible(ctx, OSD_DLG_EDITOR));
+    if (!DialogIsVisible(ctx, OSD_DLG_EDITOR))
         return hide;
 
     OSD *osd = GetOSDLock(ctx);
@@ -9434,6 +9548,10 @@ bool TV::HandleOSDChannelEdit(PlayerContext *ctx, QString action)
         osd->DialogGetText(infoMap);
         insert_map(chanEditMap, infoMap);
         ctx->recorder->SetChannelInfo(chanEditMap);
+        hide = true;
+    }
+    else if (osd && action == "QUIT")
+    {
         hide = true;
     }
     ReturnOSDLock(ctx, osd);
@@ -10112,9 +10230,12 @@ void TV::FillOSDMenuAudio(const PlayerContext *ctx, OSD *osd,
         // TODO Add mute and volume
         backaction = "MAIN";
         currenttext = tr("Audio");
-        osd->DialogAddButton(tr("Select Audio Track"),
-                             "DIALOG_MENU_AUDIOTRACKS_0", true,
-                             selected == "AUDIOTRACKS");
+        if (tracks.size() > 1)
+        {
+            osd->DialogAddButton(tr("Select Audio Track"),
+                                 "DIALOG_MENU_AUDIOTRACKS_0", true,
+                                 selected == "AUDIOTRACKS");
+        }
         osd->DialogAddButton(tr("Adjust Audio Sync"),    "TOGGLEAUDIOSYNC");
         osd->DialogAddButton(tr("Toggle Audio Upmixer"), "TOGGLEUPMIX");
     }
@@ -10638,7 +10759,17 @@ void TV::FillOSDMenuSource(const PlayerContext *ctx, OSD *osd,
         {
             vector<InputInfo> inputs = RemoteRequestFreeInputList(
                 *it, excluded_cardids);
-            if (inputs.empty())
+            uint testsize = 0;
+            for (uint i = 0; i < inputs.size(); i++)
+            {
+                if ((inputs[i].cardid   == cardid) &&
+                    (inputs[i].sourceid == sourceid))
+                {
+                    testsize = 1;
+                    break;
+                }
+            }
+            if (inputs.size() <= testsize)
                 continue;
             osd->DialogAddButton(tr("Switch Input"),
                                  "DIALOG_MENU_INPUTSWITCHING_0",
@@ -11434,6 +11565,15 @@ void TV::ITVRestart(PlayerContext *ctx, bool isLive)
  */
 bool TV::ScreenShot(PlayerContext *ctx, long long frameNumber)
 {
+    QDir d;
+    QString confdir = GetConfDir();
+    if (!d.mkpath(confdir))
+    {
+        QString msg = tr("Screen Shot") + " " + tr("Error");
+        SetOSDMessage(ctx, msg);
+        return false;
+    }
+
     ctx->LockPlayingInfo(__FILE__, __LINE__);
     if (!ctx->playingInfo)
     {
@@ -11443,16 +11583,14 @@ bool TV::ScreenShot(PlayerContext *ctx, long long frameNumber)
         return false;
     }
 
-    // TODO FIXME .mythtv isn't guaranteed to exist, and may
-    // very well belong to another frontend.
     QString outFile =
-        QString("%1/.mythtv/%2_%3_%4.png")
-        .arg(QDir::homePath()).arg(ctx->playingInfo->GetChanID())
+        QString("%1/%2_%3_%4.png")
+        .arg(confdir).arg(ctx->playingInfo->GetChanID())
         .arg(ctx->playingInfo->GetRecordingStartTime(MythDate))
         .arg(frameNumber);
 
     PreviewGenerator *previewgen = new PreviewGenerator(
-        ctx->playingInfo, PreviewGenerator::kLocalAndRemote);
+        ctx->playingInfo, QString(), PreviewGenerator::kLocalAndRemote);
     ctx->UnlockPlayingInfo(__FILE__, __LINE__);
 
     previewgen->SetPreviewTimeAsFrameNumber(frameNumber);
@@ -11682,14 +11820,14 @@ void TV::ShowOSDPromptDeleteRecording(PlayerContext *ctx, QString title,
 
     if (!ctx->playingInfo->QueryIsDeleteCandidate(true))
     {
-        VERBOSE(VB_IMPORTANT, "This program can not be deleted at this time.");
+        VERBOSE(VB_IMPORTANT, "This program cannot be deleted at this time.");
         ProgramInfo pginfo(*ctx->playingInfo);
         ctx->UnlockPlayingInfo(__FILE__, __LINE__);
 
         OSD *osd = GetOSDLock(ctx);
         if (osd && !osd->DialogVisible())
         {
-            QString message = QObject::tr("Can not delete program") +
+            QString message = QObject::tr("Cannot delete program") +
                 QString("%1 %2 ")
                 .arg(pginfo.GetTitle()).arg(pginfo.GetSubtitle());
 

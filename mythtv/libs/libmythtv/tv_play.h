@@ -3,6 +3,9 @@
 #ifndef TVPLAY_H
 #define TVPLAY_H
 
+// C
+#include <stdint.h>
+
 // C++
 #include <vector>
 using namespace std;
@@ -85,7 +88,7 @@ typedef void (*EMBEDRETURNVOIDSCHEDIT) (const ProgramInfo *, void *);
 //
 // Note: Taking a middle lock such as askAllowLock, without taking a
 // playerLock first does not violate these rules, but once you are
-// holding it, you can not later lock playerLock.
+// holding it, you cannot later lock playerLock.
 //
 // It goes without saying that any locks outside of this class should only
 // be taken one at a time, and should be taken last and released first of
@@ -553,7 +556,7 @@ class MPUBLIC TV : public QThread
     void HandleOSDAskAllow(PlayerContext *ctx, QString action);
 
     // Program editing support
-    void ShowOSDCutpoint(PlayerContext *ctx, bool allowSelectNear);
+    void ShowOSDCutpoint(PlayerContext *ctx, const QString &type);
     bool HandleOSDCutpoint(PlayerContext *ctx, QString action, long long frame);
     void StartProgramEditMode(PlayerContext*);
 
@@ -694,7 +697,7 @@ class MPUBLIC TV : public QThread
     mutable bool wantsToQuit;
     bool stretchAdjustment; ///< True if time stretch is turned on
     bool audiosyncAdjustment; ///< True if audiosync is turned on
-    long long audiosyncBaseline;
+    int64_t audiosyncBaseline;
     bool editmode;          ///< Are we in video editing mode
     bool zoomMode;
     bool sigMonMode;     ///< Are we in signal monitoring mode?

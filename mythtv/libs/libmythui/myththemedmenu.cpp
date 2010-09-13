@@ -18,6 +18,7 @@
 #include "mythsystem.h"
 #include "mythuihelper.h"
 #include "lcddevice.h"
+#include "mythcorecontext.h"
 
 // Mythdb headers
 #include "mythverbose.h"
@@ -462,18 +463,18 @@ void MythThemedMenu::parseThemeButton(QDomElement &element)
                     info.attribute("lang","").isEmpty())
                 {
                     text = qApp->translate("ThemeUI",
-                                           getFirstText(info).toUtf8(), NULL,
+                                           parseText(info).toUtf8(), NULL,
                                            QCoreApplication::UnicodeUTF8);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguageAndVariant())
+                         gCoreContext->GetLanguageAndVariant())
                 {
-                    text = getFirstText(info);
+                    text = parseText(info);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguage())
+                         gCoreContext->GetLanguage())
                 {
-                    text = getFirstText(info);
+                    text = parseText(info);
                 }
             }
             else if (info.tagName() == "alttext")
@@ -482,18 +483,18 @@ void MythThemedMenu::parseThemeButton(QDomElement &element)
                     info.attribute("lang","").isEmpty())
                 {
                     alttext = qApp->translate("ThemeUI",
-                                              getFirstText(info).toUtf8(), NULL,
+                                              parseText(info).toUtf8(), NULL,
                                               QCoreApplication::UnicodeUTF8);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguageAndVariant())
+                         gCoreContext->GetLanguageAndVariant())
                 {
-                    alttext = getFirstText(info);
+                    alttext = parseText(info);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguage())
+                         gCoreContext->GetLanguage())
                 {
-                    alttext = getFirstText(info);
+                    alttext = parseText(info);
                 }
             }
             else if (info.tagName() == "action")
@@ -533,12 +534,12 @@ void MythThemedMenu::parseThemeButton(QDomElement &element)
                                                   QCoreApplication::UnicodeUTF8);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguageAndVariant())
+                         gCoreContext->GetLanguageAndVariant())
                 {
                     description = getFirstText(info);
                 }
                 else if (info.attribute("lang","").toLower() ==
-                         GetMythUI()->GetLanguage())
+                         gCoreContext->GetLanguage())
                 {
                     description = getFirstText(info);
                 }

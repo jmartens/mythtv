@@ -1036,7 +1036,7 @@ class AudioRateLimit : public ComboBoxSetting, public CaptureCardDBStorage
         ComboBoxSetting(this),
         CaptureCardDBStorage(this, parent, "audioratelimit")
     {
-        setLabel(QObject::tr("Audio sampling rate limit"));
+        setLabel(QObject::tr("Force audio sampling rate"));
         setHelpText(
             QObject::tr("If non-zero, override the audio sampling "
                         "rate in the recording profile when this card is "
@@ -2464,7 +2464,7 @@ void CaptureCard::Save(void)
     QString init_dev = CardUtil::GetVideoDevice(cardid);
     if (init_dev.isEmpty())
     {
-        VERBOSE(VB_IMPORTANT, QString("Can not clone card #%1 with empty"
+        VERBOSE(VB_IMPORTANT, QString("Cannot clone card #%1 with empty"
                                       " videodevice").arg(cardid));
         return;
     }
@@ -3024,7 +3024,7 @@ void CardInput::CreateNewInputGroup(void)
         {
             MythPopupBox::showOkPopup(
                 GetMythMainWindow(), tr("Error"),
-                tr("Sorry, this Input Group name can not be blank."));
+                tr("Sorry, this Input Group name cannot be blank."));
             continue;
         }
 
@@ -3483,7 +3483,18 @@ CardInputEditor::CardInputEditor() : listbox(new ListBoxSetting(this))
 DialogCode CardInputEditor::exec(void)
 {
     while (ConfigurationDialog::exec() == kDialogCodeAccepted)
-        cardinputs[listbox->getValue().toInt()]->exec();
+    {
+        if (!listbox)
+            return kDialogCodeRejected;
+
+        if (cardinputs.size() == 0)
+            return kDialogCodeRejected;
+
+        int val = listbox->getValue().toInt();
+
+        if (cardinputs[val])
+            cardinputs[val]->exec();
+    }
 
     return kDialogCodeRejected;
 }
@@ -3817,18 +3828,23 @@ DVBConfigurationGroup::DVBConfigurationGroup(CaptureCard& a_parent) :
     addChild(new DVBAudioDevice(parent));
     addChild(new DVBVbiDevice(parent));
 
-    TransButtonSetting *buttonDiSEqC = new TransButtonSetting();
-    buttonDiSEqC->setLabel(tr("DiSEqC"));
-    buttonDiSEqC->setHelpText(tr("Input and satellite settings."));
-
     TransButtonSetting *buttonRecOpt = new TransButtonSetting();
     buttonRecOpt->setLabel(tr("Recording Options"));
 
     HorizontalConfigurationGroup *advcfg =
         new HorizontalConfigurationGroup(false, false, true, true);
-    advcfg->addChild(buttonDiSEqC);
     advcfg->addChild(buttonRecOpt);
     addChild(advcfg);
+
+    diseqc_btn = new TransButtonSetting();
+    diseqc_btn->setLabel(tr("DiSEqC (Switch, LNB, and Rotor Configuration)"));
+    diseqc_btn->setHelpText(tr("Input and satellite settings."));
+
+    HorizontalConfigurationGroup *diseqc_cfg =
+        new HorizontalConfigurationGroup(false, false, true, true);
+    diseqc_cfg->addChild(diseqc_btn);
+    diseqc_btn->setVisible(false);
+    addChild(diseqc_cfg);
 
     defaultinput = new DVBInput(parent);
     addChild(defaultinput);
@@ -3840,7 +3856,7 @@ DVBConfigurationGroup::DVBConfigurationGroup(CaptureCard& a_parent) :
 
     connect(cardnum,      SIGNAL(valueChanged(const QString&)),
             this,         SLOT(  probeCard   (const QString&)));
-    connect(buttonDiSEqC, SIGNAL(pressed()),
+    connect(diseqc_btn,   SIGNAL(pressed()),
             this,         SLOT(  DiSEqCPanel()));
     connect(buttonRecOpt, SIGNAL(pressed()),
             this,         SLOT(  DVBExtraPanel()));
@@ -3869,6 +3885,12 @@ void DVBConfigurationGroup::Load(void)
     VerticalConfigurationGroup::Load();
     diseqc_tree->Load(parent.getCardID());
     defaultinput->fillSelections(diseqc_tree->IsInNeedOfConf());
+    if (cardtype->getValue() == "DVB-S" ||
+        cardtype->getValue() == "DVB-S2" ||
+        DiSEqCDevTree::Exists(parent.getCardID()))
+    {
+        diseqc_btn->setVisible(true);
+    }
 }
 
 void DVBConfigurationGroup::Save(void)

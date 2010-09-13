@@ -4,18 +4,19 @@
 Contains any static and global variables for MythTV Python Bindings
 """
 
-OWN_VERSION = (0,23,0,23)
+OWN_VERSION = (0,23,0,24)
 SCHEMA_VERSION = 1263
-MVSCHEMA_VERSION = 1036
+MVSCHEMA_VERSION = 1037
 NVSCHEMA_VERSION = 1007
 MUSICSCHEMA_VERSION = 1017
-PROTO_VERSION = '59'
+PROTO_VERSION = '62'
+PROTO_TOKEN = '78B5631E'
 BACKEND_SEP = '[]:[]'
 
 class MARKUP( object ):
     MARK_UNSET          = -10
     MARK_UPDATED_CUT    = -3
-    MARK_EDIT_MODE      = -2
+    MARK_PLACEHOLDER    = -2
     MARK_CUT_END        = 0
     MARK_CUT_START      = 1
     MARK_BOOKMARK       = 2
@@ -46,6 +47,14 @@ class RECTYPE( object ):
     kDontRecord         = 8
     kFindDailyRecord    = 9
     kFindWeeklyRecord   = 10
+
+class RECSEARCHTYPE( object ):
+    kNoSearch           = 0
+    kPowerSearch        = 1
+    kTitleSearch        = 2
+    kKeywordSearch      = 3
+    kPeopleSearch       = 4
+    kManualSearch       = 5
 
 class RECSTATUS( object ):
     rsFailed            = -9
@@ -182,14 +191,17 @@ class MythSchema( object ):
     _schema_value = 'DBSchemaVer'
     _schema_local = SCHEMA_VERSION
     _schema_name = 'Database'
+    _schema_update = None
 
 class VideoSchema( object ):
     _schema_value = 'mythvideo.DBSchemaVer'
     _schema_local = MVSCHEMA_VERSION
     _schema_name = 'MythVideo'
+    _schema_update = None
 
 class MusicSchema( object ):
     _schema_value = 'MusicDBSchemaVer'
     _schema_local = MUSICSCHEMA_VERSION
     _schema_name = 'MythMusic'
+    _schema_update = None
 

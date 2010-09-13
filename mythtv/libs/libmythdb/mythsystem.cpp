@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <time.h>
+#include <signal.h>  // for kill()
 
 // QT headers
 #include <QCoreApplication>
@@ -41,19 +42,12 @@
 #include "mythverbose.h"
 #include "exitcodes.h"
 
-#ifdef USE_LIRC
-#include "lircevent.h"
-#endif
-
-#ifdef USE_JOYSTICK_MENU
-#include "jsmenuevent.h"
-#endif
-
 #ifndef USING_MINGW
 typedef struct {
     QMutex  mutex;
     uint    result;
     time_t  timeout;
+    bool    background;
 } PidData_t;
 
 typedef QMap<pid_t, PidData_t *> PidMap_t;
@@ -62,7 +56,7 @@ class MythSystemReaper : public QThread
 {
     public:
         void run(void);
-        uint waitPid( pid_t pid, time_t timeout );
+        uint waitPid( pid_t pid, time_t timeout, bool background = false );
         uint abortPid( pid_t pid );
     private:
         PidMap_t    m_pidMap;
@@ -162,35 +156,44 @@ void MythSystemReaper::run(void)
                 .arg(pid) .arg(status) .arg(pidData->result));
         }
 
-        pidData->mutex.unlock();
+        if( pidData->background )
+            delete pidData;
+        else
+            pidData->mutex.unlock();
     }
 }
 
-uint MythSystemReaper::waitPid( pid_t pid, time_t timeout )
+uint MythSystemReaper::waitPid( pid_t pid, time_t timeout, bool background )
 {
     PidData_t  *pidData = new PidData_t;
     uint        result;
-    time_t      now;
 
     if( timeout > 0 )
-    {
-        now = time(NULL);
-        pidData->timeout = now + timeout;
-    }
+        pidData->timeout = time(NULL) + timeout;
     else
         pidData->timeout = 0;
+
+    pidData->background = background;
 
     pidData->mutex.lock();
     m_mapLock.lock();
     m_pidMap.insert( pid, pidData );
     m_mapLock.unlock();
 
-    /* Now we wait for the thread to see the SIGCHLD */
-    pidData->mutex.lock();
-    result = pidData->result;
-    delete pidData;
+    if( !background ) {
+        /* Now we wait for the thread to see the SIGCHLD */
+        while( !pidData->mutex.tryLock(100) )
+            qApp->processEvents();
 
-    return( result );
+        result = pidData->result;
+        delete pidData;
+
+        return( result );
+    }
+
+    /* We are running in the background, the reaper will still catch the 
+       child */
+    return( GENERIC_EXIT_OK );
 }
 
 uint MythSystemReaper::abortPid( pid_t pid )
@@ -224,25 +227,31 @@ uint MythSystemReaper::abortPid( pid_t pid )
 
 
 
-/** \fn myth_system(const QString&, int, uint)
+/** \fn myth_system(const QString&, uint, uint)
  *  \brief Runs a system command inside the /bin/sh shell.
  *
- *  Note: Returns GENERIC_EXIT_NOT_OK if it can not execute the command.
+ *  Note: Returns GENERIC_EXIT_NOT_OK if it cannot execute the command.
  *  \return Exit value from command as an unsigned int in range [0,255].
  */
-uint myth_system(const QString &command, int flags, uint timeout)
+uint myth_system(const QString &command, uint flags, uint timeout)
 {
-    uint    result;
-    bool    ready_to_lock;
+    uint            result;
 
-    myth_system_pre_flags( flags, ready_to_lock );
+    if( !(flags & kMSRunBackground) && command.endsWith("&") )
+    {
+        VERBOSE(VB_IMPORTANT, "Adding background flag");
+        flags |= kMSRunBackground;
+    }
+
+    myth_system_pre_flags( flags );
+
 #ifndef USING_MINGW
     pid_t   pid;
 
     pid    = myth_system_fork( command, result );
 
     if( result == GENERIC_EXIT_RUNNING )
-        result = myth_system_wait( pid, timeout );
+        result = myth_system_wait( pid, timeout, (flags & kMSRunBackground) );
 #else
     STARTUPINFO si;
     PROCESS_INFORMATION pi;
@@ -276,53 +285,65 @@ uint myth_system(const QString &command, int flags, uint timeout)
     }
 #endif
 
-    myth_system_post_flags( flags, ready_to_lock );
+    myth_system_post_flags( flags );
 
     return result;
 }
 
 
-void myth_system_pre_flags(int &flags, bool &ready_to_lock)
+void myth_system_pre_flags(uint &flags)
 {
-    ready_to_lock = gCoreContext->HasGUI() && gCoreContext->IsUIThread();
+    bool isInUi = gCoreContext->HasGUI() && gCoreContext->IsUIThread();
+    if( isInUi )
+    {
+        flags |= kMSInUi;
+    }
+    else
+    {
+        // These locks only happen in the UI, and only if the flags are cleared
+        // so as we are not in the UI, set the flags to simplify logic further
+        // down
+        flags &= ~kMSInUi;
+        flags |= kMSDontBlockInputDevs;
+        flags |= kMSDontDisableDrawing;
+    }
 
-#ifdef USE_LIRC
-    bool lirc_lock_flag = !(flags & MYTH_SYSTEM_DONT_BLOCK_LIRC);
-    LircEventLock lirc_lock(lirc_lock_flag && ready_to_lock);
-#endif
-
-#ifdef USE_JOYSTICK_MENU
-    bool joy_lock_flag = !(flags & MYTH_SYSTEM_DONT_BLOCK_JOYSTICK_MENU);
-    JoystickMenuEventLock joystick_lock(joy_lock_flag && ready_to_lock);
-#endif
-
-#ifdef BSD
-    // Darwin waitpid() frequently fails EINTR (interrupted system call) -
-    // I think because the parent is being toggled between kernel sleep/wake.
-    // This seems to work around whatever is causing this 
-    flags |= MYTH_SYSTEM_DONT_BLOCK_PARENT;
-#endif
+    // This needs to be a send event so that the MythUI locks the input devices
+    // immediately instead of after existing events are processed
+    // since this function could be called inside one of those events.
+    if( !(flags & kMSDontBlockInputDevs) )
+    {
+        QEvent event(MythEvent::kLockInputDevicesEventType);
+        QCoreApplication::sendEvent(gCoreContext->GetGUIObject(), &event);
+    }
 
     // This needs to be a send event so that the MythUI m_drawState change is
     // flagged immediately instead of after existing events are processed
     // since this function could be called inside one of those events.
-    if (ready_to_lock && !(flags & MYTH_SYSTEM_DONT_BLOCK_PARENT))
+    if( !(flags & kMSDontDisableDrawing) )
     {
         QEvent event(MythEvent::kPushDisableDrawingEventType);
         QCoreApplication::sendEvent(gCoreContext->GetGUIObject(), &event);
     }
 }
 
-
-void myth_system_post_flags(int &flags, bool &ready_to_lock)
+void myth_system_post_flags(uint &flags)
 {
     // This needs to be a send event so that the MythUI m_drawState change is
     // flagged immediately instead of after existing events are processed
     // since this function could be called inside one of those events.
-    if (ready_to_lock && !(flags & MYTH_SYSTEM_DONT_BLOCK_PARENT))
+    if( !(flags & kMSDontDisableDrawing) )
     {
         QEvent event(MythEvent::kPopDisableDrawingEventType);
         QCoreApplication::sendEvent(gCoreContext->GetGUIObject(), &event);
+    }
+
+    // This needs to be a post event so that the MythUI unlocks input devices
+    // after all existing (blocked) events are processed and ignored.
+    if( !(flags & kMSDontBlockInputDevs) )
+    {
+        QEvent *event = new QEvent(MythEvent::kUnlockInputDevicesEventType);
+        QCoreApplication::postEvent(gCoreContext->GetGUIObject(), event);
     }
 }
 
@@ -363,14 +384,14 @@ pid_t myth_system_fork(const QString &command, uint &result)
             if (dup2(fd, 0) < 0)
             {
                 VERBOSE(VB_IMPORTANT, LOC_ERR +
-                        "Can not redirect /dev/null to standard input,"
+                        "Cannot redirect /dev/null to standard input,"
                         "\n\t\t\tfailed to duplicate file descriptor." + ENO);
             }
             close(fd);
         }
         else
         {
-            VERBOSE(VB_IMPORTANT, LOC_ERR + "Can not redirect /dev/null "
+            VERBOSE(VB_IMPORTANT, LOC_ERR + "Cannot redirect /dev/null "
                     "to standard input, failed to open." + ENO);
         }
 
@@ -391,15 +412,16 @@ pid_t myth_system_fork(const QString &command, uint &result)
     return child;
 }
 
-uint myth_system_wait(pid_t pid, uint timeout)
+uint myth_system_wait(pid_t pid, uint timeout, bool background)
 {
     if( reaper == NULL )
     {
         reaper = new MythSystemReaper;
         reaper->start();
     }
-    VERBOSE(VB_IMPORTANT, QString("PID %1: launched") .arg(pid));
-    return reaper->waitPid(pid, timeout);
+    VERBOSE(VB_IMPORTANT, QString("PID %1: launched%2") .arg(pid)
+        .arg(background ? " in the background, not waiting" : ""));
+    return reaper->waitPid(pid, timeout, background);
 }
 
 uint myth_system_abort(pid_t pid)

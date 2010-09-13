@@ -41,7 +41,7 @@ typedef enum {
     MARK_ALL           = -100,
     MARK_UNSET         = -10,
     MARK_UPDATED_CUT   = -3,
-    MARK_EDIT_MODE     = -2,
+    MARK_PLACEHOLDER   = -2,
     MARK_CUT_END       = 0,
     MARK_CUT_START     = 1,
     MARK_BOOKMARK      = 2,
@@ -109,6 +109,10 @@ typedef enum TranscodingStatuses {
     TRANSCODING_RUNNING        = 2
 } TranscodingStatus;
 
+/// If you change these please update:
+/// mythplugins/mythweb/modules/tv/classes/Program.php
+/// mythtv/bindings/perl/MythTV/Program.pm
+/// (search for "Assign the program flags" in both)
 typedef enum FlagMask {
     FL_NONE           = 0x00000000,
     FL_COMMFLAG       = 0x00000001,
