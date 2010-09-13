@@ -58,6 +58,8 @@
 #include <fcntl.h>  /* O_BINARY  */
 #endif
 
+#include "mythiowrapper.h"
+
 /*
 #define STRICT
 */
@@ -144,21 +146,21 @@ static void vm_print_current_domain_state(vm_t *vm) {
 
 static int os2_open(const char *name, int oflag)
 {
-    HFILE hfile;
-    ULONG ulAction;
-    ULONG rc;
+  HFILE hfile;
+  ULONG ulAction;
+  ULONG rc;
 
-    rc = DosOpenL(name, &hfile, &ulAction, 0, FILE_NORMAL,
-                  OPEN_ACTION_OPEN_IF_EXISTS | OPEN_ACTION_FAIL_IF_NEW,
-                  OPEN_ACCESS_READONLY | OPEN_SHARE_DENYNONE | OPEN_FLAGS_DASD,
-                  NULL);
+  rc = DosOpenL(name, &hfile, &ulAction, 0, FILE_NORMAL,
+                OPEN_ACTION_OPEN_IF_EXISTS | OPEN_ACTION_FAIL_IF_NEW,
+                OPEN_ACCESS_READONLY | OPEN_SHARE_DENYNONE | OPEN_FLAGS_DASD,
+                NULL);
 
-    if(rc)
-        return -1;
+  if(rc)
+    return -1;
 
-    setmode(hfile, O_BINARY);
+  setmode(hfile, O_BINARY);
 
-    return (int)hfile;
+  return (int)hfile;
 }
 #endif
 
@@ -171,11 +173,11 @@ static void dvd_read_name(char *name, char *serial, const char *device) {
     uint8_t data[DVD_VIDEO_LB_LEN];
 
     /* Read DVD name */
-    fd = open(device, O_RDONLY);
+    fd = mythfile_open(device, O_RDONLY);
     if (fd > 0) {
       off = lseek( fd, 32 * (off_t) DVD_VIDEO_LB_LEN, SEEK_SET );
       if( off == ( 32 * (off_t) DVD_VIDEO_LB_LEN ) ) {
-        off = read( fd, data, DVD_VIDEO_LB_LEN );
+        off = mythfile_read( fd, data, DVD_VIDEO_LB_LEN );
         if (off == ( (off_t) DVD_VIDEO_LB_LEN )) {
           fprintf(MSG_OUT, "libdvdnav: DVD Title: ");
           for(i=25; i < 73; i++ ) {
@@ -215,7 +217,7 @@ static void dvd_read_name(char *name, char *serial, const char *device) {
       } else {
         fprintf(MSG_OUT, "libdvdnav: Can't seek to block %u\n", 32 );
       }
-      close(fd);
+      mythfile_close(fd);
     } else {
     fprintf(MSG_OUT, "NAME OPEN FAILED\n");
   }
@@ -886,8 +888,8 @@ void vm_get_audio_info(vm_t *vm, int *current, int *num_avail) {
     break;
   }
 }
-#endif
 
+/* currently unused */
 void vm_get_subp_info(vm_t *vm, int *current, int *num_avail) {
   switch ((vm->state).domain) {
   case VTS_DOMAIN:
@@ -905,8 +907,8 @@ void vm_get_subp_info(vm_t *vm, int *current, int *num_avail) {
     break;
   }
 }
+#endif
 
-/* currently unused */
 void vm_get_video_res(vm_t *vm, int *width, int *height) {
   video_attr_t attr = vm_get_video_attr(vm);
 
@@ -1993,3 +1995,4 @@ void vm_position_print(vm_t *vm, vm_position_t *position) {
   position->block);
 }
 #endif
+

@@ -14,7 +14,7 @@
 #include "mythverbose.h"
 
 extern "C" {
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 }
 #include "../libmyth/util.h"
 
@@ -66,7 +66,7 @@ extern "C" {
         HDHRSignalMonitor, SignalMonitorValue
  */
 
-void ALRMhandler(int /*sig*/)
+static void ALRMhandler(int /*sig*/)
 {
      cerr<<"SignalMonitor: Got SIGALRM"<<endl;
      signal(SIGINT, ALRMhandler);
@@ -492,7 +492,9 @@ bool SignalMonitor::IsChannelTuned(void)
         channelTuned.SetValue(1);
         break;
       case ChannelBase::changeFailed:
+        VERBOSE(VB_IMPORTANT, "SignalMonitor: channel change failed");
         channelTuned.SetValue(2);
+        error = QObject::tr("Error: channel change failed");
         break;
       case ChannelBase::changeSuccess:
         channelTuned.SetValue(3);

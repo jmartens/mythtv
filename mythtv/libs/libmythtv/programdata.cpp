@@ -121,21 +121,6 @@ uint DBPerson::InsertCreditsDB(MSqlQuery &query, uint personid, uint chanid,
     return 0;
 }
 
-bool operator<(const DBEvent &a, const DBEvent &b)
-{
-    return (a.starttime < b.starttime);
-}
-
-bool operator>(const DBEvent &a, const DBEvent &b)
-{
-    return (a.starttime > b.starttime);
-}
-
-bool operator<=(const DBEvent &a, const DBEvent &b)
-{
-    return (a.starttime <= b.starttime);
-}
-
 DBEvent &DBEvent::operator=(const DBEvent &other)
 {
     if (this == &other)
@@ -973,7 +958,7 @@ bool ProgramData::ClearDataBySource(
     return ok;
 }
 
-bool start_time_less_than(const DBEvent *a, const DBEvent *b)
+static bool start_time_less_than(const DBEvent *a, const DBEvent *b)
 {
     return (a->starttime < b->starttime);
 }

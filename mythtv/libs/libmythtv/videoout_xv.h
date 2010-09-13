@@ -8,13 +8,13 @@
 #include "mythxdisplay.h"
 #include <X11/Xatom.h>
 #include <X11/Xutil.h>
-#include <X11/extensions/Xvlib.h>
 #include <X11/extensions/XShm.h>
+#include <X11/extensions/Xvlib.h>
 #include <X11/extensions/Xv.h>
 
 #undef HAVE_AV_CONFIG_H
 extern "C" {
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 }
 
 class MythPlayer;

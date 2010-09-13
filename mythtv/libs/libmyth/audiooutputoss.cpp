@@ -96,7 +96,7 @@ AudioOutputSettings* AudioOutputOSS::GetOutputSettings()
     settings->setPassthrough(((formats & AFMT_AC3) != 0) - 1);
 #endif
 
-    for (uint i = 1; i <= 2; i++)
+    for (int i = 1; i <= 2; i++)
     {
         int channel = i;
 
@@ -205,7 +205,8 @@ bool AudioOutputOSS::OpenDevice()
 
     audio_buf_info info;
     ioctl(audiofd, SNDCTL_DSP_GETOSPACE, &info);
-    fragment_size = info.fragsize;
+    // align by frame size
+    fragment_size = info.fragsize - (info.fragsize % output_bytes_per_frame);
 
     soundcard_buffer_size = info.bytes;
 

@@ -9,7 +9,7 @@ using namespace std;
 
 // avlib/ffmpeg headers
 extern "C" {
-#include "avcodec.h"        // AVPicture
+#include "libavcodec/avcodec.h"        // AVPicture
 }
 
 // MythTV headers
@@ -68,13 +68,12 @@ sgm_init(unsigned int *sgm, const AVPicture *src, int srcheight)
 }
 #endif /* LATER */
 
-int
-sort_ascending(const void *aa, const void *bb)
+static int sort_ascending(const void *aa, const void *bb)
 {
     return *(unsigned int*)aa - *(unsigned int*)bb;
 }
 
-int
+static int
 edge_mark(AVPicture *dst, int dstheight,
         int extratop, int extraright, int extrabottom, int extraleft,
         const unsigned int *sgm, unsigned int *sgmsorted, int percentile,

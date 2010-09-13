@@ -16,9 +16,9 @@
 
 extern "C" {
 #include "frame.h"
-#include "avcodec.h"
-#include "avformat.h"
-#include "audioconvert.h"
+#include "libavcodec/avcodec.h"
+#include "libavformat/avformat.h"
+#include "libavcodec/audioconvert.h"
 }
 
 #include "avfringbuffer.h"
@@ -69,7 +69,7 @@ class AudioInfo
     QString toString() const
     {
         return QString("id(%1) %2Hz %3ch %4bps %5")
-            .arg(codec_id_string(codec_id),4).arg(sample_rate,6)
+            .arg(ff_codec_id_string(codec_id),4).arg(sample_rate,6)
             .arg(channels,2).arg(AudioOutputSettings::FormatToBits(format),2)
             .arg((do_passthru) ? "pt":"",3);
     }
@@ -131,6 +131,7 @@ class AvFormatDecoder : public DecoderBase
     long UpdateStoredFrameNum(long frame) { (void)frame; return 0;}
 
     QString      GetCodecDecoderName(void) const;
+    QString      GetEncodingType(void) const;
     MythCodecID  GetVideoCodecID(void) const { return video_codec_id; }
     void        *GetVideoCodecPrivate(void);
 
@@ -279,6 +280,7 @@ class AvFormatDecoder : public DecoderBase
     bool pts_detected;
 
     bool using_null_videoout;
+    enum CodecID raw_codec_id;
     MythCodecID video_codec_id;
     bool no_hardware_decoders;
     bool allow_private_decoders;

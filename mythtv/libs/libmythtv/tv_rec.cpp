@@ -86,7 +86,7 @@ TVRec::TVRec(int capturecardnum)
       // Recorder thread, runs RecorderBase::StartRecording()
       recorder_thread(pthread_t()),
       // Configuration variables from database
-      eitIgnoresSource(false),      transcodeFirst(false),
+      transcodeFirst(false),
       earlyCommFlag(false),         runJobOnHostOnly(false),
       eitCrawlIdleStart(60),        eitTransportTimeout(5*60),
       audioSampleRateDB(0),
@@ -162,7 +162,6 @@ bool TVRec::Init(void)
     if (!CreateChannel(startchannel, true))
         return false;
 
-    eitIgnoresSource  = gCoreContext->GetNumSetting("EITIgnoresSource", 0);
     transcodeFirst    =
         gCoreContext->GetNumSetting("AutoTranscodeBeforeAutoCommflag", 0);
     earlyCommFlag     = gCoreContext->GetNumSetting("AutoCommflagWhileRecording", 0);
@@ -1031,7 +1030,7 @@ void *TVRec::RecorderThread(void *param)
     return NULL;
 }
 
-bool get_use_eit(uint cardid)
+static bool get_use_eit(uint cardid)
 {
     MSqlQuery query(MSqlQuery::InitCon());
     query.prepare(
@@ -1287,8 +1286,7 @@ void TVRec::RunTV(void)
             }
             else
             {
-                scanner->StartActiveScan(
-                    this, eitTransportTimeout, eitIgnoresSource);
+                scanner->StartActiveScan(this, eitTransportTimeout);
                 SetFlags(kFlagEITScannerRunning);
                 eitScanStartTime = QDateTime::currentDateTime().addYears(1);
             }
@@ -1615,7 +1613,7 @@ QString TVRec::GetStartChannel(uint cardid, const QString &defaultinput)
     return startchan;
 }
 
-void GetPidsToCache(DTVSignalMonitor *dtvMon, pid_cache_t &pid_cache)
+static void GetPidsToCache(DTVSignalMonitor *dtvMon, pid_cache_t &pid_cache)
 {
     if (!dtvMon->GetATSCStreamData())
         return;
@@ -1632,7 +1630,7 @@ void GetPidsToCache(DTVSignalMonitor *dtvMon, pid_cache_t &pid_cache)
     dtvMon->GetATSCStreamData()->ReturnCachedTable(mgt);
 }
 
-bool ApplyCachedPids(DTVSignalMonitor *dtvMon, const DTVChannel* channel)
+static bool ApplyCachedPids(DTVSignalMonitor *dtvMon, const DTVChannel* channel)
 {
     pid_cache_t pid_cache;
     channel->GetCachedPids(pid_cache);
@@ -1800,12 +1798,11 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
 }
 
 /** \fn TVRec::SetupSignalMonitor(bool,bool)
- *  \brief This creates a SignalMonitor instance if one is needed and
+ *  \brief This creates a SignalMonitor instance and
  *         begins signal monitoring.
  *
- *   If the channel exists and the cardtype is "DVB" or "HDHomeRun"
- *   a SignalMonitor instance is created and SignalMonitor::Start()
- *   is called to start the signal monitoring thread.
+ *   If the channel exists a SignalMonitor instance is created and
+ *   SignalMonitor::Start() is called to start the signal monitoring thread.
  *
  *  \param tablemon If set we enable table monitoring
  *  \param notify   If set we notify the frontend of the signal values
@@ -1826,7 +1823,7 @@ bool TVRec::SetupSignalMonitor(bool tablemon, bool EITscan, bool notify)
 
     // nothing to monitor here either (DummyChannel)
     if (genOpt.cardtype == "IMPORT" || genOpt.cardtype == "DEMO")
-        return false;
+        return true;
 
     // make sure statics are initialized
     SignalMonitorValue::Init();
@@ -3229,7 +3226,7 @@ void TVRec::HandleTuning(void)
     if (tuningRequests.size())
     {
         TuningRequest request = tuningRequests.front();
-        VERBOSE(VB_RECORD, LOC + "Request: "<<request.toString());
+        VERBOSE(VB_RECORD, LOC + "HandleTuning Request: "<<request.toString());
 
         QString input;
         request.channel = TuningGetChanNum(request, input);
@@ -3502,7 +3499,7 @@ void TVRec::TuningFrequency(const TuningRequest &request)
         tvchain->SetCardType("DUMMY");
 
         if (!ringBuffer)
-            ok = CreateLiveTVRingBuffer();
+            ok = CreateLiveTVRingBuffer(channum);
         else
             ok = SwitchLiveTVRingBuffer(channum, true, false);
         pseudoLiveTVRecording = tmp;
@@ -3571,8 +3568,7 @@ void TVRec::TuningFrequency(const TuningRequest &request)
         ClearFlags(kFlagWaitingForSignal);
         error = true;
     }
-
-    if (signalMonitor)
+    else if (signalMonitor)
     {
         SetFlags(kFlagSignalMonitorRunning);
         ClearFlags(kFlagWaitingForSignal);
@@ -3615,7 +3611,20 @@ MPEGStreamData *TVRec::TuningSignalCheck(void)
 {
     if (signalMonitor->IsAllGood())
         VERBOSE(VB_RECORD, LOC + "Got good signal");
-    else if (!signalMonitor->IsErrored())
+    else if (signalMonitor->IsErrored())
+    {
+        VERBOSE(VB_RECORD, LOC_ERR + "SignalMonitor failed");
+        ClearFlags(kFlagNeedToStartRecorder);
+        if (curRecording)
+            curRecording->SetRecordingStatus(rsFailed);
+
+        if (HasFlags(kFlagEITScannerRunning))
+        {
+            scanner->StopActiveScan();
+            ClearFlags(kFlagEITScannerRunning);
+        }
+    }
+    else
         return NULL;
 
     // grab useful data from DTV signal monitor before we kill it...
@@ -3642,7 +3651,7 @@ MPEGStreamData *TVRec::TuningSignalCheck(void)
                     "for all sources on this card.");
         }
         else if (scanner)
-            scanner->StartPassiveScan(channel, streamData, eitIgnoresSource);
+            scanner->StartPassiveScan(channel, streamData);
     }
 
     return streamData;
@@ -3739,7 +3748,7 @@ void TVRec::TuningNewRecorder(MPEGStreamData *streamData)
         bool ok;
         if (!ringBuffer)
         {
-            ok = CreateLiveTVRingBuffer();
+            ok = CreateLiveTVRingBuffer(channel->GetCurrentName());
             SetFlags(kFlagRingBufferReady);
         }
         else
@@ -4176,19 +4185,31 @@ bool TVRec::GetProgramRingBufferForLiveTV(RecordingInfo **pginfo,
     return true;
 }
 
-bool TVRec::CreateLiveTVRingBuffer(void)
+bool TVRec::CreateLiveTVRingBuffer(const QString & channum)
 {
-    VERBOSE(VB_RECORD, LOC + "CreateLiveTVRingBuffer()");
-    RecordingInfo *pginfo = NULL;
-    RingBuffer *rb = NULL;
+    VERBOSE(VB_RECORD, LOC + QString("CreateLiveTVRingBuffer(%1)")
+            .arg(channum));
 
-    if (!GetProgramRingBufferForLiveTV(&pginfo, &rb,
-                                       channel->GetCurrentName(),
-                                       channel->GetCurrentInputNum()))
+    RecordingInfo *pginfo = NULL;
+    RingBuffer    *rb = NULL;
+    QString        inputName;
+    int            inputID = -1;
+
+    if (!channel->CheckChannel(channum, inputName))
+    {
+        ChangeState(kState_None);
+        return false;
+    }
+
+    inputID = inputName.isEmpty() ?
+      channel->GetCurrentInputNum() : channel->GetInputByName(inputName);
+
+    if (!GetProgramRingBufferForLiveTV(&pginfo, &rb, channum, inputID))
     {
         ClearFlags(kFlagPendingActions);
         ChangeState(kState_None);
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "CreateLiveTVRingBuffer() failed");
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                QString("CreateLiveTVRingBuffer(%1) failed").arg(channum));
         return false;
     }
 

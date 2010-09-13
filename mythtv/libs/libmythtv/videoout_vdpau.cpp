@@ -32,7 +32,8 @@ void VideoOutputVDPAU::GetRenderOptions(render_opts &opts)
         (*opts.safe_renderers)["ffmpeg"].append("vdpau");
     if (opts.decoders->contains("libmpeg2"))
         (*opts.safe_renderers)["libmpeg2"].append("vdpau");
-
+    if (opts.decoders->contains("crystalhd"))
+        (*opts.safe_renderers)["crystalhd"].append("vdpau");
     (*opts.safe_renderers)["dummy"].append("vdpau");
     (*opts.safe_renderers)["nuppel"].append("vdpau");
 
@@ -200,7 +201,8 @@ bool VideoOutputVDPAU::InitBuffers(void)
     {
         ok = CreateVideoSurfaces(NUM_REFERENCE_FRAMES);
         if (ok)
-            ok = vbuffers.CreateBuffers(video_dim.width(), video_dim.height());
+            ok = vbuffers.CreateBuffers(FMT_YV12,
+                                        video_dim.width(), video_dim.height());
     }
 
     if (!ok)

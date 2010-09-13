@@ -117,7 +117,7 @@ void SubtitleScreen::ExpireSubtitles(void)
 {
     VideoOutput    *videoOut = m_player->getVideoOutput();
     VideoFrame *currentFrame = videoOut ? videoOut->GetLastShownFrame() : NULL;
-    long long now = currentFrame ? currentFrame->timecode : LLONG_MAX;
+    long long now = currentFrame ? currentFrame->timecode : INT64_MAX;
     QMutableHashIterator<MythUIType*, long long> it(m_expireTimes);
     while (it.hasNext())
     {
@@ -206,6 +206,21 @@ void SubtitleScreen::DisplayAVSubtitles(void)
 
                 QRect qrect(rect->x, rect->y, rect->w, rect->h);
                 QRect scaled = videoOut->GetImageRect(qrect);
+
+                // XSUB images are based on the original video size before
+                // they were converted to DivX. We need to guess the original
+                // size and allow for the difference
+                if (subs->fixPosition)
+                {
+                    int height = (currentFrame->height <= 576)  ? 576 :
+                                 (currentFrame->height <= 720)  ? 720 : 1080;
+                    int width  = (currentFrame->width  <= 720)  ? 720 :
+                                 (currentFrame->width  <= 1280) ? 1280 : 1920;
+                    QMatrix m;
+                    m.scale((float)currentFrame->width / width,
+                            (float)currentFrame->height / height);
+                    scaled = m.mapRect(scaled);
+                }
 
                 QImage qImage(rect->w, rect->h, QImage::Format_ARGB32);
                 for (int y = 0; y < rect->h; ++y)

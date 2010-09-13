@@ -44,7 +44,7 @@
 #include "dithertable.h"
 
 extern "C" {
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 #include "libswscale/swscale.h"
 }
 
@@ -1085,11 +1085,7 @@ void VideoOutput::ShowPIP(VideoFrame  *frame,
             pipw = pip_display_size.width();
             piph = pip_display_size.height();
 
-            init(&pip_tmp_image,
-                 FMT_YV12,
-                 pipbuf,
-                 pipw, piph,
-                 pipimage->bpp, sizeof(pipbuf));
+            init(&pip_tmp_image, FMT_YV12, pipbuf, pipw, piph, sizeof(pipbuf));
         }
     }
 

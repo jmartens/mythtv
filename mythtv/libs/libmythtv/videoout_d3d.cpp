@@ -21,7 +21,7 @@ using namespace std;
 #undef UNICODE
 
 extern "C" {
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 }
 
 const int kNumBuffers = 31;
@@ -47,6 +47,8 @@ void VideoOutputD3D::GetRenderOptions(render_opts &opts,
         (*opts.safe_renderers)["ffmpeg"].append("direct3d");
     if (opts.decoders->contains("libmpeg2"))
         (*opts.safe_renderers)["libmpeg2"].append("direct3d");
+    if (opts.decoders->contains("crystalhd"))
+        (*opts.safe_renderers)["crystalhd"].append("direct3d");
     opts.priorities->insert("direct3d", 55);
 }
 
@@ -215,7 +217,8 @@ bool VideoOutputD3D::Init(int width, int height, float aspect,
     vbuffers.Init(kNumBuffers, true, kNeedFreeFrames,
                   kPrebufferFramesNormal, kPrebufferFramesSmall,
                   kKeepPrebuffer);
-    success &= vbuffers.CreateBuffers(window.GetVideoDim().width(),
+    success &= vbuffers.CreateBuffers(FMT_YV12,
+                                      window.GetVideoDim().width(),
                                       window.GetVideoDim().height());
     m_pauseFrame.height = vbuffers.GetScratchFrame()->height;
     m_pauseFrame.width  = vbuffers.GetScratchFrame()->width;

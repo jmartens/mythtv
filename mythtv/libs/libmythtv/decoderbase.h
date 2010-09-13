@@ -1,9 +1,6 @@
 #ifndef DECODERBASE_H_
 #define DECODERBASE_H_
 
-#ifndef __STDC_LIMIT_MACROS
-#define __STDC_LIMIT_MACROS
-#endif
 #include <stdint.h>
 
 #include <vector>
@@ -141,6 +138,7 @@ class DecoderBase
     long long GetFramesRead(void) const { return framesRead; };
 
     virtual QString GetCodecDecoderName(void) const = 0;
+    virtual QString GetEncodingType(void)     const = 0;
     virtual MythCodecID GetVideoCodecID(void) const = 0;
     virtual void *GetVideoCodecPrivate(void) { return NULL; }
 

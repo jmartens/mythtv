@@ -3,12 +3,14 @@ using namespace std;
 
 #include <QUrl>
 
+#include "mythconfig.h"
 #include "mythdb.h"
 #include "remotefile.h"
 #include "decodeencode.h"
 #include "mythcorecontext.h"
 #include "mythsocket.h"
 #include "compat.h"
+#include "mythtimer.h"
 
 RemoteFile::RemoteFile(const QString &_path, bool write, bool useRA,
                        int _retries,
@@ -235,6 +237,12 @@ bool RemoteFile::DeleteFile(const QString &url)
 
 bool RemoteFile::Exists(const QString &url)
 {
+    struct stat fileinfo;
+    return Exists(url, &fileinfo);
+}
+
+bool RemoteFile::Exists(const QString &url, struct stat *fileinfo)
+{
     bool result      = false;
     QUrl qurl(url);
     QString filename = qurl.path();
@@ -256,7 +264,31 @@ bool RemoteFile::Exists(const QString &url)
     gCoreContext->SendReceiveStringList(strlist);
 
     if (strlist[0] == "1")
+    {
         result = true;
+        if (fileinfo)
+        {
+            int pos = 2;
+            fileinfo->st_dev       = strlist[pos++].toLongLong();
+            fileinfo->st_ino       = strlist[pos++].toLongLong();
+            fileinfo->st_mode      = strlist[pos++].toLongLong();
+            fileinfo->st_nlink     = strlist[pos++].toLongLong();
+            fileinfo->st_uid       = strlist[pos++].toLongLong();
+            fileinfo->st_gid       = strlist[pos++].toLongLong();
+            fileinfo->st_rdev      = strlist[pos++].toLongLong();
+            fileinfo->st_size      = strlist[pos++].toLongLong();
+#ifdef USING_MINGW
+            pos++; // st_blksize
+            pos++; // st_blocks
+#else
+            fileinfo->st_blksize   = strlist[pos++].toLongLong();
+            fileinfo->st_blocks    = strlist[pos++].toLongLong();
+#endif
+            fileinfo->st_atime     = strlist[pos++].toLongLong();
+            fileinfo->st_mtime     = strlist[pos++].toLongLong();
+            fileinfo->st_ctime     = strlist[pos++].toLongLong();
+        }
+    }
 
     return result;
 }
@@ -486,10 +518,14 @@ int RemoteFile::Read(void *data, int size)
     controlSock->writeStringList(strlist);
 
     sent = size;
+
+    int waitms = 10;
+    MythTimer mtimer;
+    mtimer.start();
     
-    while (recv < sent && !error && zerocnt++ < 50)
+    while (recv < sent && !error && mtimer.elapsed() < 10000)
     {
-        while (recv < sent && sock->waitForMore(200) > 0)
+        while (recv < sent && sock->waitForMore(waitms) > 0)
         {
             int ret = sock->readBlock(((char *)data) + recv, sent - recv);
             if (ret > 0)
@@ -502,6 +538,9 @@ int RemoteFile::Read(void *data, int size)
                 error = true;
                 break;
             }
+
+            if (waitms < 200)
+                waitms += 20;
         }
 
         if (controlSock->bytesAvailable() > 0)

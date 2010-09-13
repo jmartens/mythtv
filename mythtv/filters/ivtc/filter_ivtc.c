@@ -156,7 +156,7 @@ IvtcFilter (VideoFilter *vf, VideoFrame *frame, int field)
     return 1;
 }
 
-void
+static void
 IvtcFilterCleanup( VideoFilter * filter)
 {
     pullup_free_context((((ThisFilter *)filter)->context));    
@@ -190,9 +190,10 @@ static void SetupFilter(ThisFilter *vf, int width, int height, int *pitches)
     vf->context->stride[3] = 0;
 }
 
-VideoFilter *
-NewIvtcFilter (VideoFrameType inpixfmt, VideoFrameType outpixfmt,
-                        int *width, int *height, char *options, int threads)
+static VideoFilter *NewIvtcFilter(VideoFrameType inpixfmt,
+                                  VideoFrameType outpixfmt,
+                                  int *width, int *height, char *options,
+                                  int threads)
 {
     (void) threads;
 
@@ -251,7 +252,7 @@ static FmtConv FmtList[] =
 ConstFilterInfo filter_table[] =
 {
     {
-        symbol:     "NewIvtcFilter",
+        filter_init: &NewIvtcFilter,
         name:       "ivtc",
         descript:   "inverse telecine filter",
         formats:    FmtList,

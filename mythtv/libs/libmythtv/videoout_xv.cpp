@@ -60,8 +60,6 @@ extern "C" {
     extern int      XShmQueryExtension(Display*);
     extern int      XShmGetEventBase(Display*);
 #endif // silences warning when these are already defined
-    extern XvImage  *XvShmCreateImage(Display*, XvPortID, int, char*,
-                                      int, int, XShmSegmentInfo*);
 
 #include "libswscale/swscale.h"
 }
@@ -132,6 +130,13 @@ void VideoOutputXv::GetRenderOptions(render_opts &opts,
         (*opts.safe_renderers)["libmpeg2"].append("xlib");
         (*opts.safe_renderers)["libmpeg2"].append("xshm");
         (*opts.safe_renderers)["libmpeg2"].append("xv-blit");
+    }
+
+    if (opts.decoders->contains("crystalhd"))
+    {
+        (*opts.safe_renderers)["crystalhd"].append("xlib");
+        (*opts.safe_renderers)["crystalhd"].append("xshm");
+        (*opts.safe_renderers)["crystalhd"].append("xv-blit");
     }
 
 #ifdef USING_XVMC
@@ -659,12 +664,11 @@ void VideoOutputXv::CreatePauseFrame(VOSType subtype)
              new unsigned char[vbuffers.GetScratchFrame()->size + 128],
              vbuffers.GetScratchFrame()->width,
              vbuffers.GetScratchFrame()->height,
-             vbuffers.GetScratchFrame()->bpp,
              vbuffers.GetScratchFrame()->size);
 
         av_pause_frame.frameNumber = vbuffers.GetScratchFrame()->frameNumber;
 
-        clear(&av_pause_frame, xv_chroma);
+        clear(&av_pause_frame);
 
         vbuffers.UnlockFrame(&av_pause_frame, "CreatePauseFrame");
     }
@@ -1720,7 +1724,8 @@ bool VideoOutputXv::CreateBuffers(VOSType subtype)
             CreateShmImages(vbuffers.allocSize(), true);
 
         ok = (bufs.size() >= vbuffers.allocSize()) &&
-            vbuffers.CreateBuffers(video_dim.width(), video_dim.height(),
+            vbuffers.CreateBuffers(FMT_YV12,
+                                   video_dim.width(), video_dim.height(),
                                    bufs, XJ_yuv_infos);
 
         disp->Sync();
@@ -1779,7 +1784,8 @@ bool VideoOutputXv::CreateBuffers(VOSType subtype)
             VERBOSE(VB_IMPORTANT, LOC_ERR + msg);
         }
         else
-            ok = vbuffers.CreateBuffers(video_dim.width(), video_dim.height());
+            ok = vbuffers.CreateBuffers(FMT_YV12,
+                                        video_dim.width(), video_dim.height());
     }
 
     if (ok)

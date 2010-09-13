@@ -264,6 +264,11 @@ void DTVRecorder::BufferedWrite(const TSPacket &tspacket)
         ringBuffer->Write(tspacket.data(), TSPacket::SIZE);
 }
 
+static const uint frameRateMap[16] = {
+    0, 23796, 24000, 25000, 29970, 30000, 50000, 59940, 60000, 
+    0, 0, 0, 0, 0, 0, 0 
+};
+
 /** \fn DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
  *  \brief Locates the keyframes and saves them to the position map.
  *
@@ -313,6 +318,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
     uint aspectRatio = 0;
     uint height = 0;
     uint width = 0;
+    uint frameRate = 0;
 
     // Scan for PES header codes; specifically picture_start
     // sequence_start (SEQ) and group_start (GOP).
@@ -350,7 +356,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
                 height = ((bufptr[1] & 0xf) << 8) | bufptr[2];
                 width = (bufptr[0] <<4) | (bufptr[1]>>4);
 
-                //int frameRate = (bufptr[3] & 0x0000000f);
+                frameRate = frameRateMap[(bufptr[3] & 0x0000000f)];
             }
         }
     }
@@ -390,6 +396,14 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
         m_videoHeight = height;
         m_videoWidth = width;
         ResolutionChange(width, height, _frames_written_count);
+    }
+
+    if (frameRate && frameRate != m_frameRate)
+    {
+        m_frameRate = frameRate;
+        VERBOSE(VB_GENERAL, QString("FindMPEG2Keyframes: frame rate = %1")
+                .arg(frameRate));
+        FrameRateChange(frameRate, _frames_written_count);
     }
 
     return hasKeyFrame || (_payload_buffer.size() >= (188*50));
@@ -536,6 +550,7 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
     uint aspectRatio = 0;
     uint height = 0;
     uint width = 0;
+    uint frameRate = 0;
 
     bool hasFrame = false;
     bool hasKeyFrame = false;
@@ -622,6 +637,7 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
                 width = m_h264_parser.pictureWidth();
                 height = m_h264_parser.pictureHeight();
                 aspectRatio = m_h264_parser.aspectRatio();
+                frameRate = m_h264_parser.frameRate();
             }
         }
     } // for (; i < TSPacket::SIZE; i++)
@@ -650,6 +666,17 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
         m_videoHeight = height;
         m_videoWidth = width;
         ResolutionChange(width, height, _frames_written_count);
+    }
+
+    if (frameRate != 0 && frameRate != m_frameRate)
+    {
+
+        VERBOSE( VB_UPNP, QString("FindH264Keyframes: timescale: %1, tick: %2, framerate: %3") 
+                      .arg( m_h264_parser.GetTimeScale() ) 
+                      .arg( m_h264_parser.GetUnitsInTick() )
+                      .arg( frameRate ) );
+        m_frameRate = frameRate;
+        FrameRateChange(frameRate, _frames_written_count);
     }
 
     return hasKeyFrame || (_payload_buffer.size() >= (188*50));
@@ -685,6 +712,11 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
     const uint8_t *bufstart = buffer;
     const uint8_t *bufptr   = buffer;
     const uint8_t *bufend   = buffer + len;
+
+    uint aspectRatio = 0;
+    uint height = 0;
+    uint width = 0;
+    uint frameRate = 0;
 
     uint skip = std::max(_audio_bytes_remaining, _other_bytes_remaining);
     while (bufptr + skip < bufend)
@@ -743,6 +775,15 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
                 pes_packet_length = -1;
                 _last_seq_seen  = _frames_seen_count;
                 hasKeyFrame    |= (_last_gop_seen + maxKFD)<_frames_seen_count;
+
+                // Look for aspectRatio changes and store them in the database
+                aspectRatio = (bufptr[3] >> 4);
+
+                // Get resolution
+                height = ((bufptr[1] & 0xf) << 8) | bufptr[2];
+                width = (bufptr[0] <<4) | (bufptr[1]>>4);
+
+                frameRate = frameRateMap[(bufptr[3] & 0x0000000f)];
             }
         }
         else if (!_video_bytes_remaining && !_audio_bytes_remaining)
@@ -788,6 +829,28 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
             _frames_seen_count++;
             if (!_wait_for_keyframe_option || _first_keyframe>=0)
                 _frames_written_count++;
+        }
+
+        if ((aspectRatio > 0) && (aspectRatio != m_videoAspect))
+        {
+            m_videoAspect = aspectRatio;
+            AspectChange((AspectRatio)aspectRatio, _frames_written_count);
+        }
+
+        if (height && width && 
+            (height != m_videoHeight || m_videoWidth != width))
+        {
+            m_videoHeight = height;
+            m_videoWidth = width;
+            ResolutionChange(width, height, _frames_written_count);
+        }
+
+        if (frameRate && frameRate != m_frameRate)
+        {
+            m_frameRate = frameRate;
+            VERBOSE(VB_GENERAL, QString("FindPSKeyFrames: frame rate = %1")
+                    .arg(frameRate));
+            FrameRateChange(frameRate, _frames_written_count);
         }
 
         if (hasKeyFrame || hasFrame)

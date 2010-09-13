@@ -11,8 +11,8 @@
 #include "privatedecoder_vda.h"
 
 extern "C" {
-#include "avformat.h"
-#include "avcodec.h"
+#include "libavformat/avformat.h"
+#include "libavcodec/avcodec.h"
 extern const uint8_t *ff_find_start_code(const uint8_t * p,
                                          const uint8_t *end,
                                          uint32_t * state);
@@ -268,13 +268,17 @@ void PrivateDecoderVDA::PopDecodedFrame(void)
     m_decoded_frames.removeLast();
 }
 
-int  PrivateDecoderVDA::GetFrame(AVCodecContext *avctx,
+int  PrivateDecoderVDA::GetFrame(AVStream *stream,
                                  AVFrame *picture,
                                  int *got_picture_ptr,
                                  AVPacket *pkt)
 {
     CocoaAutoReleasePool pool;        
-    if (!m_lib || !avctx || !pkt)
+    if (!m_lib || !stream || !pkt)
+        return -1;
+
+    AVCodecContext *avctx = stream->codec;
+    if (!avctx)
         return -1;
 
     CFDataRef data;

@@ -3,7 +3,6 @@
 #undef HAVE_AV_CONFIG_H
 
 // Std C headers
-#define __STDC_LIMIT_MACROS
 #include <stdint.h>
 #include <cstdio>
 #include <cstdlib>
@@ -1414,7 +1413,7 @@ void MythPlayer::SetCaptionsEnabled(bool enable, bool osd_msg)
         return;
     }
     int mode = NextCaptionTrack(kDisplayNone);
-    if (origMode != mode)
+    if (origMode != (uint)mode)
     {
         DisableCaptions(origMode, false);
 
@@ -1597,7 +1596,7 @@ void MythPlayer::InitAVSync(void)
 
     repeat_delay = 0;
 
-    refreshrate = MythDisplay::GetDisplayInfo().rate;
+    refreshrate = (int)MythDisplay::GetDisplayInfo().rate;
     if (refreshrate <= 0)
         refreshrate = frame_interval;
 
@@ -1995,7 +1994,7 @@ void MythPlayer::VideoStart(void)
 
     float temp_speed = (play_speed == 0.0) ? audio.GetStretchFactor() : play_speed;
     uint fr_int = (int)(1000000.0 / video_frame_rate / temp_speed);
-    uint rf_int = MythDisplay::GetDisplayInfo().rate;
+    uint rf_int = (int)MythDisplay::GetDisplayInfo().rate;
 
     // Default to Interlaced playback to allocate the deinterlacer structures
     // Enable autodetection of interlaced/progressive from video stream
@@ -2885,7 +2884,7 @@ PIPLocation MythPlayer::GetNextPIPLocation(void) const
 
 void MythPlayer::WrapTimecode(long long &timecode, TCTypes tc_type)
 {
-    if ((tc_type == TC_AUDIO) && (tc_wrap[TC_AUDIO] == LONG_LONG_MIN))
+    if ((tc_type == TC_AUDIO) && (tc_wrap[TC_AUDIO] == INT64_MIN))
     {
         long long newaudio;
         newaudio = tc_lastval[TC_VIDEO];
@@ -3872,15 +3871,15 @@ QString MythPlayer::GetEncodingType(void) const
 
 void MythPlayer::GetCodecDescription(InfoMap &infoMap)
 {
-    infoMap["audiocodec"]    = codec_id_string((CodecID)audio.GetCodec());
+    infoMap["audiocodec"]    = ff_codec_id_string((CodecID)audio.GetCodec());
     infoMap["audiochannels"] = QString::number(audio.GetOrigChannels());
 
     int width  = video_disp_dim.width();
     int height = video_disp_dim.height();
-    infoMap["videocodec"]     = GetEncodingType();
+    infoMap["videocodec"]     = GetDecoder()->GetEncodingType();
     infoMap["videowidth"]     = QString::number(width);
     infoMap["videoheight"]    = QString::number(height);
-    infoMap["videoframerate"] = QString::number(1000000 / video_frame_rate, 'f', 2);
+    infoMap["videoframerate"] = QString::number(video_frame_rate, 'f', 2);
 
     if (height < 480)
         return;

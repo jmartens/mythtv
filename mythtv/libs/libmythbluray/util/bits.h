@@ -2,23 +2,22 @@
  * bits.h : Bit handling helpers
  *****************************************************************************
  * Copyright (C) 2003 the VideoLAN team
- * $Id: 0f9cbfe93686319fc2285767b8c4019555451f4c $
  *
  * Authors: Laurent Aimar <fenrir@via.ecp.fr>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
  *
- * This program is distributed in the hope that it will be useful,
+ * This library is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston MA 02110-1301, USA.
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library. If not, see
+ * <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
 #ifndef BD_BITS_H
@@ -27,6 +26,8 @@
 #include "file/file.h"
 
 #include <unistd.h>
+
+#include "mythiowrapper.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -66,10 +67,20 @@ static inline void bb_init( BITBUFFER *bb, void *p_data, size_t i_data )
 
 static inline void bs_init( BITSTREAM *bs, BD_FILE_H *fp )
 {
+    struct stat buf;
+
     bs->fp = fp;
     bs->pos = 0;
-    file_seek(bs->fp, 0, SEEK_END);
-    bs->end = file_tell(bs->fp);
+// Original libbluray code
+//    file_seek(bs->fp, 0, SEEK_END);
+//    bs->end = file_tell(bs->fp);
+// Instead use 'stat' so we don't flush our readahead buffer
+// Optimize here for now until we can optimize in the RingBuffer itself
+    if (mythfile_stat_fd((int)fp->internal, &buf) == 0)
+        bs->end = buf.st_size;
+    else
+        bs->end = 0;
+
     file_seek(bs->fp, 0, SEEK_SET);
     bs->size = file_read(bs->fp, bs->buf, BF_BUF_SIZE);
     bb_init(&bs->bb, bs->buf, bs->size);

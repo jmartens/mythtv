@@ -301,7 +301,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool WaitForNextLiveTVDir(void);
     bool GetProgramRingBufferForLiveTV(RecordingInfo **pginfo, RingBuffer **rb,
 				       const QString & channum, int inputID);
-    bool CreateLiveTVRingBuffer(void);
+    bool CreateLiveTVRingBuffer(const QString & channum);
     bool SwitchLiveTVRingBuffer(const QString & channum,
 				bool discont, bool set_rec);
 
@@ -324,7 +324,6 @@ class MPUBLIC TVRec : public SignalMonitorListener
     pthread_t recorder_thread;
 
     // Configuration variables from database
-    bool    eitIgnoresSource;
     bool    transcodeFirst;
     bool    earlyCommFlag;
     bool    runJobOnHostOnly;

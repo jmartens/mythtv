@@ -24,10 +24,21 @@
 #define H264PARSER_H
 
 #include <stdint.h>
+#include "mythconfig.h"
 #include "compat.h" // for uint on Darwin, MinGW
 
 #ifndef INT_BIT
 #define INT_BIT (CHAR_BIT * sizeof(int))
+#endif
+
+// copied from libavutil/internal.h
+#include "libavutil/common.h" // for AV_GCC_VERSION_AT_LEAST()
+#ifndef av_alias
+#if HAVE_ATTRIBUTE_MAY_ALIAS && (!defined(__ICC) || __ICC > 1110) && AV_GCC_VERSION_AT_LEAST(3,3)
+#   define av_alias __attribute__((may_alias))
+#else
+#   define av_alias
+#endif
 #endif
 
 extern "C" {
@@ -118,6 +129,7 @@ class H264Parser {
     /** \brief Computes aspect ratio from picture size and sample aspect ratio
      */
     uint aspectRatio(void) const;
+    uint frameRate(void) const;
 
     uint64_t frameAUstreamOffset(void) const {return frame_start_offset;}
     uint64_t keyframeAUstreamOffset(void) const {return keyframe_start_offset;}
@@ -138,6 +150,10 @@ class H264Parser {
         }
 
     void use_I_forKeyframes(bool val) { I_is_keyframe = val; }
+
+    uint32_t GetTimeScale(void) { return( timeScale ); }
+
+    uint32_t GetUnitsInTick(void) { return( unitsInTick ); }
 
   private:
     enum constants {EXTENDED_SAR = 255};
@@ -199,6 +215,8 @@ class H264Parser {
     uint       frame_crop_bottom_offset;
     uint8_t    aspect_ratio_idc;
     uint       sar_width, sar_height;
+    uint32_t   unitsInTick, timeScale;
+    bool       fixedRate;
 
     uint64_t   AU_offset, frame_start_offset, keyframe_start_offset;
     bool       on_frame, on_key_frame;

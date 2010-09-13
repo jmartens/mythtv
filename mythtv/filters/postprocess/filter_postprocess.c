@@ -6,14 +6,16 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+#include "mythconfig.h"
+
 #if HAVE_STDINT_H
 #include <stdint.h>
 #endif
 
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 #include "filter.h"
 #include "frame.h"
-#include "../../libs/libpostproc/postprocess.h"
+#include "libpostproc/postprocess.h"
 
 //static const char FILTER_NAME[] = "PostProcess";
 
@@ -36,7 +38,7 @@ typedef struct ThisFilter
 } ThisFilter;
 
 
-int pp(VideoFilter *vf, VideoFrame *frame, int field)
+static int pp(VideoFilter *vf, VideoFrame *frame, int field)
 {
     (void)field;
     ThisFilter* tf = (ThisFilter*)vf;
@@ -65,7 +67,7 @@ int pp(VideoFilter *vf, VideoFrame *frame, int field)
     tf->dstStride[1] = tf->csize / (tf->height) * 2;
     tf->dstStride[2] = tf->csize / (tf->height) * 2;
 
-    pp_postprocess( tf->src, tf->srcStride,
+    pp_postprocess( (const uint8_t**)tf->src, tf->srcStride,
                     tf->dst, tf->dstStride,
                     frame->width, frame->height,
                     (signed char *)(frame->qscale_table), frame->qstride,
@@ -75,14 +77,16 @@ int pp(VideoFilter *vf, VideoFrame *frame, int field)
     return 0;
 }
 
-void cleanup(VideoFilter *filter)
+static void cleanup(VideoFilter *filter)
 {
     pp_free_context(((ThisFilter*)filter)->context);
     pp_free_mode(((ThisFilter*)filter)->mode);
 }
 
-VideoFilter *new_filter(VideoFrameType inpixfmt, VideoFrameType outpixfmt, 
-                        int *width, int *height, char *options, int threads)
+static VideoFilter *new_filter(VideoFrameType inpixfmt,
+                               VideoFrameType outpixfmt,
+                               int *width, int *height, char *options,
+                               int threads)
 {
     (void) threads;
     ThisFilter *filter;
@@ -129,10 +133,10 @@ FmtConv FmtList[] =
     FMT_NULL
 };
 
-FilterInfo filter_table[] = 
+ConstFilterInfo filter_table[] =
 {
     {
-        symbol:     "new_filter",
+        filter_init: &new_filter,
         name:       "postprocess",
         descript:   "FFMPEG's postprocessing filters",
         formats:    FmtList,

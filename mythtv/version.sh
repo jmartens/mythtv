@@ -5,8 +5,8 @@
 # first parameter is the root of the source directory
 # second parameter is the svn base folder (trunk, branches/release-0-21-fixes)
 
-if test $# -ne 2; then
-    echo "Usage: version.sh SVN_TREE_DIR SVN_REPO_PATH"
+if test $# -ne 1; then
+    echo "Usage: version.sh SVN_TREE_DIR"
     exit 1
 fi
 
@@ -19,9 +19,7 @@ else
 fi
 
 SVNTREEDIR=$1
-SVNREPOPATH=$(echo $2 | sed -e 's,.*/svn/,,' \
-                            -e 's,/mythtv/version\.pro.*,,' \
-                            -e 's,/version\.pro.*,,')
+SVNREPOPATH="exported"
 
 SOURCE_VERSION=$(svnversion ${SVNTREEDIR} 2>/dev/null || echo Unknown)
 
@@ -30,22 +28,25 @@ case "${SOURCE_VERSION}" in
         if test -e $SVNTREEDIR/VERSION ; then
             . $SVNTREEDIR/VERSION
         fi
-     ;;
+    ;;
+    *)
+    SVNREPOPATH=$(echo "$$URL$$" | sed -e 's,.*/svn/,,' \
+                                       -e 's,/mythtv/version\.sh.*,,' \
+                                       -e 's,/version\.sh.*,,')
+    ;;
 esac
 
-# Get a string like "0.21.20071125-1"
-BINARY_VERSION=$(grep MYTH_BINARY_VERSION \
-    "${SVNTREEDIR}/libs/libmythdb/mythversion.h" \
-    | sed -e 's/.*MYTH_BINARY_VERSION //')
+cat > .vers.new <<EOF
+#include "mythexp.h"
+#include "mythversion.h"
 
-echo "#include \"mythexp.h\"" > .vers.new
-echo "const MPUBLIC char *myth_source_version = \"${SOURCE_VERSION}\";" >> .vers.new
-echo "const MPUBLIC char *myth_source_path = \"${SVNREPOPATH}\";" >> .vers.new
-echo "const MPUBLIC char *myth_binary_version = ${BINARY_VERSION};" >> .vers.new
+const MPUBLIC char *myth_source_version = "${SOURCE_VERSION}";
+const MPUBLIC char *myth_source_path = "${SVNREPOPATH}";
+const MPUBLIC char *myth_binary_version = MYTH_BINARY_VERSION;
+EOF
 
 # check if the version strings are changed and update version.pro if necessary
-diff .vers.new version.cpp > .vers.diff 2>&1
-if test -s .vers.diff ; then
+if ! cmp -s .vers.new version.cpp; then
    mv -f .vers.new version.cpp
 fi
-rm -f .vers.new .vers.diff
+rm -f .vers.new

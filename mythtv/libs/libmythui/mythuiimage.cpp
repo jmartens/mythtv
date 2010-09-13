@@ -84,11 +84,28 @@ class ImageLoadThread : public QRunnable
 
     void run()
     {
-        MythImage *image = m_parent->LoadImage(m_filename, m_number,
-                                               m_ForceSize);
-        ImageLoadEvent *le = new ImageLoadEvent(m_parent, image, m_basefile,
-                                                m_filename, m_number);
-        QCoreApplication::postEvent(m_parent, le);
+        QString tmpFilename;
+        if ((m_filename.startsWith("/")) ||
+            (m_filename.startsWith("http://")) ||
+            (m_filename.startsWith("https://")) ||
+            (m_filename.startsWith("ftp://")))
+            tmpFilename = m_filename;
+
+        MythImageReader imageReader(tmpFilename);
+
+        if (imageReader.supportsAnimation())
+        {
+            m_parent->LoadAnimatedImage(imageReader, m_filename, m_ForceSize);
+        }
+        else
+        {
+            MythImage *image =
+                m_parent->LoadImage(imageReader, m_filename, m_ForceSize);
+
+            ImageLoadEvent *le = new ImageLoadEvent(m_parent, image, m_basefile,
+                                                    m_filename, m_number);
+            QCoreApplication::postEvent(m_parent, le);
+        }
     }
 
   private:
@@ -104,7 +121,7 @@ class MythUIImagePrivate
 {
   public:
     MythUIImagePrivate(MythUIImage *p)
-        : m_parent(p), m_UpdateLock(QReadWriteLock::Recursive)
+        : m_parent(p),            m_UpdateLock(QReadWriteLock::Recursive)
           { };
    ~MythUIImagePrivate() {};
 
@@ -182,6 +199,7 @@ MythUIImage::~MythUIImage()
  */
 void MythUIImage::Clear(void)
 {
+    QWriteLocker updateLocker(&d->m_UpdateLock);
     QMutexLocker locker(&m_ImagesLock);
     while (!m_Images.isEmpty())
     {
@@ -190,6 +208,7 @@ void MythUIImage::Clear(void)
             (*it)->DownRef();
         m_Images.remove(it.key());
     }
+    m_Delays.clear();
 }
 
 /**
@@ -201,6 +220,7 @@ void MythUIImage::Reset(void)
     if (m_Filename != m_OrigFilename)
     {
         m_Filename = m_OrigFilename;
+        m_animatedImage = false;
         d->m_UpdateLock.unlock();
         Load();
     }
@@ -244,6 +264,7 @@ void MythUIImage::Init(void)
     
     m_animationCycle = kCycleStart;
     m_animationReverse = false;
+    m_animatedImage = false;
 }
 
 /**
@@ -290,6 +311,25 @@ void MythUIImage::SetDelay(int delayms)
 }
 
 /**
+ *  \brief Sets the delays between each image in an animation
+ */
+void MythUIImage::SetDelays(QVector<int> delays)
+{
+    QWriteLocker updateLocker(&d->m_UpdateLock);
+    QMutexLocker imageLocker(&m_ImagesLock);
+    QVector<int>::iterator it;
+
+    for (it = delays.begin(); it != delays.end(); ++it)
+        m_Delays[m_Delays.size()] = *it;
+
+    if (m_Delay == -1)
+        m_Delay = m_Delays[0];
+
+    m_LastDisplay = QTime::currentTime();
+    m_CurPos = 0;
+}
+
+/**
  *  \brief Assign a MythImage to the widget. Use is strongly discouraged, use
  *         SetFilename() instead.
  */
@@ -327,6 +367,7 @@ void MythUIImage::SetImage(MythImage *img)
 
     m_ImagesLock.lock();
     m_Images[0] = img;
+    m_Delays.clear();
     m_ImagesLock.unlock();
 
     m_CurPos = 0;
@@ -390,6 +431,8 @@ void MythUIImage::SetImages(QVector<MythImage *> &images)
 
         aSize = aSize.expandedTo(im->size());
     }
+
+    SetImageCount(1, m_Images.size());
 
     if (m_ForceSize.isNull())
         SetSize(aSize);
@@ -581,9 +624,9 @@ bool MythUIImage::Load(bool allowLoadInBackground)
     ImageCacheMode cacheMode = kCacheCheckMemoryOnly;
 
     int j = 0;
-    for (int i = m_LowNum; i <= m_HighNum; i++)
+    for (int i = m_LowNum; i <= m_HighNum && !m_animatedImage; i++)
     {
-        if (m_HighNum >= 1)
+        if (!m_animatedImage && m_HighNum >= 1)
             filename = bFilename.arg(i);
 
         imagelabel = GenImageLabel(filename, w, h);
@@ -611,26 +654,42 @@ bool MythUIImage::Load(bool allowLoadInBackground)
             // Perform a blocking load
             VERBOSE(VB_GUI|VB_FILE|VB_EXTRA, LOC + QString(
                         "Load(), loading '%1' in foreground").arg(filename));
-            MythImage *image = LoadImage(filename, i, bForceSize);
-            if (image)
+            QString tmpFilename;
+            if ((filename.startsWith("/")) ||
+                (filename.startsWith("http://")) ||
+                (filename.startsWith("https://")) ||
+                (filename.startsWith("ftp://")))
+                tmpFilename = filename;
+
+            MythImageReader imageReader(tmpFilename);
+
+            if (imageReader.supportsAnimation())
             {
-                if (bForceSize.isNull())
-                    SetSize(image->size());
-
-                m_ImagesLock.lock();
-                m_Images[j] = image;
-                m_ImagesLock.unlock();
-
-                SetRedraw();
-                d->m_UpdateLock.lockForWrite();
-                m_LastDisplay = QTime::currentTime();
-                d->m_UpdateLock.unlock();
+                LoadAnimatedImage(imageReader, filename, bForceSize);
             }
             else
             {
-                m_ImagesLock.lock();
-                m_Images[j] = NULL;
-                m_ImagesLock.unlock();
+                MythImage *image = LoadImage(imageReader, filename, bForceSize);
+                if (image)
+                {
+                    if (bForceSize.isNull())
+                        SetSize(image->size());
+
+                    m_ImagesLock.lock();
+                    m_Images[j] = image;
+                    m_ImagesLock.unlock();
+
+                    SetRedraw();
+                    d->m_UpdateLock.lockForWrite();
+                    m_LastDisplay = QTime::currentTime();
+                    d->m_UpdateLock.unlock();
+                }
+                else
+                {
+                    m_ImagesLock.lock();
+                    m_Images[j] = NULL;
+                    m_ImagesLock.unlock();
+                }
             }
         }
         ++j;
@@ -642,8 +701,8 @@ bool MythUIImage::Load(bool allowLoadInBackground)
 /**
 *  \brief Load an image
 */
-MythImage *MythUIImage::LoadImage(const QString &imFile, int imageNumber,
-                                  QSize bForceSize)
+MythImage *MythUIImage::LoadImage(MythImageReader &imageReader,
+                                  const QString &imFile, QSize bForceSize)
 {
     QString filename = imFile;
 
@@ -694,7 +753,9 @@ MythImage *MythUIImage::LoadImage(const QString &imFile, int imageNumber,
 
     imagelabel = GenImageLabel(filename, w, h);
 
-    image = GetMythUI()->LoadCacheImage(filename, imagelabel);
+    if (!imageReader.supportsAnimation())
+        image = GetMythUI()->LoadCacheImage(filename, imagelabel);
+
     if (image)
     {
         image->UpRef();
@@ -735,12 +796,14 @@ MythImage *MythUIImage::LoadImage(const QString &imFile, int imageNumber,
 
             image = GetMythPainter()->GetFormatImage();
             image->UpRef();
-            if (!image->Load(filename))
-            {
-                VERBOSE(VB_GUI|VB_FILE, LOC +
-                        QString("LoadImage Could not load :%1:")
-                        .arg(filename));
+            bool ok = false;
+            if (imageReader.supportsAnimation())
+                ok = image->Load(imageReader);
+            else
+                ok = image->Load(filename);
 
+            if (!ok)
+            {
                 image->DownRef();
 
                 m_loadingImagesLock.lock();
@@ -786,7 +849,8 @@ MythImage *MythUIImage::LoadImage(const QString &imFile, int imageNumber,
         if (m_isGreyscale)
             image->ToGreyscale();
 
-        GetMythUI()->CacheImage(imagelabel, image);
+        if (!imageReader.supportsAnimation())
+            GetMythUI()->CacheImage(imagelabel, image);
     }
 
     if (image->isNull())
@@ -816,13 +880,102 @@ MythImage *MythUIImage::LoadImage(const QString &imFile, int imageNumber,
 }
 
 /**
+*  \brief Load an animated image
+*/
+bool MythUIImage::LoadAnimatedImage(MythImageReader &imageReader,
+                                    const QString &imFile, QSize bForceSize)
+{
+    bool result = false;
+    m_loadingImagesLock.lock();
+
+    // Check to see if the image is being loaded by us in another thread
+    if ((m_loadingImages.contains(imFile)) &&
+        (m_loadingImages[imFile] == this))
+    {
+        VERBOSE(VB_GUI|VB_FILE|VB_EXTRA, LOC + QString(
+                    "MythUIImage::LoadAnimatedImage(%1), this "
+                    "file is already being loaded by this same MythUIImage in "
+                    "another thread.").arg(imFile));
+        m_loadingImagesLock.unlock();
+        return result;
+    }
+
+    // Check to see if the exact same image is being loaded anywhere else
+    while (m_loadingImages.contains(imFile))
+        m_loadingImagesCond.wait(&m_loadingImagesLock);
+
+    m_loadingImages[imFile] = this;
+    m_loadingImagesLock.unlock();
+
+    QString filename = QString("frame-%1-") + imFile;
+    QString frameFilename;
+    QVector<MythImage *> images;
+    QVector<int> delays;
+    int imageCount = 1;
+    QString imageLabel;
+
+    int w = -1;
+    int h = -1;
+
+    if (!bForceSize.isNull())
+    {
+        if (bForceSize.width() != -1)
+            w = bForceSize.width();
+
+        if (bForceSize.height() != -1)
+            h = bForceSize.height();
+    }
+
+    while (imageReader.canRead())
+    {
+        frameFilename = filename.arg(imageCount);
+        imageLabel = GenImageLabel(frameFilename, w, h);
+        MythImage *im = LoadImage(imageReader, frameFilename, bForceSize);
+
+        if (!im)
+            break;
+
+        images.append(im);
+        delays.append(imageReader.nextImageDelay());
+        imageCount++;
+    }
+
+    if (images.size())
+    {
+        m_animatedImage = true;
+        SetImages(images);
+        if ((m_Delay == -1) &&
+            (imageReader.supportsAnimation()) &&
+            (delays.size()))
+        {
+            SetDelays(delays);
+        }
+        result = true;
+    }
+
+    m_loadingImagesLock.lock();
+    m_loadingImages.remove(imFile);
+    m_loadingImagesCond.wakeAll();
+    m_loadingImagesLock.unlock();
+
+    return result;
+}
+
+/**
  *  \copydoc MythUIType::Pulse()
  */
 void MythUIImage::Pulse(void)
 {
     QWriteLocker updateLocker(&d->m_UpdateLock);
-    if (m_Delay > 0 &&
-        abs(m_LastDisplay.msecsTo(QTime::currentTime())) > m_Delay)
+
+    int delay = -1;
+    if (m_Delays.contains(m_CurPos))
+        delay = m_Delays[m_CurPos];
+    else if (m_Delay > 0)
+        delay = m_Delay;
+
+    if (delay > 0 &&
+        abs(m_LastDisplay.msecsTo(QTime::currentTime())) > delay)
     {
         m_ImagesLock.lock();
 
@@ -960,7 +1113,9 @@ bool MythUIImage::ParseElement(
 
             QStringList imageList = imageDir.entryList();
             srand(time(NULL));
-            QString randFile = QString("%1%2").arg(m_Filename)
+            QString randFile;
+            if (imageList.size())
+                randFile = QString("%1%2").arg(m_Filename)
                            .arg(imageList.takeAt(rand() % imageList.size()));
             m_OrigFilename = m_Filename = randFile;
         }
@@ -1002,7 +1157,39 @@ bool MythUIImage::ParseElement(
     else if (element.tagName() == "crop")
         m_cropRect = parseRect(element);
     else if (element.tagName() == "delay")
-        m_Delay = getFirstText(element).toInt();
+    {
+        QString value = getFirstText(element);
+        if (value.contains(","))
+        {
+            QVector<int> delays;
+            QStringList tokens = value.split(",");
+            QStringList::iterator it = tokens.begin();
+            for (; it != tokens.end(); ++it)
+            {
+                if ((*it).isEmpty())
+                {
+                    if (delays.size())
+                        delays.append(delays[delays.size()-1]);
+                    else
+                        delays.append(0); // Default 0ms delay before first image
+                }
+                else
+                {
+                    delays.append((*it).toInt());
+                }
+            }
+
+            if (delays.size())
+            {
+                m_Delay = delays[0];
+                SetDelays(delays);
+            }
+        }
+        else
+        {
+            m_Delay = value.toInt();
+        }
+    }
     else if (element.tagName() == "reflection")
     {
         m_isReflected = true;
@@ -1115,6 +1302,7 @@ void MythUIImage::CopyFrom(MythUIType *base)
     m_isGreyscale = im->m_isGreyscale;
 
     m_animationCycle = im->m_animationCycle;
+    m_animatedImage = im->m_animatedImage;
 
     //SetImages(im->m_Images);
 

@@ -940,6 +940,9 @@ void MainServer::customEvent(QEvent *e)
 
             if ((tokens.size() >= 2) && (tokens[1] == "FINISHED"))
                 m_downloadURLs.remove(localFile);
+
+            mod_me = MythEvent(me->Message(), extraDataList);
+            me = &mod_me;
         }
 
         broadcast = QStringList( "BACKEND_MESSAGE" );
@@ -2737,6 +2740,29 @@ void MainServer::HandleQueryFileExists(QStringList &slist, PlaybackSock *pbs)
     {
         retlist << "1";
         retlist << fullname;
+
+        struct stat fileinfo;
+        if (stat(fullname.toLocal8Bit().constData(), &fileinfo) >= 0)
+        {
+            retlist << QString::number(fileinfo.st_dev);
+            retlist << QString::number(fileinfo.st_ino);
+            retlist << QString::number(fileinfo.st_mode);
+            retlist << QString::number(fileinfo.st_nlink);
+            retlist << QString::number(fileinfo.st_uid);
+            retlist << QString::number(fileinfo.st_gid);
+            retlist << QString::number(fileinfo.st_rdev);
+            retlist << QString::number(fileinfo.st_size);
+#ifdef USING_MINGW
+            retlist << "0"; // st_blksize
+            retlist << "0"; // st_blocks
+#else
+            retlist << QString::number(fileinfo.st_blksize);
+            retlist << QString::number(fileinfo.st_blocks);
+#endif
+            retlist << QString::number(fileinfo.st_atime);
+            retlist << QString::number(fileinfo.st_mtime);
+            retlist << QString::number(fileinfo.st_ctime);
+        }
     }
     else
         retlist << "0";

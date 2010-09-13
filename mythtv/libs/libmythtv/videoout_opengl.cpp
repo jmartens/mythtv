@@ -34,6 +34,8 @@ void VideoOutputOpenGL::GetRenderOptions(render_opts &opts,
         (*opts.safe_renderers)["libmpeg2"].append("opengl");
     if (opts.decoders->contains("vda"))
         (*opts.safe_renderers)["vda"].append("opengl");
+    if (opts.decoders->contains("crystalhd"))
+        (*opts.safe_renderers)["crystalhd"].append("opengl");
     opts.priorities->insert("opengl", 65);
 }
 
@@ -279,7 +281,8 @@ bool VideoOutputOpenGL::CreateBuffers(void)
 
     bool success = true;
     vbuffers.Init(31, true, 1, 12, 4, 2, false);
-    success &= vbuffers.CreateBuffers(window.GetVideoDim().width(),
+    success &= vbuffers.CreateBuffers(FMT_YV12,
+                                      window.GetVideoDim().width(),
                                       window.GetVideoDim().height());
 
     av_pause_frame.height = vbuffers.GetScratchFrame()->height;
@@ -292,7 +295,7 @@ bool VideoOutputOpenGL::CreateBuffers(void)
     if (!av_pause_frame.buf)
         success = false;
     else
-        clear(&av_pause_frame, GUID_YV12_PLANAR);
+        clear(&av_pause_frame);
 
     return success;
 }

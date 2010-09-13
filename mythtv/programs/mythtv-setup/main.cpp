@@ -33,14 +33,13 @@
 #include "startprompt.h"
 #include "mythsystemevent.h"
 #include "expertsettingseditor.h"
-#include "dbutil.h"
 
 using namespace std;
 
 ExitPrompter   *exitPrompt  = NULL;
 StartPrompter  *startPrompt = NULL;
 
-void SetupMenuCallback(void* data, QString& selection)
+static void SetupMenuCallback(void* data, QString& selection)
 {
     (void)data;
 
@@ -104,7 +103,7 @@ void SetupMenuCallback(void* data, QString& selection)
         VERBOSE(VB_IMPORTANT, "Unknown menu action: " + selection);
 }
 
-bool SetupMenu(QString themedir, QString themename)
+static bool SetupMenu(QString themedir, QString themename)
 {
     QByteArray tmp = themedir.toLocal8Bit();
     MythThemedMenu *menu = new MythThemedMenu(
@@ -127,7 +126,7 @@ bool SetupMenu(QString themedir, QString themename)
 
 // If the theme specified in the DB is somehow broken, try a standard one:
 //
-bool resetTheme(QString themedir, const QString badtheme)
+static bool resetTheme(QString themedir, const QString badtheme)
 {
     QString themename = DEFAULT_UI_THEME;
 
@@ -585,13 +584,6 @@ int main(int argc, char *argv[])
 
     LanguageSelection::prompt();
     MythTranslation::load("mythfrontend");
-
-    if (!DBUtil::CheckTables(true))
-    {
-        VERBOSE(VB_IMPORTANT, "Error checking database tables. Please "
-                "run optimize_mythdb.pl or mysqlcheck --repair.");;
-        return BACKEND_EXIT_DB_ERROR;
-    }
 
     if (!UpgradeTVDatabaseSchema(true))
     {

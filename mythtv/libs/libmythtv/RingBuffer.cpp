@@ -24,7 +24,6 @@ using namespace std;
 #include "exitcodes.h"
 #include "RingBuffer.h"
 #include "remotefile.h"
-#include "remoteencoder.h"
 #include "ThreadedFileWriter.h"
 #include "livetvchain.h"
 #include "DVDRingBuffer.h"
@@ -118,14 +117,14 @@ RingBuffer::RingBuffer(const QString &lfilename,
       tfw(NULL),                fd2(-1),
       writemode(false),
       readpos(0),               writepos(0),
-      stopreads(false),         recorder_num(0),
-      remoteencoder(NULL),      remotefile(NULL),
+      stopreads(false),         remotefile(NULL),
       startreadahead(readahead),readAheadBuffer(NULL),
       readaheadrunning(false),  readaheadpaused(false),
       pausereadthread(false),
       rbrpos(0),                rbwpos(0),
       internalreadpos(0),       ateof(false),
       readsallowed(false),      wantseek(false), setswitchtonext(false),
+      streamOnly(false),
       rawbitrate(4000),         playspeed(1.0f),
       fill_threshold(65536),    fill_min(-1),
       readblocksize(CHUNK),     wanttoread(0),
@@ -135,7 +134,6 @@ RingBuffer::RingBuffer(const QString &lfilename,
       ignoreliveeof(false),     readAdjust(0)
 {
     filename.detach();
-    pthread_rwlock_init(&rwlock, NULL);
 
     {
         QMutexLocker locker(&subExtLock);
@@ -193,7 +191,7 @@ RingBuffer::RingBuffer(const QString &lfilename,
  *  \brief Returns false iff file exists and has incorrect permissions.
  *  \param filename File (including path) that we want to know about
  */
-bool check_permissions(const QString &filename)
+static bool check_permissions(const QString &filename)
 {
     QFileInfo fileInfo(filename);
     if (fileInfo.exists() && !fileInfo.isReadable())
@@ -297,41 +295,65 @@ void RingBuffer::OpenFile(const QString &lfilename, uint retryCount)
     bool is_bd = false;
     (void) is_bd;
 
+    if (!streamOnly && filename.startsWith("myth://"))
+    {
+        struct stat fileInfo;
+        if ((RemoteFile::Exists(filename, &fileInfo)) &&
+            (S_ISDIR(fileInfo.st_mode)))
+        {
+            QString tmpFile = filename + "/VIDEO_TS";
+            if (RemoteFile::Exists(tmpFile))
+            {
+                is_dvd = true;
+            }
+            else
+            {
+                tmpFile = filename + "/BDMV";
+                if (RemoteFile::Exists(tmpFile))
+                    is_bd = true;
+            }
+        }
+    }
+
     if ((filename.left(1) == "/") ||
         (QFile::exists(filename)))
         is_local = true;
 
 #ifdef USING_FRONTEND
-    else if (filename.left(4) == "dvd:")
+    else if ((!streamOnly) &&
+             ((filename.startsWith("dvd:")) || is_dvd ||
+              ((filename.startsWith("myth://")) &&
+               ((filename.endsWith(".img")) ||
+                (filename.endsWith(".iso"))))))
     {
         is_dvd = true;
         dvdPriv = new DVDRingBufferPriv();
         startreadahead = false;
 
-        if (filename.left(6) == "dvd://")    // 'Play DVD' sends "dvd:/" + dev
-            filename.remove(0,5);            //             e.g. "dvd://dev/sda"
-        else                                 // Less correct URI "dvd:" + path
-            filename.remove(0,4);            //             e.g. "dvd:/videos/ET"
+        if (filename.left(6) == "dvd://")      // 'Play DVD' sends "dvd:/" + dev
+            filename.remove(0,5);              //             e.g. "dvd://dev/sda"
+        else if (filename.left(5) == "dvd:/")  // Less correct URI "dvd:" + path
+            filename.remove(0,4);              //             e.g. "dvd:/videos/ET"
 
-        if (QFile::exists(filename))
+        if (QFile::exists(filename) || filename.startsWith("myth://"))
             VERBOSE(VB_PLAYBACK, "OpenFile() trying DVD at " + filename);
         else
         {
             filename = "/dev/dvd";
         }
     }
-    else if (filename.left(3) == "bd:" || is_bd)
+    else if ((!streamOnly) && (filename.left(3) == "bd:" || is_bd))
     {
         is_bd = true;
         bdPriv = new BDRingBufferPriv();
         startreadahead = false;
 
-        if (filename.left(5) == "bd://")    // 'Play DVD' sends "bd:/" + dev
-            filename.remove(0,4);           //             e.g. "bd://dev/sda"
-        else                                // Less correct URI "bd:" + path
-            filename.remove(0,3);           //             e.g. "bd:/videos/ET"
+        if (filename.left(5) == "bd://")      // 'Play DVD' sends "bd:/" + dev
+            filename.remove(0,4);             //             e.g. "bd://dev/sda"
+        else if (filename.left(4) == "bd:/")  // Less correct URI "bd:" + path
+            filename.remove(0,3);             //             e.g. "bd:/videos/ET"
 
-        if (QFile::exists(filename))
+        if (QFile::exists(filename) || filename.startsWith("myth://"))
             VERBOSE(VB_PLAYBACK, "OpenFile() trying BD at " + filename);
         else
         {
@@ -417,16 +439,16 @@ void RingBuffer::OpenFile(const QString &lfilename, uint retryCount)
     else if (is_dvd)
     {
         dvdPriv->OpenFile(filename);
-        pthread_rwlock_wrlock(&rwlock);
+        rwlock.lockForWrite();
         readblocksize = DVD_BLOCK_SIZE * 62;
-        pthread_rwlock_unlock(&rwlock);
+        rwlock.unlock();
     }
     else if (is_bd)
     {
         bdPriv->OpenFile(filename);
-        pthread_rwlock_wrlock(&rwlock);
+        rwlock.lockForWrite();
         readblocksize = BD_BLOCK_SIZE * 62;
-        pthread_rwlock_unlock(&rwlock);
+        rwlock.unlock();
     }
 #endif // USING_FRONTEND
     else
@@ -504,7 +526,7 @@ RingBuffer::~RingBuffer(void)
 {
     KillReadAheadThread();
 
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
 
     if (remotefile)
     {
@@ -535,8 +557,7 @@ RingBuffer::~RingBuffer(void)
     }
 #endif // USING_FRONTEND
 
-    pthread_rwlock_unlock(&rwlock);
-    pthread_rwlock_destroy(&rwlock);
+    rwlock.unlock();
 }
 
 /** \fn RingBuffer::Start(void)
@@ -558,7 +579,7 @@ void RingBuffer::Start(void)
 void RingBuffer::Reset(bool full, bool toAdjust, bool resetInternal)
 {
     wantseek = true;
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
     wantseek = false;
     numfailures = 0;
     commserror = false;
@@ -583,7 +604,7 @@ void RingBuffer::Reset(bool full, bool toAdjust, bool resetInternal)
     if (resetInternal)
         internalreadpos = readpos;
 
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
 }
 
 /** \fn RingBuffer::safe_read(int, void*, uint)
@@ -693,10 +714,10 @@ int RingBuffer::safe_read(RemoteFile *rf, void *data, uint sz)
  */
 void RingBuffer::UpdateRawBitrate(uint raw_bitrate)
 {
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
     rawbitrate = raw_bitrate;
     CalcReadAheadThresh();
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
 }
 
 /** \fn RingBuffer::GetBitrate(void) const
@@ -707,9 +728,9 @@ void RingBuffer::UpdateRawBitrate(uint raw_bitrate)
  */
 uint RingBuffer::GetBitrate(void) const
 {
-    pthread_rwlock_rdlock(&rwlock);
+    rwlock.lockForRead();
     uint tmp = (uint) max(abs(rawbitrate * playspeed), 0.5f * rawbitrate);
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
     return min(rawbitrate * 3, tmp);
 }
 
@@ -718,9 +739,9 @@ uint RingBuffer::GetBitrate(void) const
  */
 uint RingBuffer::GetReadBlockSize(void) const
 {
-    pthread_rwlock_rdlock(&rwlock);
+    rwlock.lockForRead();
     uint tmp = readblocksize;
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
     return tmp;
 }
 
@@ -730,10 +751,10 @@ uint RingBuffer::GetReadBlockSize(void) const
  */
 void RingBuffer::UpdatePlaySpeed(float play_speed)
 {
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
     playspeed = play_speed;
     CalcReadAheadThresh();
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
 }
 
 /** \fn RingBuffer::CalcReadAheadThresh(void)
@@ -842,13 +863,7 @@ void RingBuffer::StartupReadAheadThread(void)
     readaheadrunning = false;
 
     readAheadRunningCondLock.lock();
-    int rval = pthread_create(&reader, NULL, StartReader, this);
-    if (0 != rval)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                "StartupReadAheadThread: pthread_create failed." + ENO);
-        return;
-    }
+    QThread::start();
     readAheadRunningCond.wait(&readAheadRunningCondLock);
     readAheadRunningCondLock.unlock();
 }
@@ -862,7 +877,7 @@ void RingBuffer::KillReadAheadThread(void)
         return;
 
     readaheadrunning = false;
-    pthread_join(reader, NULL);
+    QThread::wait();
 }
 
 /** \fn RingBuffer::StopReads(void)
@@ -925,20 +940,7 @@ void RingBuffer::WaitForPause(void)
     }
 }
 
-/** \fn RingBuffer::StartReader(void*)
- *  \brief Thunk that calls ReadAheadThread(void)
- */
-void *RingBuffer::StartReader(void *type)
-{
-    RingBuffer *rbuffer = (RingBuffer *)type;
-    rbuffer->ReadAheadThread();
-    return NULL;
-}
-
-/** \fn RingBuffer::ReadAheadThread(void)
- *  \brief Read-ahead run function.
- */
-void RingBuffer::ReadAheadThread(void)
+void RingBuffer::run(void)
 {
     long long totfree = 0;
     int ret = -1;
@@ -955,9 +957,9 @@ void RingBuffer::ReadAheadThread(void)
 
     readAheadBuffer = new char[kBufferSize + KB640];
 
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
     ResetReadAhead(0);
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
 
     totfree = ReadBufFree();
 
@@ -995,7 +997,7 @@ void RingBuffer::ReadAheadThread(void)
         }
         loops = 0;
 
-        pthread_rwlock_rdlock(&rwlock);
+        rwlock.lockForRead();
         if (totfree > readblocksize && !commserror && !ateof && !setswitchtonext)
         {
             // limit the read size
@@ -1123,7 +1125,7 @@ void RingBuffer::ReadAheadThread(void)
         }
         availWaitMutex.unlock();
 
-        pthread_rwlock_unlock(&rwlock);
+        rwlock.unlock();
 
         if ((used >= fill_threshold || wantseek || ateof || setswitchtonext) &&
             !pausereadthread)
@@ -1360,7 +1362,7 @@ int RingBuffer::Read(void *buf, int count)
         return ret;
     }
 
-    pthread_rwlock_rdlock(&rwlock);
+    rwlock.lockForRead();
 
     if (!readaheadrunning)
     {
@@ -1393,7 +1395,7 @@ int RingBuffer::Read(void *buf, int count)
         readpos += ret;
     }
 
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
     return ret;
 }
 
@@ -1404,11 +1406,11 @@ bool RingBuffer::IsIOBound(void) const
 {
     bool ret = false;
     int used, free;
-    pthread_rwlock_rdlock(&rwlock);
+    rwlock.lockForRead();
 
     if (!tfw)
     {
-        pthread_rwlock_unlock(&rwlock);
+        rwlock.unlock();
         return ret;
     }
 
@@ -1417,7 +1419,7 @@ bool RingBuffer::IsIOBound(void) const
 
     ret = (used * 5 > free);
 
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
     return ret;
 }
 
@@ -1437,7 +1439,7 @@ int RingBuffer::Write(const void *buf, uint count)
     if (!tfw && !remotefile)
         return ret;
 
-    pthread_rwlock_rdlock(&rwlock);
+    rwlock.lockForRead();
 
     if (tfw)
         ret = tfw->Write(buf, count);
@@ -1445,7 +1447,7 @@ int RingBuffer::Write(const void *buf, uint count)
         ret = remotefile->Write(buf, count);
     writepos += ret;
 
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
     return ret;
 }
 
@@ -1467,14 +1469,14 @@ long long RingBuffer::Seek(long long pos, int whence)
         return WriterSeek(pos, whence);
 
     wantseek = true;
-    pthread_rwlock_wrlock(&rwlock);
+    rwlock.lockForWrite();
     wantseek = false;
 
     // optimize nop seeks
     if ((whence == SEEK_SET && pos == readpos) ||
         (whence == SEEK_CUR && pos == 0))
     {
-        pthread_rwlock_unlock(&rwlock);
+        rwlock.unlock();
         return readpos;
     }
 
@@ -1497,7 +1499,7 @@ long long RingBuffer::Seek(long long pos, int whence)
 #endif // USING_FRONTEND
     else
     {
-        if (whence == SEEK_SET)
+        if ((whence == SEEK_SET) || (whence == SEEK_END))
 #ifdef USING_MINGW
             ret = lseek64(fd2, pos, whence);
 #else
@@ -1516,10 +1518,7 @@ long long RingBuffer::Seek(long long pos, int whence)
 
     if (ret >= 0)
     {
-        if (whence == SEEK_SET)
-            readpos = pos;
-        else if (whence == SEEK_CUR)
-            readpos += pos;
+        readpos = ret;
 
         if (readaheadrunning)
             ResetReadAhead(readpos);
@@ -1534,7 +1533,7 @@ long long RingBuffer::Seek(long long pos, int whence)
         VERBOSE(VB_IMPORTANT, LOC_ERR + cmd + " Failed" + ENO);
     }
 
-    pthread_rwlock_unlock(&rwlock);
+    rwlock.unlock();
 
     return ret;
 }

@@ -15,7 +15,7 @@ using namespace std;
 
 extern "C" {
 #include "frame.h"
-#include "avcodec.h"
+#include "libavcodec/avcodec.h"
 }
 
 class ProgramInfo;
@@ -53,6 +53,7 @@ class NuppelDecoder : public DecoderBase
     long UpdateStoredFrameNum(long framenumber);
 
     QString GetCodecDecoderName(void) const { return "nuppel"; }
+    QString     GetEncodingType(void) const;
     MythCodecID GetVideoCodecID(void) const;
 
   private:

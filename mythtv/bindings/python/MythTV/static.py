@@ -4,12 +4,12 @@
 Contains any static and global variables for MythTV Python Bindings
 """
 
-OWN_VERSION = (0,23,0,22)
+OWN_VERSION = (0,23,0,23)
 SCHEMA_VERSION = 1263
 MVSCHEMA_VERSION = 1036
 NVSCHEMA_VERSION = 1007
 MUSICSCHEMA_VERSION = 1017
-PROTO_VERSION = '58'
+PROTO_VERSION = '59'
 BACKEND_SEP = '[]:[]'
 
 class MARKUP( object ):

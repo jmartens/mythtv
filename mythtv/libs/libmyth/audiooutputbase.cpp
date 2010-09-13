@@ -396,7 +396,7 @@ void AudioOutputBase::Reconfigure(const AudioSettings &orig_settings)
     internal_vol = gCoreContext->GetNumSetting("MythControlsVolume", 0);
 
     VBAUDIO(QString("Original codec was %1, %2, %3 kHz, %4 channels")
-            .arg(codec_id_string((CodecID)codec))
+            .arg(ff_codec_id_string((CodecID)codec))
             .arg(output_settings->FormatToString(format))
             .arg(samplerate/1000).arg(source_channels));
 
@@ -411,7 +411,8 @@ void AudioOutputBase::Reconfigure(const AudioSettings &orig_settings)
 
     // Force resampling if we are encoding to AC3 and sr > 48k
     // or if 48k override was checked in settings
-    if ((gCoreContext->GetNumSetting("AdvancedAudioSettings", false) &&
+    if ((samplerate != 48000 &&
+         gCoreContext->GetNumSetting("AdvancedAudioSettings", false) &&
          gCoreContext->GetNumSetting("Audio48kOverride", false)) ||
         (enc && (samplerate > 48000 || (need_resampler && dest_rate > 48000))))
     {
