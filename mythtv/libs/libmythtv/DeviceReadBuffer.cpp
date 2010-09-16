@@ -233,7 +233,7 @@ void DeviceReadBuffer::IncrWritePointer(uint len)
     QMutexLocker locker(&lock);
     used     += len;
     writePtr += len;
-    writePtr  = (writePtr == endPtr) ? buffer : writePtr;
+    writePtr  = (writePtr >= endPtr) ? buffer + (writePtr - endPtr) : writePtr;
 #if REPORT_RING_STATS
     max_used = max(used, max_used);
     avg_used = ((avg_used * avg_cnt) + used) / ++avg_cnt;
