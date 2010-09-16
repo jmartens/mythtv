@@ -28,6 +28,7 @@ DeviceReadBuffer::DeviceReadBuffer(DeviceReaderCB *cb, bool use_poll)
       using_poll(use_poll),         max_poll_wait(2500 /*ms*/),
 
       size(0),                      used(0),
+      read_quanta(0),
       dev_read_size(0),             min_read(0),
 
       buffer(NULL),                 readPtr(NULL),
@@ -45,7 +46,8 @@ DeviceReadBuffer::~DeviceReadBuffer()
         delete[] buffer;
 }
 
-bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd)
+bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd,
+                             uint readQuanta, uint deviceBufferSize)
 {
     QMutexLocker locker(&lock);
 
@@ -55,7 +57,7 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd)
     videodevice   = streamName;
     _stream_fd    = streamfd;
 
-    // BEGIN HACK -- see #6897
+    // BEGIN HACK -- see #6897, remove after August 2009
     max_poll_wait = (videodevice.contains("dvb")) ? 25000 : 2500;
     // END HACK
 
@@ -65,13 +67,16 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd)
     request_pause = false;
     paused        = false;
 
-    size          = gCoreContext->GetNumSetting("HDRingbufferSize",
-                                            50 * TSPacket::SIZE) * 1024;
+    read_quanta   = (readQuanta) ? readQuanta : read_quanta;
+    size          = gCoreContext->GetNumSetting(
+        "HDRingbufferSize", 50 * read_quanta) * 1024;
     used          = 0;
-    dev_read_size = TSPacket::SIZE * (using_poll ? 256 : 48);
-    min_read      = TSPacket::SIZE * 4;
+    dev_read_size = read_quanta * (using_poll ? 256 : 48);
+    dev_read_size = (deviceBufferSize) ?
+        min(dev_read_size, (size_t)deviceBufferSize) : dev_read_size;
+    min_read      = read_quanta * 4;
 
-    buffer        = new unsigned char[size + TSPacket::SIZE];
+    buffer        = new unsigned char[size + dev_read_size];
     readPtr       = buffer;
     writePtr      = buffer;
     endPtr        = buffer + size;
@@ -79,7 +84,7 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd)
     // Initialize buffer, if it exists
     if (!buffer)
         return false;
-    memset(buffer, 0xFF, size + TSPacket::SIZE);
+    memset(buffer, 0xFF, size + read_quanta);
 
     // Initialize statistics
     max_used      = 0;
@@ -282,8 +287,8 @@ void DeviceReadBuffer::fill_ringbuffer(void)
         }
 
         // Limit read size for faster return from read
-        size_t read_size =
-            min(dev_read_size, (size_t) WaitForUnused(TSPacket::SIZE));
+        size_t unused = (size_t) WaitForUnused(read_quanta);
+        size_t read_size = min(dev_read_size, unused);
 
         // if read_size > 0 do the read...
         if (read_size)
@@ -297,6 +302,9 @@ void DeviceReadBuffer::fill_ringbuffer(void)
                     continue;
             }
             errcnt = 0;
+            // if we wrote past the official end of the buffer, copy to start
+            if (writePtr + len > endPtr)
+                memcpy(endPtr, buffer, writePtr + len - endPtr);
             IncrWritePointer(len);
         }
     }
@@ -503,9 +511,8 @@ uint DeviceReadBuffer::Read(unsigned char *buf, const uint count)
 uint DeviceReadBuffer::WaitForUnused(uint needed) const
 {
     size_t unused = GetUnused();
-    size_t contig = GetContiguousUnused();
 
-    if (contig > TSPacket::SIZE)
+    if (unused > read_quanta)
     {
         while (unused < needed)
         {
@@ -516,10 +523,10 @@ uint DeviceReadBuffer::WaitForUnused(uint needed) const
         }
         if (IsPauseRequested() || !IsOpen() || !run)
             return 0;
-        contig = GetContiguousUnused();
+        unused = GetUnused();
     }
 
-    return min(contig, unused);
+    return unused;
 }
 
 /** \fn DeviceReadBuffer::WaitForUsed(uint) const

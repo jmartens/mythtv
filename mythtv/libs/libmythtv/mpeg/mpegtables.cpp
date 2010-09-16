@@ -34,7 +34,7 @@ const unsigned char DEFAULT_PMT_HEADER[12] =
 
 static const uint len_for_alloc[] =
 {
-    TSPacket::PAYLOAD_SIZE
+    TSPacket::kPayloadSize
     - 1 /* for start of field pointer */
     - 3 /* for data before data last byte of pes length */,
     4000,
@@ -263,7 +263,7 @@ ProgramAssociationTable* ProgramAssociationTable::CreateBlank(bool smallPacket)
     memcpy(tspacket->data() + sizeof(TSHeader) + 1/* start of field pointer */,
            DEFAULT_PAT_HEADER, sizeof(DEFAULT_PAT_HEADER));
     PSIPTable psip = PSIPTable::View(*tspacket);
-    psip.SetLength(TSPacket::PAYLOAD_SIZE
+    psip.SetLength(TSPacket::kPayloadSize
                    - 1 /* for start of field pointer */
                    - 3 /* for data before data last byte of pes length */);
     ProgramAssociationTable *pat = new ProgramAssociationTable(psip);

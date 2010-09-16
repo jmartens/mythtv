@@ -319,6 +319,10 @@ class MPUBLIC CardUtil
 
     static uint         GetASIBufferSize(uint device_num,
                                          QString *error = NULL);
+    static int          GetASIMode(uint device_num,
+                                   QString *error = NULL);
+    static bool         SetASIMode(uint device_num, uint mode,
+                                   QString *error = NULL);
 
   private:
     static QStringList  ProbeV4LVideoInputs(QString device);

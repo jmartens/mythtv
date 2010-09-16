@@ -20,6 +20,25 @@ class DeviceReadBuffer;
 
 typedef QMap<uint,int> FilterMap;
 
+typedef enum ASIClockSource
+{
+    kASIInternalClock         = 0,
+    kASIExternalClock         = 1,
+    kASIRecoveredReceiveClock = 2,
+    kASIExternalClock2        = 1,
+} ASIClockSource;
+
+typedef enum ASIRXMode
+{
+    kASIRXRawMode                  = 0,
+    kASIRXSyncOn188                = 1,
+    kASIRXSyncOn204                = 2,
+    kASIRXSyncOnActualSize         = 3,
+    kASIRXSyncOnActualConvertTo188 = 4,
+    kASIRXSyncOn204ConvertTo188    = 5,
+} ASIRXMode;
+
+
 //#define RETUNE_TIMEOUT 5000
 
 // Note : This class always uses a DRB && a TS reader.
@@ -37,6 +56,9 @@ class ASIStreamHandler : public StreamHandler
         StreamHandler::AddListener(data, false, true);
     } // StreamHandler
 
+    void SetClockSource(ASIClockSource cs);
+    void SetRXMode(ASIRXMode m);
+
   private:
     ASIStreamHandler(const QString &);
     ~ASIStreamHandler();
@@ -52,6 +74,9 @@ class ASIStreamHandler : public StreamHandler
     int                                     _device_num;
     int                                     _buf_size;
     int                                     _fd;
+    uint                                    _packet_size;
+    ASIClockSource                          _clock_source;
+    ASIRXMode                               _rx_mode;
 
     // for implementing Get & Return
     static QMutex                           _handlers_lock;

@@ -296,7 +296,7 @@ PSIPTable* MPEGStreamData::AssemblePSIP(const TSPacket* tspacket,
 
                 // If the next section starts in the new tspacket
                 // create a new partial packet to prevent overflow
-                if ((partial->TSSizeInBuffer() > TSPacket::SIZE) &&
+                if ((partial->TSSizeInBuffer() > TSPacket::kSize) &&
                     (packetStart >
                      partial->TSSizeInBuffer() - TSPacket::PAYLOAD_SIZE))
                 {
@@ -371,7 +371,7 @@ PSIPTable* MPEGStreamData::AssemblePSIP(const TSPacket* tspacket,
     // There might be another section after this one in the
     // current packet. We need room before the end of the
     // packet, and it must not be packet stuffing.
-    if ((offset + psip->SectionLength() < TSPacket::SIZE) &&
+    if ((offset + psip->SectionLength() < TSPacket::kSize) &&
         (pesdata[psip->SectionLength() + 1] != 0xff))
     {
         // This isn't sutffing, so we need to put this
@@ -945,7 +945,7 @@ int MPEGStreamData::ProcessData(const unsigned char *buffer, int len)
             if (newpos == -1)
                 return len - pos;
             if (newpos == -2)
-                return TSPacket::SIZE;
+                return TSPacket::kSize;
 
             pos = newpos;
         }
@@ -953,7 +953,7 @@ int MPEGStreamData::ProcessData(const unsigned char *buffer, int len)
         const TSPacket *pkt = reinterpret_cast<const TSPacket*>(&buffer[pos]);
         if (ProcessTSPacket(*pkt))
         {
-            pos += TSPacket::SIZE; // Advance to next TS packet
+            pos += TSPacket::kSize; // Advance to next TS packet
             resync = false;
         }
         else // Let it resync in case of dropped bytes
@@ -1019,7 +1019,7 @@ int MPEGStreamData::ResyncStream(const unsigned char *buffer, int curr_pos,
 {
     // Search for two sync bytes 188 bytes apart,
     int pos = curr_pos;
-    int nextpos = pos + TSPacket::SIZE;
+    int nextpos = pos + TSPacket::kSize;
     if (nextpos >= len)
         return -1; // not enough bytes; caller should try again
 

@@ -11,6 +11,7 @@
 #include <QWaitCondition>
 #include <QString>
 
+#include "tspacket.h"
 #include "util.h"
 
 class DeviceReaderCB
@@ -32,10 +33,14 @@ class DeviceReaderCB
 class DeviceReadBuffer
 {
   public:
-    DeviceReadBuffer(DeviceReaderCB *callback, bool use_poll = true);
+    DeviceReadBuffer(DeviceReaderCB *callback,
+                     bool use_poll = true);
    ~DeviceReadBuffer();
 
-    bool Setup(const QString &streamName, int streamfd);
+    bool Setup(const QString &streamName,
+               int streamfd,
+               uint readQuanta       = sizeof(TSPacket),
+               uint deviceBufferSize = 0);
 
     void Start(void);
     void Reset(const QString &streamName, int streamfd);
@@ -93,6 +98,7 @@ class DeviceReadBuffer
 
     size_t           size;
     size_t           used;
+    size_t           read_quanta;
     size_t           dev_read_size;
     size_t           min_read;
     unsigned char   *buffer;

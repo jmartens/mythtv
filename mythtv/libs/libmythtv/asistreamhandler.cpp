@@ -102,7 +102,10 @@ void ASIStreamHandler::Return(ASIStreamHandler * & ref)
 }
 
 ASIStreamHandler::ASIStreamHandler(const QString &device) :
-    StreamHandler(device), _device_num(-1), _buf_size(-1), _fd(-1)
+    StreamHandler(device), 
+    _device_num(-1), _buf_size(-1), _fd(-1),
+    _packet_size(TSPacket::kSize), _clock_source(kASIInternalClock),
+    _rx_mode(kASIRXSyncOnActualSize)
 {
 }
 
@@ -112,6 +115,20 @@ ASIStreamHandler::~ASIStreamHandler()
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "dtor & _stream_data_list not empty");
     }
+}
+
+void ASIStreamHandler::SetClockSource(ASIClockSource cs)
+{
+    _clock_source = cs;
+    // TODO we should make it possible to set this immediately
+    // not wait for the next open
+}
+
+void ASIStreamHandler::SetRXMode(ASIRXMode m)
+{
+    _rx_mode = m;
+    // TODO we should make it possible to set this immediately
+    // not wait for the next open
 }
 
 void ASIStreamHandler::run(void)
@@ -127,9 +144,8 @@ void ASIStreamHandler::run(void)
         return;
     }
 
-    // TODO use _buf_size...
     DeviceReadBuffer *drb = new DeviceReadBuffer(this);
-    bool ok = drb->Setup(_device, _fd);
+    bool ok = drb->Setup(_device, _fd, _packet_size, _buf_size);
     if (!ok)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
@@ -139,7 +155,7 @@ void ASIStreamHandler::run(void)
         return;
     }
 
-    int buffer_size = TSPacket::SIZE * 15000;
+    uint buffer_size = _packet_size * 15000;
     unsigned char *buffer = new unsigned char[buffer_size];
     if (!buffer)
     {
@@ -149,7 +165,7 @@ void ASIStreamHandler::run(void)
         _error = true;
         return;
     }
-    bzero(buffer, buffer_size);
+    memset(buffer, 0, buffer_size);
 
     SetRunning(true, true, false);
 
@@ -226,6 +242,27 @@ void ASIStreamHandler::run(void)
     SetRunning(false, true, false);
 }
 
+static QString sys_dev(uint device_num, QString dev)
+{
+    return QString("/sys/class/asi/asirx%1/%2").arg(device_num).arg(dev);
+}
+
+static bool write_sys(QString sys_dev, QString str)
+{
+    QFile f(sys_dev);
+    f.open(QIODevice::WriteOnly);
+    QByteArray ba = str.toLocal8Bit();
+    qint64 offset = 0;
+    for (uint tries = 0; (offset < ba.size()) && tries < 5; tries++)
+    {
+        qint64 written = f.write(ba.data()+offset, ba.size()-offset);
+        if (written < 0)
+            return false;
+        offset += written;
+    }
+    return true;
+}
+
 bool ASIStreamHandler::Open(void)
 {
     if (_fd >= 0)
@@ -243,6 +280,12 @@ bool ASIStreamHandler::Open(void)
     if (_buf_size <= 0)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + error);
+        return false;
+    }
+
+    if (!CardUtil::SetASIMode(_device_num, (uint)_rx_mode, &error))
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to set RX Mode: " + error);
         return false;
     }
 
@@ -265,9 +308,24 @@ bool ASIStreamHandler::Open(void)
         Close();
         return false;
     }
+    // TODO? do stuff with capabilities..
 
-    // TODO do stuff with capabilities..
     // we need to handle 188 & 204 byte packets..
+    switch (_rx_mode)
+    {
+        case kASIRXRawMode:
+        case kASIRXSyncOnActualSize:
+            _packet_size = TSPacket::kDVBEmissionSize *  TSPacket::kSize;
+            break;
+        case kASIRXSyncOn204:
+            _packet_size = TSPacket::kDVBEmissionSize;
+            break;
+        case kASIRXSyncOn188:
+        case kASIRXSyncOnActualConvertTo188:
+        case kASIRXSyncOn204ConvertTo188:
+            _packet_size = TSPacket::kSize;
+            break;
+    }
 
     // pid counter?
 

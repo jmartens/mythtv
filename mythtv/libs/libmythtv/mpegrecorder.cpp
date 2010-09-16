@@ -409,7 +409,7 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
         }
         else if (driver == "hdpvr")
         {
-            bufferSize = 1500 * TSPacket::SIZE;
+            bufferSize = 1500 * TSPacket::kSize;
             usingv4l2 = true;
             requires_special_pause = true;
             m_h264_parser.use_I_forKeyframes(false);

@@ -135,7 +135,7 @@ void OCURStreamHandler::run(void)
         return;
     }
 
-    int buffer_size = TSPacket::SIZE * 15000;
+    int buffer_size = TSPacket::kSize * 15000;
     unsigned char *buffer = new unsigned char[buffer_size];
     if (!buffer)
     {

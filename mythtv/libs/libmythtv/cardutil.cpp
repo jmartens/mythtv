@@ -2138,3 +2138,50 @@ uint CardUtil::GetASIBufferSize(uint device_num, QString *error)
     return 0;
 #endif
 }
+
+uint CardUtil::GetASIMode(uint device_num, QString *error)
+{
+#ifdef USING_ASI
+    QString sys_bufsize_contents = read_sys(sys_dev(_device_num, "mode"));
+    bool ok;
+    uint mode = sys_bufsize_contents.toUInt(&ok);
+    if (!ok)
+    {
+        if (error)
+        {
+            *error = QString("Failed to read mode from '%1'")
+                .arg(sys_dev(device_num, "mode"));
+        }
+        return -1;
+    }
+    return mode;
+#else
+    (void) device_num;
+    if (error)
+        *error = "Not compiled with ASI support.";
+    return -1
+#endif
+}
+
+bool CardUtil::SetASIMode(uint device_num, uint mode, QString *error)
+{
+#ifdef USING_ASI
+    QString sys_bufsize_contents = read_sys(sys_dev(_device_num, "mode"));
+    bool ok;
+    uint old_mode = sys_bufsize_contents.toUInt(&ok);
+    if (ok && old_mode == mode)
+        return true;
+    ok = write_sys(sys_dev(_device_num, "mode"), QString("%1\n").arg(mode));
+    if (!ok && error)
+    {
+        *error = QString("Failed to set mode to %1 using '%2'")
+            .arg(mode).arg(sys_dev(device_num, "mode"));
+    }
+    return ok;
+#else
+    (void) device_num;
+    if (error)
+        *error = "Not compiled with ASI support.";
+    return false;
+#endif
+}
