@@ -242,27 +242,6 @@ void ASIStreamHandler::run(void)
     SetRunning(false, true, false);
 }
 
-static QString sys_dev(uint device_num, QString dev)
-{
-    return QString("/sys/class/asi/asirx%1/%2").arg(device_num).arg(dev);
-}
-
-static bool write_sys(QString sys_dev, QString str)
-{
-    QFile f(sys_dev);
-    f.open(QIODevice::WriteOnly);
-    QByteArray ba = str.toLocal8Bit();
-    qint64 offset = 0;
-    for (uint tries = 0; (offset < ba.size()) && tries < 5; tries++)
-    {
-        qint64 written = f.write(ba.data()+offset, ba.size()-offset);
-        if (written < 0)
-            return false;
-        offset += written;
-    }
-    return true;
-}
-
 bool ASIStreamHandler::Open(void)
 {
     if (_fd >= 0)

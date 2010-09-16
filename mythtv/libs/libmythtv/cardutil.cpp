@@ -2057,6 +2057,22 @@ static QString read_sys(QString sys_dev)
     return sdba;
 }
 
+static bool write_sys(QString sys_dev, QString str)
+{
+    QFile f(sys_dev);
+    f.open(QIODevice::WriteOnly);
+    QByteArray ba = str.toLocal8Bit();
+    qint64 offset = 0;
+    for (uint tries = 0; (offset < ba.size()) && tries < 5; tries++)
+    {
+        qint64 written = f.write(ba.data()+offset, ba.size()-offset);
+        if (written < 0)
+            return false;
+        offset += written;
+    }
+    return true;
+}
+
 int CardUtil::GetASIDeviceNumber(const QString &device, QString *error)
 {
 #ifdef USING_ASI
@@ -2139,10 +2155,10 @@ uint CardUtil::GetASIBufferSize(uint device_num, QString *error)
 #endif
 }
 
-uint CardUtil::GetASIMode(uint device_num, QString *error)
+int CardUtil::GetASIMode(uint device_num, QString *error)
 {
 #ifdef USING_ASI
-    QString sys_bufsize_contents = read_sys(sys_dev(_device_num, "mode"));
+    QString sys_bufsize_contents = read_sys(sys_dev(device_num, "mode"));
     bool ok;
     uint mode = sys_bufsize_contents.toUInt(&ok);
     if (!ok)
@@ -2166,12 +2182,12 @@ uint CardUtil::GetASIMode(uint device_num, QString *error)
 bool CardUtil::SetASIMode(uint device_num, uint mode, QString *error)
 {
 #ifdef USING_ASI
-    QString sys_bufsize_contents = read_sys(sys_dev(_device_num, "mode"));
+    QString sys_bufsize_contents = read_sys(sys_dev(device_num, "mode"));
     bool ok;
     uint old_mode = sys_bufsize_contents.toUInt(&ok);
     if (ok && old_mode == mode)
         return true;
-    ok = write_sys(sys_dev(_device_num, "mode"), QString("%1\n").arg(mode));
+    ok = write_sys(sys_dev(device_num, "mode"), QString("%1\n").arg(mode));
     if (!ok && error)
     {
         *error = QString("Failed to set mode to %1 using '%2'")
