@@ -341,13 +341,13 @@ static bool named_output_file_common(
 
     tfw = new ThreadedFileWriter(
         fn, O_WRONLY|O_TRUNC|O_CREAT|O_LARGEFILE, 0644);
-    tfw->SetWriteBufferSize(64 * 1024 * 1024);
     if (!tfw->Open())
     {
         delete tfw;
         tfw = NULL;
         return false;
     }
+    tfw->SetWriteBufferSize(64 * 1024 * 1024);
 
     bool ok = true;
     const QByteArray ba = fn.toLocal8Bit();
