@@ -52,9 +52,10 @@ class HDHRStreamHandler : public StreamHandler
 
     virtual void AddListener(MPEGStreamData *data,
                              bool allow_section_reader = false,
-                             bool needs_drb            = false)
+                             bool needs_drb            = false,
+                             QString output_file       = QString())
     {
-        StreamHandler::AddListener(data, false, false);
+        StreamHandler::AddListener(data, false, false, output_file);
     } // StreamHandler
 
     void GetTunerStatus(struct hdhomerun_tuner_status_t *status);

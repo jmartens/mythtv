@@ -15,6 +15,7 @@
 // MythTV headers
 #include "asistreamhandler.h"
 #include "asichannel.h"
+#include "ThreadedFileWriter.h"
 #include "dtvsignalmonitor.h"
 #include "streamlisteners.h"
 #include "mpegstreamdata.h"
@@ -105,16 +106,8 @@ ASIStreamHandler::ASIStreamHandler(const QString &device) :
     StreamHandler(device), 
     _device_num(-1), _buf_size(-1), _fd(-1),
     _packet_size(TSPacket::kSize), _clock_source(kASIInternalClock),
-    _rx_mode(kASIRXSyncOnActualSize)
+    _rx_mode(kASIRXSyncOnActualSize), _mpts_fd(NULL)
 {
-}
-
-ASIStreamHandler::~ASIStreamHandler()
-{
-    if (!_stream_data_list.empty())
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "dtor & _stream_data_list not empty");
-    }
 }
 
 void ASIStreamHandler::SetClockSource(ASIClockSource cs)
@@ -208,7 +201,11 @@ void ASIStreamHandler::run(void)
             continue;
         }
 
-        _listener_lock.lock();
+        if (!_listener_lock.tryLock())
+        {
+            remainder = len;
+            continue;
+        }
 
         if (_stream_data_list.empty())
         {
@@ -216,10 +213,12 @@ void ASIStreamHandler::run(void)
             continue;
         }
 
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-        {
-            remainder = _stream_data_list[i]->ProcessData(buffer, len);
-        }
+        StreamDataList::const_iterator sit = _stream_data_list.begin();
+        for (; sit != _stream_data_list.end(); ++sit)
+            remainder = sit.key()->ProcessData(buffer, len);
+
+        if (_mpts_fd)
+            _mpts_fd->Write(buffer, len - remainder);
 
         _listener_lock.unlock();
 
@@ -313,8 +312,73 @@ bool ASIStreamHandler::Open(void)
 
 void ASIStreamHandler::Close(void)
 {
-    close(_fd);
-    _fd = -1;
+    if (_fd >= 0)
+    {
+        close(_fd);
+        _fd = -1;
+    }
+}
+
+typedef ThreadedFileWriter* ThreadedFileWriterP;
+static bool named_output_file_common(
+    const QString &_device, ThreadedFileWriterP &tfw, QMap<QString,int> &files)
+{
+    if (tfw)
+    {
+        delete tfw;
+        tfw = NULL;
+    }
+
+    QMap<QString,int>::iterator it = files.begin();
+    if (it == files.end())
+        return true;
+
+    for (it = files.begin(); it != files.end(); ++it)
+        (*it)++;
+
+    QString fn = QString("%1.%2.raw")
+        .arg(files.begin().key()).arg(*files.begin());
+
+    tfw = new ThreadedFileWriter(
+        fn, O_WRONLY|O_TRUNC|O_CREAT|O_LARGEFILE, 0644);
+    tfw->SetWriteBufferSize(64 * 1024 * 1024);
+    if (!tfw->Open())
+    {
+        delete tfw;
+        tfw = NULL;
+        return false;
+    }
+
+    bool ok = true;
+    const QByteArray ba = fn.toLocal8Bit();
+    for (; ok && it != files.end(); ++it)
+    {
+        int ret = link(ba.constData(), it.key().toLocal8Bit().constData());
+        if (ret < 0)
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    QString("Failed to link '%1' to '%2'")
+                    .arg(it.key()).arg(fn) + ENO);
+        }
+        ok &= ret >= 0;
+    }
+
+    return ok;
+}
+void ASIStreamHandler::AddNamedOutputFile(const QString &file)
+{
+    _mpts_files[file] = -1;
+    named_output_file_common(_device, _mpts_fd, _mpts_files);
+}
+
+void ASIStreamHandler::RemoveNamedOutputFile(const QString &file)
+{
+    QMap<QString,int>::iterator it = _mpts_files.find(file);
+    if (it != _mpts_files.end())
+    {
+        _mpts_files.erase(it);
+        named_output_file_common(_device, _mpts_fd, _mpts_files);
+    }
 }
 
 void ASIStreamHandler::PriorityEvent(int fd)

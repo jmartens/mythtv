@@ -25,6 +25,7 @@
 #include "asistreamhandler.h"
 #include "asirecorder.h"
 #include "asichannel.h"
+#include "RingBuffer.h"
 #include "tv_rec.h"
 
 #define LOC QString("ASIRec(%1): ").arg(tvrec->GetCaptureCardNum())
@@ -46,6 +47,17 @@ void ASIRecorder::SetOptionsFromProfile(RecordingProfile *profile,
 {
     DTVRecorder::SetOptionsFromProfile(profile, videodev, audiodev, vbidev);
     SetIntOption(profile, "recordmpts");
+}
+
+/** \fn ASIRecorder::SetOption(const QString&,int)
+ *  \brief handles the "recordmpts" option.
+ */
+void ASIRecorder::SetOption(const QString &name, int value)
+{
+    if (name == "recordmpts")
+        m_record_mpts = (value == 1);
+    else
+        DTVRecorder::SetOption(name, value);
 }
 
 void ASIRecorder::StartRecording(void)
@@ -92,7 +104,9 @@ void ASIRecorder::StartRecording(void)
 
     _stream_data->AddAVListener(this);
     _stream_data->AddWritingListener(this);
-    m_stream_handler->AddListener(_stream_data);
+    m_stream_handler->AddListener(
+        _stream_data, false, true,
+        (m_record_mpts) ? ringBuffer->GetFilename() : QString());
 
     while (IsRecordingRequested() && !IsErrored())
     {

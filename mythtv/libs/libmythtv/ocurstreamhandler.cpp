@@ -196,10 +196,9 @@ void OCURStreamHandler::run(void)
             continue;
         }
 
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-        {
-            remainder = _stream_data_list[i]->ProcessData(buffer, len);
-        }
+        StreamDataList::const_iterator it = _stream_data_list.begin();
+        for (; it != _stream_data_list.end(); ++it)
+            remainder = it.key()->ProcessData(buffer, len);
 
         _listener_lock.unlock();
 

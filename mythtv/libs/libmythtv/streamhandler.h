@@ -10,6 +10,7 @@ using namespace std;
 #include <QString>
 #include <QThread>
 #include <QMutex>
+#include <QMap>
 
 #include "DeviceReadBuffer.h" // for ReaderPausedCB
 #include "mpegstreamdata.h" // for PIDPriority
@@ -48,7 +49,8 @@ class StreamHandler : protected QThread, public DeviceReaderCB
   public:
     virtual void AddListener(MPEGStreamData *data,
                              bool allow_section_reader = false,
-                             bool needs_drb            = false);
+                             bool needs_drb            = false,
+                             QString output_file       = QString());
     virtual void RemoveListener(MPEGStreamData *data);
     bool IsRunning(void) const;
 
@@ -82,6 +84,12 @@ class StreamHandler : protected QThread, public DeviceReaderCB
         { return new PIDInfo(pid, stream_type, pes_type); }
 
   protected:
+    /// Called with _listener_lock locked just after adding new output file.
+    virtual void AddNamedOutputFile(const QString &filename) {}
+    /// Called with _listener_lock locked just before removing old output file.
+    virtual void RemoveNamedOutputFile(const QString &filename) {}
+
+  protected:
     QString           _device;
     bool              _needs_buffering;
     bool              _allow_section_reader;
@@ -100,8 +108,9 @@ class StreamHandler : protected QThread, public DeviceReaderCB
     uint              _open_pid_filters;
     MythTimer         _cycle_timer;
 
-    mutable QMutex          _listener_lock;
-    vector<MPEGStreamData*> _stream_data_list;
+    typedef QMap<MPEGStreamData*,QString> StreamDataList;
+    mutable QMutex    _listener_lock;
+    StreamDataList    _stream_data_list;
 };
 
 #endif // _STREAM_HANDLER_H_

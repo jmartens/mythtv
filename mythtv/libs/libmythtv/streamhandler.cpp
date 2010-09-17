@@ -35,7 +35,8 @@ StreamHandler::~StreamHandler()
 
 void StreamHandler::AddListener(MPEGStreamData *data,
                                 bool allow_section_reader,
-                                bool needs_buffering)
+                                bool needs_buffering,
+                                QString output_file)
 {
     VERBOSE(VB_RECORD, LOC + "AddListener("<<data<<") -- begin");
     if (!data)
@@ -62,7 +63,19 @@ void StreamHandler::AddListener(MPEGStreamData *data,
         _needs_buffering      |= needs_buffering;
     }
 
-    _stream_data_list.push_back(data);
+    StreamDataList::iterator it = _stream_data_list.find(data);
+    if (it != _stream_data_list.end())
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "Programmer Error, attempted "
+                "to add a listener which is already being listened to.");
+    }
+    else
+    {
+        _stream_data_list[data] = output_file;
+    }
+
+    if (!output_file.isEmpty())
+        AddNamedOutputFile(output_file);
 
     _listener_lock.unlock();
 
@@ -85,11 +98,14 @@ void StreamHandler::RemoveListener(MPEGStreamData *data)
 
     VERBOSE(VB_RECORD, LOC + "RemoveListener("<<data<<") -- locked");
 
-    vector<MPEGStreamData*>::iterator it =
-        find(_stream_data_list.begin(), _stream_data_list.end(), data);
+    StreamDataList::iterator it = _stream_data_list.find(data);
 
     if (it != _stream_data_list.end())
+    {
+        if (!(*it).isEmpty())
+            RemoveNamedOutputFile(*it);
         _stream_data_list.erase(it);
+    }
 
     if (_stream_data_list.empty())
     {
@@ -249,9 +265,10 @@ void StreamHandler::UpdateListeningForEIT(void)
 
     QMutexLocker read_locker(&_listener_lock);
 
-    for (uint i = 0; i < _stream_data_list.size(); i++)
+    StreamDataList::const_iterator it = _stream_data_list.begin();
+    for (; it != _stream_data_list.end(); ++it)
     {
-        MPEGStreamData *sd = _stream_data_list[i];
+        MPEGStreamData *sd = it.key();
         if (sd->HasEITPIDChanges(_eit_pids) &&
             sd->GetEITPIDChanges(_eit_pids, add_eit, del_eit))
         {
@@ -281,9 +298,9 @@ bool StreamHandler::UpdateFiltersFromStreamData(void)
 
     {
         QMutexLocker read_locker(&_listener_lock);
-
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-            _stream_data_list[i]->GetPIDs(pids);
+        StreamDataList::const_iterator it = _stream_data_list.begin();
+        for (; it != _stream_data_list.end(); ++it)
+            it.key()->GetPIDs(pids);
     }
 
     QMap<uint, PIDInfo*> add_pids;
@@ -337,8 +354,9 @@ PIDPriority StreamHandler::GetPIDPriority(uint pid) const
 
     PIDPriority tmp = kPIDPriorityNone;
 
-    for (uint i = 0; i < _stream_data_list.size(); i++)
-        tmp = max(tmp, _stream_data_list[i]->GetPIDPriority(pid));
+    StreamDataList::const_iterator it = _stream_data_list.begin();
+    for (; it != _stream_data_list.end(); ++it)
+        tmp = max(tmp, it.key()->GetPIDPriority(pid));
 
     return tmp;
 }

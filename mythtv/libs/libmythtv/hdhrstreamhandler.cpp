@@ -158,11 +158,9 @@ void HDHRStreamHandler::run(void)
             continue;
         }
 
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-        {
-            remainder = _stream_data_list[i]->ProcessData(
-                data_buffer, data_length);
-        }
+        StreamDataList::const_iterator sit = _stream_data_list.begin();
+        for (; sit != _stream_data_list.end(); ++sit)
+            remainder = sit.key()->ProcessData(data_buffer, data_length);
 
         _listener_lock.unlock();
         if (remainder != 0)

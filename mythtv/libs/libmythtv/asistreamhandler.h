@@ -6,17 +6,18 @@
 #include <vector>
 using namespace std;
 
+#include <QString>
 #include <QMutex>
 #include <QMap>
 
 #include "streamhandler.h"
 #include "util.h"
 
-class QString;
 class ASIStreamHandler;
 class DTVSignalMonitor;
 class ASIChannel;
 class DeviceReadBuffer;
+class ThreadedFileWriter;
 
 typedef QMap<uint,int> FilterMap;
 
@@ -51,9 +52,10 @@ class ASIStreamHandler : public StreamHandler
 
     virtual void AddListener(MPEGStreamData *data,
                              bool allow_section_reader = false,
-                             bool needs_drb            = false)
+                             bool needs_drb            = false,
+                             QString output_file       = QString())
     {
-        StreamHandler::AddListener(data, false, true);
+        StreamHandler::AddListener(data, false, true, output_file);
     } // StreamHandler
 
     void SetClockSource(ASIClockSource cs);
@@ -61,7 +63,6 @@ class ASIStreamHandler : public StreamHandler
 
   private:
     ASIStreamHandler(const QString &);
-    ~ASIStreamHandler();
 
     bool Open(void);
     void Close(void);
@@ -70,6 +71,9 @@ class ASIStreamHandler : public StreamHandler
 
     virtual void PriorityEvent(int fd); // DeviceReaderCB
 
+    virtual void AddNamedOutputFile(const QString &file); // StreamHandler
+    virtual void RemoveNamedOutputFile(const QString &file); // StreamHandler
+
   private:
     int                                     _device_num;
     int                                     _buf_size;
@@ -77,6 +81,9 @@ class ASIStreamHandler : public StreamHandler
     uint                                    _packet_size;
     ASIClockSource                          _clock_source;
     ASIRXMode                               _rx_mode;
+
+    ThreadedFileWriter                     *_mpts_fd;
+    QMap<QString,int>                       _mpts_files;
 
     // for implementing Get & Return
     static QMutex                           _handlers_lock;

@@ -234,10 +234,9 @@ void DVBStreamHandler::RunTS(void)
             continue;
         }
 
-        for (uint i = 0; i < _stream_data_list.size(); i++)
-        {
-            remainder = _stream_data_list[i]->ProcessData(buffer, len);
-        }
+        StreamDataList::const_iterator sit = _stream_data_list.begin();
+        for (; sit != _stream_data_list.end(); ++sit)
+            remainder = sit.key()->ProcessData(buffer, len);
 
         _listener_lock.unlock();
 
@@ -306,11 +305,9 @@ void DVBStreamHandler::RunSR(void)
             if (psip.SectionSyntaxIndicator())
             {
                 _listener_lock.lock();
-                for (uint i = 0; i < _stream_data_list.size(); i++)
-                {
-                    _stream_data_list[i]->HandleTables(
-                        fit.key() /* pid */, psip);
-                }
+                StreamDataList::const_iterator sit = _stream_data_list.begin();
+                for (; sit != _stream_data_list.end(); ++sit)
+                    sit.key()->HandleTables(fit.key() /* pid */, psip);
                 _listener_lock.unlock();
             }
         }

@@ -115,12 +115,14 @@ void DTVRecorder::SetOption(const QString &name, const QString &value)
 }
 
 /** \fn DTVRecorder::SetOption(const QString&,int)
- *  \brief handles the "wait_for_seqstart" and "pkt_buf_size" options.
+ *  \brief handles the "wait_for_seqstart" option.
  */
 void DTVRecorder::SetOption(const QString &name, int value)
 {
     if (name == "wait_for_seqstart")
         _wait_for_keyframe_option = (value == 1);
+    else
+        RecorderBase::SetOption(name, value);
 }
 
 void DTVRecorder::SetOptionsFromProfile(RecordingProfile *profile,
