@@ -31,6 +31,10 @@ StreamHandler::~StreamHandler()
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "dtor & _stream_data_list not empty");
     }
+
+    // This should never be triggered.. just to be safe..
+    if (_running)
+        Stop();
 }
 
 void StreamHandler::AddListener(MPEGStreamData *data,
@@ -164,16 +168,19 @@ void StreamHandler::Stop(void)
 {
     QMutexLocker locker(&_start_stop_lock);
 
-    _running_desired = false;
-
-    while (!_running_desired && _running)
-        _running_state_changed.wait(&_start_stop_lock, 100);
-
-    if (_running_desired)
+    do
     {
-        VERBOSE(VB_IMPORTANT, LOC_WARN +
-                "Programmer Error: Start called before Stop finished");
-    }
+        _running_desired = false;
+        while (!_running_desired && _running)
+            _running_state_changed.wait(&_start_stop_lock, 100);
+        if (_running_desired)
+        {
+            VERBOSE(VB_IMPORTANT, LOC_WARN +
+                    "Programmer Error: Start called before Stop finished");
+        }
+    } while (_running_desired);
+
+    wait();
 }
 
 bool StreamHandler::IsRunning(void) const
