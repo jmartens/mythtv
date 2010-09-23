@@ -621,6 +621,18 @@ int VideoOutputXv::GrabSuitableXvPort(MythXDisplay* disp, Window root,
             VERBOSE(VB_PLAYBACK, LOC +
                         QString("XV_SET_DEFAULTS is %1supported on this port")
                         .arg(xvsetdefaults ? "" : "not "));
+
+            bool xv_vsync = xv_is_attrib_supported(disp, port,
+                                                   "XV_SYNC_TO_VBLANK");
+            VERBOSE(VB_PLAYBACK, LOC + QString("XV_SYNC_TO_VBLANK %1supported")
+                    .arg(xv_vsync ? "" : "not "));
+            if (xv_vsync)
+            {
+                VERBOSE(VB_PLAYBACK, LOC + QString("XVideo Sync to VBlank %1set")
+                    .arg(xv_set_attrib(disp, port, "XV_SYNC_TO_VBLANK", 1) ?
+                         "" : "NOT "));
+            }
+
             break;
         }
     }
@@ -2574,12 +2586,7 @@ void VideoOutputXv::DrawUnusedRects(bool sync)
         return;
     }
 
-    // This is used to avoid drawing the colorkey when embedding and
-    // not using overlay. This is needed because we don't paint this
-    // in the vertical retrace period when calling this from the EPG.
-    bool clrdraw = xv_colorkey || !window.IsEmbedding();
-
-    if (xv_draw_colorkey && window.IsRepaintNeeded() && clrdraw)
+    if (xv_draw_colorkey && window.IsRepaintNeeded())
     {
         disp->SetForeground(xv_colorkey);
         disp->FillRectangle(XJ_curwin,
@@ -2588,7 +2595,7 @@ void VideoOutputXv::DrawUnusedRects(bool sync)
                        display_visible_rect.width(),
                        display_visible_rect.height() - 2 * boboff));
     }
-    else if (xv_draw_colorkey && xv_need_bobdeint_repaint && clrdraw)
+    else if (xv_draw_colorkey && xv_need_bobdeint_repaint)
     {
         // if this is only for deinterlacing mode switching, draw
         // the border areas, presumably the main image is undamaged.

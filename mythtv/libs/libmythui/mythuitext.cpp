@@ -118,22 +118,24 @@ void MythUIText::SetTextFromMap(QHash<QString, QString> &map)
         QString newText = GetTemplateText();
         if (newText.isEmpty())
             newText = GetDefaultText();
-        QRegExp regexp("%(\\|(.))?([^\\|]+)(\\|(.))?%");
+
+        QRegExp regexp("%(([^\\|%]+)?\\||\\|(.))?(\\w+)(\\|(.+))?%");
         regexp.setMinimal(true);
-        if (newText.contains(regexp))
+        if (!newText.isEmpty() && newText.contains(regexp))
         {
             int pos = 0;
             QString tempString = newText;
             while ((pos = regexp.indexIn(newText, pos)) != -1)
             {
-                QString key = regexp.cap(3).toLower().trimmed();
+                QString key = regexp.cap(4).toLower().trimmed();
                 QString replacement;
                 if (!map.value(key).isEmpty())
                 {
-                    replacement = QString("%1%2%3")
+                    replacement = QString("%1%2%3%4")
                                             .arg(regexp.cap(2))
+                                            .arg(regexp.cap(3))
                                             .arg(map.value(key))
-                                            .arg(regexp.cap(5));
+                                            .arg(regexp.cap(6));
                 }
                 tempString.replace(regexp.cap(0), replacement);
                 pos += regexp.matchedLength();

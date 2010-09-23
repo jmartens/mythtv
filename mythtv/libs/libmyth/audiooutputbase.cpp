@@ -76,7 +76,7 @@ AudioOutputBase::AudioOutputBase(const AudioSettings &settings) :
     source_bytes_per_frame(0),
     needs_upmix(false),         needs_downmix(false),
     surround_mode(QUALITY_LOW), old_stretchfactor(1.0f),
-    volume(80),                 volumeControl(NULL),
+    volume(80),                 volumeControl(QString()),
 
     processing(false),
 
@@ -405,7 +405,9 @@ void AudioOutputBase::Reconfigure(const AudioSettings &orig_settings)
     // initialized yet (e.g. rubbish was provided)
     if (source_channels <= 0 || format <= 0 || samplerate <= 0)
     {
-        Error("Aborting Audio Reconfigure. Invalid audio parameters");
+        Error(QString("Aborting Audio Reconfigure. ") +
+              QString("Invalid audio parameters ch %1 fmt %2 @ %3Hz")
+              .arg(source_channels).arg(format).arg(samplerate));
         return;
     }
 

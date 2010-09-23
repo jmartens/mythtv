@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!DOCTYPE mythuitheme SYSTEM "../mythuitheme.dtd">
+<!DOCTYPE mythuitheme SYSTEM "http://www.mythtv.org/schema/mythuitheme.dtd">
 <mythuitheme>
 
     <!-- Base Font Definitions -->
     <fontdef name="basesmall" face="DejaVu Sans">
         <pixelsize>19</pixelsize>
         <color>#FFFFFF</color>
+    </fontdef>
+
+    <fontdef name="basetiny" from="basesmall">
+        <pixelsize>14</pixelsize>
     </fontdef>
 
     <fontdef name="basemedium" from="basesmall">
@@ -29,6 +33,10 @@
     </fontdef>
 
     <!-- Colour variations on base fontdefs -->
+    <fontdef name="basetinyred" from="basetiny">
+        <color>#ff6b48</color>
+    </fontdef>
+
     <fontdef name="basesmallgrey" from="basesmall">
         <color>#666666</color>
     </fontdef>

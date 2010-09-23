@@ -350,7 +350,6 @@ class MPUBLIC TVRec : public SignalMonitorListener
     TVState        internalState;
     TVState        desiredNextState;
     bool           changeState;
-    bool           m_SMpending;
     bool           pauseNotify;
     uint           stateFlags;
     TuningQueue    tuningRequests;

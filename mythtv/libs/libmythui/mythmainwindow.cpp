@@ -936,6 +936,8 @@ void MythMainWindow::Init(void)
             delete d->paintwin;
             d->paintwin = NULL;
         }
+        else
+            d->render->Init();
     }
     else
 #endif
@@ -1251,7 +1253,10 @@ void MythMainWindow::SetDrawEnabled(bool enable)
     d->m_drawEnabled = enable;
 
     if (enable)
+    {
+        repaint(); // See #8952
         d->drawTimer->start(1000 / 70);
+    }
     else
         d->drawTimer->stop();
 

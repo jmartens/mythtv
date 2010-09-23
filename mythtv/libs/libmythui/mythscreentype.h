@@ -11,10 +11,10 @@ class MythScreenStack;
 class MythUIBusyDialog;
 
 /**
- *  \class ScreenLoadCompletionEvent
+ * \class ScreenLoadCompletionEvent
  *
- *  \brief Event that can be dispatched from a MythScreenType when it has
- *         completed loading.
+ * \brief Event that can be dispatched from a MythScreenType when it has
+ *        completed loading.
  */
 class MPUBLIC ScreenLoadCompletionEvent : public QEvent
 {
@@ -31,7 +31,10 @@ class MPUBLIC ScreenLoadCompletionEvent : public QEvent
 };
 
 /**
- * Base Screen type
+ * \class MythScreenType
+ * \brief Screen in which all other widgets are contained and rendered.
+ *
+ * \ingroup MythUI_Widgets
  */
 class MPUBLIC MythScreenType : public MythUIType
 {
@@ -94,6 +97,7 @@ class MPUBLIC MythScreenType : public MythUIType
     virtual void Init(void);   // UI work to draw data loaded
 
     void LoadInBackground(void);
+    void ReloadInBackground(void);
 
     void OpenBusyPopup(QString message = "");
     void CloseBusyPopup(void);
@@ -112,7 +116,7 @@ class MPUBLIC MythScreenType : public MythUIType
 
     MythScreenStack *m_ScreenStack;
     MythUIBusyDialog *m_BusyPopup;
-    
+
     QRegion m_SavedMask;
 
     friend class XMLParseBase;

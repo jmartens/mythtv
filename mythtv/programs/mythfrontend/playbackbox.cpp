@@ -850,6 +850,10 @@ void PlaybackBox::ItemVisible(MythUIButtonListItem *item)
 {
     ProgramInfo *pginfo = qVariantValue<ProgramInfo*>(item->GetData());
 
+    // Job status (recording, transcoding, flagging)
+    QString job = extract_job_state(*pginfo);
+    item->DisplayState(job, "jobstate");
+
     MythUIButtonListItem *sel_item = item->parent()->GetItemCurrent();
     if ((item != sel_item) && pginfo && item->GetImage("preview").isEmpty() &&
         (asAvailable == pginfo->GetAvailableStatus()))
@@ -912,7 +916,7 @@ void PlaybackBox::HandlePreviewEvent(const QStringList &list)
         QString tokens("\n\t\t\ttokens: ");
         for (uint i = 4; i < (uint) list.size(); i++)
             tokens += list[i] + ", ";
-        VERBOSE(VB_IMPORTANT, LOC +
+        VERBOSE(VB_GENERAL, LOC +
                 "Ignoring PREVIEW_SUCCESS, no matcing token" + tokens);
         return;
     }
@@ -932,7 +936,7 @@ void PlaybackBox::HandlePreviewEvent(const QStringList &list)
 
     if (!item)
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
+        VERBOSE(VB_GENERAL, LOC +
                 "Ignoring PREVIEW_SUCCESS, item no longer on screen.");
     }
 

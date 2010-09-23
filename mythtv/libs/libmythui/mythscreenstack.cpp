@@ -69,7 +69,8 @@ void MythScreenStack::AddScreen(MythScreenType *screen, bool allowFade)
     {
         reinterpret_cast<MythMainWindow *>(parent())->update();
         RecalculateDrawOrder();
-        m_DoInit = true;
+        if (!screen->IsInitialized())
+            m_DoInit = true;
     }
 
     screen->aboutToShow();
@@ -200,7 +201,8 @@ void MythScreenStack::doInit(void)
         if (!m_topScreen->IsLoaded())
             m_topScreen->LoadInForeground();
 
-        m_topScreen->doInit();
+        if (!m_topScreen->IsInitialized())
+            m_topScreen->doInit();
     }
     m_InitTimerStarted = false;
 }
@@ -264,10 +266,11 @@ void MythScreenStack::CheckNewFadeTransition(void)
     if (m_newTop->GetAlpha() >= 255)
     {
         m_InNewTransition = false;
+        if (!m_newTop->IsInitialized())
+            m_DoInit = true;
         m_newTop = NULL;
 
         RecalculateDrawOrder();
-        m_DoInit = true;
     }
 }
 

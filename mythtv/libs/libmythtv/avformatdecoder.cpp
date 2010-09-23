@@ -314,10 +314,11 @@ AvFormatDecoder::AvFormatDecoder(MythPlayer *parent,
     no_dts_hack = false;
 
     int x = gCoreContext->GetNumSetting("CommFlagFast", 0);
-    VERBOSE(VB_IMPORTANT, "CommFlagFast: " << x);
+    VERBOSE(VB_COMMFLAG, LOC + QString("CommFlagFast: %1").arg(x));
     if (x == 0)
-        special_decode = (AVSpecialDecode)0;
-    VERBOSE(VB_IMPORTANT, "special_decode: " << special_decode);
+        special_decode = kAVSpecialDecode_None;
+    VERBOSE(VB_COMMFLAG, LOC + QString("Special Decode Flags: 0x%1")
+        .arg(special_decode, 0, 16));
 }
 
 AvFormatDecoder::~AvFormatDecoder()
@@ -1277,7 +1278,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         if (special_decode & kAVSpecialDecode_SingleThreaded)
             enc->thread_count = 1;
 
-        enc->flags |= CODEC_FLAG2_FAST;
+        enc->flags2 |= CODEC_FLAG2_FAST;
 
         if ((CODEC_ID_MPEG2VIDEO == codec->id) ||
             (CODEC_ID_MPEG1VIDEO == codec->id))

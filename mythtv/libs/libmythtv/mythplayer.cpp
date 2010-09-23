@@ -553,7 +553,7 @@ bool MythPlayer::InitVideo(void)
             CheckExtraAudioDecode();
         }
     }
-    
+
     if (!videoOutput)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR +
@@ -1016,7 +1016,7 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
     }
 
     audio.CheckFormat();
-    
+
     if (ret > 0)
     {
         hasFullPositionMap = true;
@@ -1025,6 +1025,10 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
     }
 
     bookmarkseek = GetBookmark();
+
+    if (player_ctx->playingInfo->QueryAutoExpire() == kLiveTVAutoExpire)
+        gCoreContext->SaveSetting("DefaultChanid",
+                                  player_ctx->playingInfo->GetChanID());
 
     return IsErrored() ? -1 : 0;
 }
@@ -1616,8 +1620,9 @@ void MythPlayer::InitAVSync(void)
 
         QString msg = QString("Video timing method: %1").arg(timing_type);
         VERBOSE(VB_GENERAL, LOC + msg);
-        msg = QString("Refresh rate: %1, frame interval: %2")
-                       .arg(refreshrate).arg(frame_interval);
+        msg = QString("Display Refresh Rate: %1 Video Frame Rate: %2")
+                       .arg(1000000.0 / refreshrate, 0, 'f', 3)
+                       .arg(1000000.0 / frame_interval, 0, 'f', 3);
         VERBOSE(VB_PLAYBACK, LOC + msg);
 
         // try to get preferential scheduling, but ignore if we fail to.
@@ -2726,7 +2731,7 @@ void MythPlayer::DecoderLoop(bool pause)
                     !GetDecoder()->GetTrackCount(kTrackTypeVideo);
 
         DecoderPauseCheck();
-        
+
         if (forcePositionMapSync)
         {
             forcePositionMapSync = false;
@@ -2798,7 +2803,7 @@ bool MythPlayer::DecoderGetFrame(DecodeType decodetype, bool unsafe)
     bool ret = false;
     if (!videoOutput)
         return false;
-    
+
     // Wait for frames to be available for decoding onto
     if (!videoOutput->EnoughFreeFrames() && !unsafe && !killdecoder)
     {
@@ -3410,7 +3415,7 @@ void MythPlayer::DisableEdit(bool save)
         SetOSDStatus(QObject::tr("Paused"), kOSDTimeout_None);
 }
 
-bool MythPlayer::HandleProgrameEditorActions(QStringList &actions,
+bool MythPlayer::HandleProgramEditorActions(QStringList &actions,
                                              long long frame)
 {
     bool handled = false;
@@ -4093,7 +4098,10 @@ int MythPlayer::GetSecondsBehind(void) const
 void MythPlayer::calcSliderPos(osdInfo &info, bool paddedFields)
 {
     bool islive = false;
-    info.text.insert("description", "");
+    int chapter = GetCurrentChapter() + 1;
+    int title = GetCurrentTitle() + 1;
+    info.text.insert("chapteridx", chapter ? QString().number(chapter) : QString());
+    info.text.insert("titleidx", title ? QString().number(title) : QString());
     info.values.insert("position",   0);
     info.values.insert("progbefore", 0);
     info.values.insert("progafter",  0);
@@ -4177,32 +4185,30 @@ void MythPlayer::calcSliderPosPriv(osdInfo &info, bool paddedFields,
     }
 
     info.text["description"] = QObject::tr("%1 of %2").arg(text1).arg(text2);
-
-    if (islive)
-    {
-        info.text["extdescription"] = QObject::tr("%1 of %2 (%3 behind)")
-                .arg(text1).arg(text2).arg(text3);
-    }
-    else
-    {
-        info.text["extdescription"] = QObject::tr("%1 of %2 (%3 remaining)")
-                .arg(text1).arg(text2).arg(text3);
-    }
+    info.text["playedtime"] = text1;
+    info.text["totaltime"] = text2;
+    info.text["remainingtime"] = islive ? QString() : text3;
+    info.text["behindtime"] = islive ? text3 : QString();
 }
 
 int MythPlayer::GetNumChapters()
 {
-    return GetDecoder()->GetNumChapters();
+    if (GetDecoder())
+        return GetDecoder()->GetNumChapters();
+    return 0;
 }
 
 int MythPlayer::GetCurrentChapter()
 {
-    return GetDecoder()->GetCurrentChapter(framesPlayed);
+    if (GetDecoder())
+        return GetDecoder()->GetCurrentChapter(framesPlayed);
+    return 0;
 }
 
 void MythPlayer::GetChapterTimes(QList<long long> &times)
 {
-    return GetDecoder()->GetChapterTimes(times);
+    if (GetDecoder())
+        return GetDecoder()->GetChapterTimes(times);
 }
 
 bool MythPlayer::DoJumpChapter(int chapter)
@@ -4230,7 +4236,7 @@ bool MythPlayer::DoJumpChapter(int chapter)
     VERBOSE(VB_PLAYBACK, LOC +
             QString("DoJumpChapter: current %1 want %2 (frame %3)")
             .arg(current).arg(chapter).arg(desiredFrame));
-                                       
+
     if (desiredFrame < 0)
     {
         VERBOSE(VB_PLAYBACK, LOC_ERR + QString("DoJumpChapter failed."));
@@ -4247,7 +4253,9 @@ bool MythPlayer::DoJumpChapter(int chapter)
 
 int64_t MythPlayer::GetChapter(int chapter)
 {
-    return GetDecoder()->GetChapter(chapter);
+    if (GetDecoder())
+        return GetDecoder()->GetChapter(chapter);
+    return 0;
 }
 
 InteractiveTV *MythPlayer::GetInteractiveTV(void)

@@ -1470,6 +1470,7 @@ void ProgramInfo::ToMap(InfoMap &progMap,
     QString star_str = (stars != 0.0f) ?
         QObject::tr("%n star(s)", "", GetStars(star_range)) : "";
     progMap["stars"] = star_str;
+    progMap["numstars"] = QString().number(GetStars(star_range));
 
     if (stars != 0.0f && year)
         progMap["yearstars"] = QString("(%1, %2)").arg(year).arg(star_str);
@@ -2494,15 +2495,20 @@ bool ProgramInfo::QueryIsDeleteCandidate(bool one_playback_allowed) const
     QStringList byWho;
     if (QueryIsInUse(byWho) && !byWho.isEmpty())
     {
-        uint play_cnt = 0;
-        for (uint i = 0; (i+2 < (uint)byWho.size()) && ok; i++)
+        uint play_cnt = 0, ft_cnt = 0, jq_cnt = 0;
+        for (uint i = 0; (i+2 < (uint)byWho.size()) && ok; i+=3)
         {
             play_cnt += byWho[i].contains(kPlayerInUseID) ? 1 : 0;
+            ft_cnt += (byWho[i].contains(kFlaggerInUseID) ||
+                       byWho[i].contains(kTranscoderInUseID)) ? 1 : 0;
+            jq_cnt += (byWho[i].contains(kJobQueueInUseID)) ? 1 : 0;
             ok = ok && (byWho[i].contains(kRecorderInUseID)   ||
                         byWho[i].contains(kFlaggerInUseID)    ||
                         byWho[i].contains(kTranscoderInUseID) ||
+                        byWho[i].contains(kJobQueueInUseID)   ||
                         (one_playback_allowed && (play_cnt <= 1)));
         }
+        ok = ok && (ft_cnt == jq_cnt);
     }
 
     return ok;
@@ -2737,7 +2743,7 @@ void ProgramInfo::ClearMarkupMap(
     if (max_frame >= 0)
         comp += QString(" AND mark <= %1 ").arg(max_frame);
 
-    if (type != -100)
+    if (type != MARK_ALL)
         comp += QString(" AND type = :TYPE ");
 
     if (IsVideo())
@@ -3374,7 +3380,7 @@ void ProgramInfo::SaveResolutionProperty(VideoProperty vid_flags)
     query.bindValue(":OTHERFLAGS", ~(VID_1080|VID_720));
     query.bindValue(":FLAGS",      vid_flags);
     query.bindValue(":CHANID",     chanid);
-    query.bindValue(":STARTTIME",  recstartts);
+    query.bindValue(":STARTTIME",  startts);
     query.exec();
 
     uint videoproperties = GetVideoProperties();

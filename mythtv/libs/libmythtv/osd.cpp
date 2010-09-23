@@ -347,6 +347,12 @@ void OSD::SetText(const QString &window, QHash<QString,QString> &map,
     if (!win)
         return;
 
+    if (map.contains("numstars"))
+    {
+        MythUIStateType *state = dynamic_cast<MythUIStateType *> (win->GetChild("ratingstate"));
+        if (state)
+            state->DisplayState(map["numstars"]);
+    }
     if (map.contains("tvstate"))
     {
         MythUIStateType *state = dynamic_cast<MythUIStateType *> (win->GetChild("tvstate"));
@@ -727,7 +733,7 @@ void OSD::ResetWindow(const QString &window)
     if (!m_Children.contains(window))
         return;
 
-    m_Children.value(window)->DeleteAllChildren();
+    m_Children.value(window)->Reset();
 }
 
 void OSD::PositionWindow(MythScreenType *window)
@@ -862,7 +868,8 @@ void OSD::DialogShow(const QString &window, const QString &text, int updatefor)
         {
             MythDialogBox *dialog = dynamic_cast<MythDialogBox*>(m_Dialog);
             if (dialog)
-                dialog->ResetButtons();
+                dialog->Reset();
+
             DialogSetText(text);
         }
     }

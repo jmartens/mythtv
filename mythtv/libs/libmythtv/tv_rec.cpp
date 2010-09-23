@@ -98,7 +98,7 @@ TVRec::TVRec(int capturecardnum)
       stateChangeLock(QMutex::Recursive),
       pendingRecLock(QMutex::Recursive),
       internalState(kState_None), desiredNextState(kState_None),
-      changeState(false), m_SMpending(false), pauseNotify(true),
+      changeState(false), pauseNotify(true),
       stateFlags(0), lastTuningRequest(0),
       triggerEventLoopLock(QMutex::NonRecursive),
       triggerEventLoopSignal(false),
@@ -1367,7 +1367,7 @@ bool TVRec::WaitForEventThreadSleep(bool wake, ulong time)
         stateChangeLock.lock();
 
         // verify that we were triggered.
-        ok = (tuningRequests.empty() && !m_SMpending && !changeState);
+        ok = (tuningRequests.empty() && !changeState);
     }
     return ok;
 }
@@ -3244,8 +3244,6 @@ void TVRec::HandleTuning(void)
 
         // The dequeue isn't safe to do until now because we
         // release the stateChangeLock to teardown a recorder
-        if (request.flags & kFlagRecording)
-            m_SMpending = true;
         tuningRequests.dequeue();
 
         // Now we start new stuff
@@ -3280,8 +3278,6 @@ void TVRec::HandleTuning(void)
     MPEGStreamData *streamData = NULL;
     if (HasFlags(kFlagWaitingForSignal) && !(streamData = TuningSignalCheck()))
         return;
-
-    m_SMpending = false;
 
     if (HasFlags(kFlagNeedToStartRecorder))
     {
