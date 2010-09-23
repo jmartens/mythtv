@@ -19,6 +19,7 @@
 #include "streamlisteners.h"
 #include "mpegstreamdata.h"
 #include "cardutil.h"
+#include "upnp.h"
 
 #define LOC      QString("OCURSH(%1): ").arg(_device)
 #define LOC_WARN QString("OCURSH(%1) Warning: ").arg(_device)
@@ -38,7 +39,7 @@ OCURStreamHandler *OCURStreamHandler::Get(const QString &devname)
 
     if (it == _handlers.end())
     {
-        OCURStreamHandler *newhandler = new OCURStreamHandler(devkey);
+        OCURStreamHandler *newhandler = new OCURStreamHandler(devname);
         newhandler->Open();
         _handlers[devkey] = newhandler;
         _handlers_refcnt[devkey] = 1;
@@ -65,8 +66,9 @@ void OCURStreamHandler::Return(OCURStreamHandler * & ref)
     QMutexLocker locker(&_handlers_lock);
 
     QString devname = ref->_device;
+    QString devkey = devname.toUpper();
 
-    QMap<QString,uint>::iterator rit = _handlers_refcnt.find(devname);
+    QMap<QString,uint>::iterator rit = _handlers_refcnt.find(devkey);
     if (rit == _handlers_refcnt.end())
         return;
 
@@ -77,7 +79,7 @@ void OCURStreamHandler::Return(OCURStreamHandler * & ref)
         return;
     }
 
-    QMap<QString,OCURStreamHandler*>::iterator it = _handlers.find(devname);
+    QMap<QString,OCURStreamHandler*>::iterator it = _handlers.find(devkey);
     if ((it != _handlers.end()) && (*it == ref))
     {
         VERBOSE(VB_RECORD, QString("OCURSH: Closing handler for %1")
@@ -226,14 +228,28 @@ bool OCURStreamHandler::Open(void)
     if (_fd >= 0)
         return true;
 
+    QStringList dev = _device.split(":");
+    if (dev.size() < 2)
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Invalid device, should be in the form uuid:recorder_number"); 
+        return false;
+    }
+    QString uuid = dev[0].toLower();
+    uint    num  = dev[1].toUInt();
+
+    // HACK HACK HACK - begin
+    QString devive = QString("/dev/ceton/ctn91xx_mpeg3_%1").arg(num);
+
     // actually open the device
-    _fd = open(_device.toLocal8Bit().constData(), O_RDONLY, 0);
+    _fd = open(devive.toLocal8Bit().constData(), O_RDONLY, 0);
     if (_fd < 0)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR +
-                QString("Failed to open '%1'").arg(_device) + ENO);
+                QString("Failed to open '%1'").arg(devive) + ENO);
         return false;
     }
+    // HACK HACK HACK - end
 
     return true;
 }

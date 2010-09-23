@@ -27,17 +27,6 @@
 #include "ocurchannel.h"
 #include "tv_rec.h"
 
-/*
-#include "RingBuffer.h"
-#include "programinfo.h"
-#include "mpegtables.h"
-#include "iso639.h"
-#include "dvbstreamdata.h"
-#include "atscstreamdata.h"
-#include "atsctables.h"
-#include "cardutil.h"
-*/
-
 #define LOC QString("OCURRec(%1): ").arg(tvrec->GetCaptureCardNum())
 #define LOC_WARN QString("OCURRec(%1), Warning: ") \
                      .arg(tvrec->GetCaptureCardNum())

@@ -129,15 +129,6 @@ bool TVRec::CreateChannel(const QString &startchannel,
 
     if (!channel)
     {
-        QString msg = QString(
-            "%1 card configured on video device %2, \n"
-            "but MythTV was not compiled with %3 support. \n"
-            "\n"
-            "Recompile MythTV with %4 support or remove the card \n"
-            "from the configuration and restart MythTV.")
-            .arg(genOpt.cardtype).arg(genOpt.videodev)
-            .arg(genOpt.cardtype).arg(genOpt.cardtype);
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "\n" + msg + "\n");
         SetFlags(kFlagErrored);
         return false;
     }

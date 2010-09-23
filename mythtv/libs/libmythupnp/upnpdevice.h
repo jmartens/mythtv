@@ -251,7 +251,7 @@ class UPNP_PUBLIC DeviceLocation : public RefCounted
 
         // ==================================================================
 
-        int ExpiresInSecs()
+        int ExpiresInSecs(void) const
         {
             TaskTime ttNow;
             gettimeofday( (&ttNow), NULL );
@@ -296,6 +296,14 @@ class UPNP_PUBLIC DeviceLocation : public RefCounted
             return pDevice->m_rootDevice.m_sFriendlyName
                    + " (" + pDevice->m_sHostName + "), "
                    + pDevice->m_rootDevice.m_sUDN;
+        }
+
+        QString toString() const
+        {
+            return QString("\nURI:%1\nUSN:%2\nDeviceXML:%3\n"
+                           "Expires:%4\nMythTV PIN:%5")
+                .arg(m_sURI).arg(m_sUSN).arg(m_sLocation)
+                .arg(ExpiresInSecs()).arg(m_sSecurityPin);
         }
 };
 

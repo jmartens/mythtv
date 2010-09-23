@@ -2570,6 +2570,10 @@ void CardType::fillSelections(SelectSetting* setting)
     setting->addSelection(QObject::tr("DVEO ASI recorder"), "ASI");
 #endif
 
+#ifdef USING_OCUR
+    setting->addSelection(QObject::tr("OpenCable recorder"), "OCUR");
+#endif
+
     setting->addSelection(QObject::tr("Import test recorder"), "IMPORT");
     setting->addSelection(QObject::tr("Demo test recorder"),   "DEMO");
 }

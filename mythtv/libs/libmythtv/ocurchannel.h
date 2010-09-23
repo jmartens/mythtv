@@ -25,15 +25,14 @@ class OCURChannel : public DTVChannel
     OCURChannel(TVRec *parent, const QString &device);
     ~OCURChannel(void);
 
-    bool Open(void) { return InitializeInputs(); }
-    void Close(void) {}
+    bool Open(void);
+    void Close(void);
 
     // Sets
-    bool SetChannelByString(const QString &chan)
-        { m_curchannelname = chan; return true; }
+    bool SetChannelByString(const QString &chan);
 
     // Gets
-    bool IsOpen(void) const { return true; }
+    bool IsOpen(void) const { return !m_upnp_usn.isEmpty(); }
     QString GetDevice(void) const { return m_device; }
     virtual vector<DTVTunerType> GetTunerTypes(void) const
     { return m_tuner_types; }
@@ -41,9 +40,14 @@ class OCURChannel : public DTVChannel
     bool TuneMultiplex(uint, QString) { return true; }
     bool Tune(const DTVMultiplex&, QString) { return true; }
 
-  private:
+  protected:
+    bool SetChannelByVirtualChannel(const QString &vchan);
+
+  protected:
     vector<DTVTunerType>  m_tuner_types;
     QString               m_device;
+    QString               m_upnp_nt;
+    QString               m_upnp_usn;
 };
 
 #endif // _OCUR_CHANNEL_H_

@@ -1125,14 +1125,23 @@ ChannelBase *ChannelBase::CreateChannel(
 
     if (!channel)
     {
-        QString msg = "Need %1 channel, but compiled without %2 support!";
-        msg = msg.arg(genOpt.cardtype).arg(genOpt.cardtype);
-        VERBOSE(VB_IMPORTANT, "ChannelBase::CreateRecorder() Error, " + msg);
+        QString msg = QString(
+            "%1 card configured on video device %2, \n"
+            "but MythTV was not compiled with %3 support. \n"
+            "\n"
+            "Recompile MythTV with %4 support or remove the card \n"
+            "from the configuration and restart MythTV.")
+            .arg(genOpt.cardtype).arg(genOpt.videodev)
+            .arg(genOpt.cardtype).arg(genOpt.cardtype);
+        VERBOSE(VB_IMPORTANT, "ChannelBase::CreateChannel() Error: \n" +
+                msg + "\n");
         return NULL;
     }
 
     if (!channel->Open())
     {
+        VERBOSE(VB_IMPORTANT, "ChannelBase::CreateChannel() Error: " +
+                QString("Failed to open device %1").arg(genOpt.videodev));
         delete channel;
         return NULL;
     }
