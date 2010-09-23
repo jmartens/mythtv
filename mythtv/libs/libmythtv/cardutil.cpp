@@ -2043,6 +2043,7 @@ QString CardUtil::GetHDHRdesc(const QString &device)
 #endif
 }
 
+#ifdef USING_ASI
 static QString sys_dev(uint device_num, QString dev)
 {
     return QString("/sys/class/asi/asirx%1/%2").arg(device_num).arg(dev);
@@ -2072,6 +2073,7 @@ static bool write_sys(QString sys_dev, QString str)
     }
     return true;
 }
+#endif
 
 int CardUtil::GetASIDeviceNumber(const QString &device, QString *error)
 {
@@ -2175,7 +2177,7 @@ int CardUtil::GetASIMode(uint device_num, QString *error)
     (void) device_num;
     if (error)
         *error = "Not compiled with ASI support.";
-    return -1
+    return -1;
 #endif
 }
 
