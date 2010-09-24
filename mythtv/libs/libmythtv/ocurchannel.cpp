@@ -7,6 +7,7 @@
 // MythTV includes
 #include "ocurchannel.h"
 #include "mythcontext.h"
+#include "upnpdevice.h"
 #include "upnp.h"
 
 #define LOC     QString("OCURChan(%1): ").arg(GetDevice())
@@ -39,7 +40,7 @@ bool OCURChannel::Open(void)
         return false;
     }
     // TODO We should be able to pass a uuid in any case.
-    QString uuid = dev[0].toUpper();
+    QString uuid = dev[0];
     uint    num  = dev[1].toUInt();
 
     QString tuner_nt =
@@ -62,9 +63,21 @@ bool OCURChannel::Open(void)
         VERBOSE(VB_IMPORTANT, LOC + "Name&Details: " +
                 loc->GetNameAndDetails());
 
-        m_upnp_nt = tuner_nt;
-        m_upnp_usn = tuner_usn;
+        UPnpDeviceDesc *desc = loc->GetDeviceDesc(
+            false /* TODO??? in qt thread */);
+        if (desc)
+        {
+            m_upnp_nt  = tuner_nt;
+            m_upnp_usn = tuner_usn;
 
+            const UPnpDevice &upnpdev = desc->m_rootDevice;
+            VERBOSE(VB_IMPORTANT, LOC + upnpdev.toString());
+
+            //SOAPClient::Init();
+
+
+            delete desc;
+        }
         loc->Release();
     }
 

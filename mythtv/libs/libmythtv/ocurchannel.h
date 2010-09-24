@@ -11,12 +11,13 @@ using namespace std;
 
 // MythTV headers
 #include "dtvchannel.h"
+#include "soapclient.h"
 
 class OCURChannel;
 class OCURStreamHandler;
 class ProgramMapTable;
 
-class OCURChannel : public DTVChannel
+class OCURChannel : public DTVChannel, SOAPClient
 {
     friend class OCURSignalMonitor;
     friend class OCURRecorder;
