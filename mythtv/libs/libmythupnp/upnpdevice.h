@@ -55,29 +55,51 @@ typedef QList< UPnpIcon*    >  UPnpIconList;
 
 class UPNP_PUBLIC UPnpIcon
 {
-    public:
+  public:
+    QString     m_sURL;
+    QString     m_sMimeType;
+    int         m_nWidth;
+    int         m_nHeight;
+    int         m_nDepth;
 
-        QString     m_sMimeType;
-        int         m_nWidth;
-        int         m_nHeight;
-        int         m_nDepth;
-        QString     m_sURL;
+    UPnpIcon() : m_nWidth(0), m_nHeight(0), m_nDepth(0) {}
 
-        UPnpIcon() : m_nWidth ( 0 ), m_nHeight( 0 ), m_nDepth( 0 )  {}
+    QString toString(uint padding) const
+    {
+        QString pad;
+        for (uint i = 0; i < padding; i++)
+            pad += " ";
+        return QString("%0Icon %1 %2x%3^%4 %5")
+            .arg(pad).arg(m_sURL).arg(m_nWidth).arg(m_nHeight)
+            .arg(m_nDepth).arg(m_sMimeType);
+    }
 };
 
 /////////////////////////////////////////////////////////////////////////////
 
 class UPNP_PUBLIC UPnpService
 {
-    public:
-        QString     m_sServiceType;
-        QString     m_sServiceId;
-        QString     m_sSCPDURL;
-        QString     m_sControlURL;
-        QString     m_sEventSubURL;
+  public:
+    QString m_sServiceType;
+    QString m_sServiceId;
+    QString m_sSCPDURL;
+    QString m_sControlURL;
+    QString m_sEventSubURL;
 
-        UPnpService() {}        
+    UPnpService() {}        
+
+    QString toString(uint padding) const
+    {
+        QString pad;
+        for (uint i = 0; i < padding; i++)
+            pad += " ";
+        return
+            QString("%0Service %1\n").arg(pad).arg(m_sServiceType) +
+            QString("%0  id:            %1\n").arg(pad).arg(m_sServiceId) +
+            QString("%0  SCPD URL:      %1\n").arg(pad).arg(m_sSCPDURL) +
+            QString("%0  Control URL:   %1\n").arg(pad).arg(m_sControlURL) +
+            QString("%0  Event Sub URL: %1").arg(pad).arg(m_sEventSubURL);
+    }
 };
 
 /////////////////////////////////////////////////////////////////////////////
@@ -138,6 +160,8 @@ class UPNP_PUBLIC UPnpDevice
 
             return m_sUDN;
         }
+
+        QString toString(uint padding = 0) const;
 };
 
 
