@@ -253,13 +253,9 @@ void BackendSelect::customEvent(QEvent *e)
     if (message.startsWith("SSDP_ADD") &&
         URI.startsWith("urn:schemas-mythtv-org:device:MasterMediaServer:"))
     {
-        DeviceLocation *devLoc = UPnp::g_SSDPCache.Find(URI, URN);
-
+        DeviceLocation *devLoc = UPnp::Find(URI, URN);
         if (devLoc != NULL)
-        {
-            devLoc->AddRef();
             AddItem(devLoc);   // this does a Release()
-        }
     }
     else if (message.startsWith("SSDP_REMOVE"))
     {
@@ -298,40 +294,16 @@ bool BackendSelect::eventFilter(QObject *obj, QEvent *event)
 
 void BackendSelect::FillListBox(void)
 {
-    EntryMap::Iterator  it;
-    EntryMap            ourMap;
-    DeviceLocation     *pDevLoc;
-
-
-    SSDPCacheEntries *pEntries = UPnp::g_SSDPCache.Find(gBackendURI);
-
-    if (!pEntries)
-        return;
-
-    pEntries->AddRef();
-    pEntries->Lock();
-
-    EntryMap *pMap = pEntries->GetEntryMap();
-
-    for (it = pMap->begin(); it != pMap->end(); ++it)
+    SSDPCacheEntries *pEntries = UPnp::Find(gBackendURI);
+    if (pEntries)
     {
-        pDevLoc = (DeviceLocation *)*it;
+        EntryMap ourMap;
+        pEntries->GetEntryMap(ourMap);
+        pEntries->Release();
 
-        if (!pDevLoc)
-            continue;
-
-        pDevLoc->AddRef();
-        ourMap.insert(pDevLoc->m_sUSN, pDevLoc);
-    }
-
-
-    pEntries->Unlock();
-    pEntries->Release();
-
-    for (it = ourMap.begin(); it != ourMap.end(); ++it)
-    {
-        pDevLoc = (DeviceLocation *)*it;
-        AddItem(pDevLoc);   // this does a Release()
+        EntryMap::const_iterator it;
+        for (it = ourMap.begin(); it != ourMap.end(); ++it)
+            AddItem(*it);   // this does an (*it)->Release()
     }
 }
 

@@ -39,7 +39,7 @@ bool OCURChannel::Open(void)
                 "Invalid device, should be in the form uuid:recorder_number"); 
         return false;
     }
-    // TODO We should be able to pass a uuid in any case.
+
     QString uuid = dev[0];
     uint    num  = dev[1].toUInt();
 
@@ -53,12 +53,9 @@ bool OCURChannel::Open(void)
     VERBOSE(VB_CHANNEL, LOC + QString("NT  = %1").arg(tuner_nt));
     VERBOSE(VB_CHANNEL, LOC + QString("USN = %1").arg(tuner_usn));
 
-    DeviceLocation *loc = UPnp::g_SSDPCache.Find(tuner_nt, tuner_usn);
+    DeviceLocation *loc = UPnp::Find(tuner_nt, tuner_usn);
     if (loc)
     {
-        // TODO FIXME: this is not thread-safe, AddRef should be done in Find()
-        loc->AddRef();
-
         VERBOSE(VB_IMPORTANT, LOC + "DeviceLocation: " + loc->toString());
         VERBOSE(VB_IMPORTANT, LOC + "Name&Details: " +
                 loc->GetNameAndDetails());
@@ -163,11 +160,7 @@ bool OCURChannel::SetChannelByVirtualChannel(const QString &vchan)
     if (!loc)
         return false;
 
-    // TODO FIXME: this is not thread-safe, AddRef should be done in Find()
-    loc->AddRef();
-
-    
-
+    // TODO Channel change code goes here
 
     loc->Release();
 

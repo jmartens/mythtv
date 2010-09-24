@@ -656,73 +656,27 @@ void SSDPExtension::GetFile( HTTPRequest *pRequest, QString sFileName )
 
 void SSDPExtension::GetDeviceList( HTTPRequest *pRequest )
 {
-    SSDPCache    &cache  = UPnp::g_SSDPCache;
-    int           nCount = 0;
-    NameValues    list;
+    VERBOSE(VB_UPNP, "SSDPExtension::GetDeviceList");
 
-    VERBOSE( VB_UPNP, "SSDPExtension::GetDeviceList" );
+    QString     sXML;
+    QTextStream os(&sXML, QIODevice::WriteOnly);
 
-    cache.Lock();
+    uint nDevCount, nEntryCount;
+    UPnp::g_SSDPCache.OutputXML(os, &nDevCount, &nEntryCount);
 
-    QString     sXML = "";
-    QTextStream os( &sXML, QIODevice::WriteOnly );
-
-    for (SSDPCacheEntriesMap::Iterator it  = cache.Begin();
-                                       it != cache.End();
-                                     ++it )
-    {
-        SSDPCacheEntries *pEntries = *it;
-
-        if (pEntries != NULL)
-        {
-            os << "<Device uri='" << it.key() << "'>" << endl;
-
-            pEntries->Lock();
-
-            EntryMap *pMap = pEntries->GetEntryMap();
-
-            for (EntryMap::Iterator itEntry  = pMap->begin();
-                                    itEntry != pMap->end();
-                                  ++itEntry )
-            {
-
-                DeviceLocation *pEntry = *itEntry;
-
-                if (pEntry != NULL)
-                {
-                    nCount++;
-
-                    pEntry->AddRef();
-
-                    os << "<Service usn='" << pEntry->m_sUSN 
-                       << "' expiresInSecs='" << pEntry->ExpiresInSecs()
-                       << "' url='" << pEntry->m_sLocation << "' />" << endl;
-
-                    pEntry->Release();
-                }
-            }
-
-            os << "</Device>" << endl;
-
-            pEntries->Unlock();
-        }
-    }
-    os << flush;
-
+    NameValues list;
     list.push_back(
-        NameValue("DeviceCount",           cache.Count()));
+        NameValue("DeviceCount",           (int)nDevCount));
     list.push_back(
         NameValue("DevicesAllocated",      SSDPCacheEntries::g_nAllocated));
     list.push_back(
-        NameValue("CacheEntriesFound",     nCount));
+        NameValue("CacheEntriesFound",     (int)nEntryCount));
     list.push_back(
         NameValue("CacheEntriesAllocated", DeviceLocation::g_nAllocated));
     list.push_back(
         NameValue("DeviceList",            sXML));
 
-    cache.Unlock();
-
-    pRequest->FormatActionResponse( list );
+    pRequest->FormatActionResponse(list);
 
     pRequest->m_eResponseType   = ResponseTypeXML;
     pRequest->m_nResponseStatus = 200;
