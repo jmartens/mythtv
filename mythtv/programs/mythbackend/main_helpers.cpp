@@ -721,18 +721,19 @@ int run_backend(const MythCommandLineParser &cmdline)
 Stage2Init::Stage2Init(const MythCommandLineParser &cmdline) :
     m_cmdline(cmdline),
     m_mainServer(NULL),
-    m_timerId(0)
+    m_timerId(0),
+    m_waitTicks(6)
 {
     if (g_pUPnp != NULL)
     {
         // Allow required time for UPnP SSDP responses.
-        startTimer(30 * 1000);
+        m_timerId = startTimer(5 * 1000);
         VERBOSE(VB_IMPORTANT, LOC +
                 "Stage 2 init scheduled 30 seconds from now.");
     }
     else
     {
-        startTimer(1);
+        m_timerId = startTimer(1);
     }
 }
 
@@ -746,9 +747,19 @@ void Stage2Init::timerEvent(QTimerEvent *e)
 {
     if (e->timerId() == m_timerId)
     {
-        killTimer(m_timerId);
-        m_timerId = 0;
-        Init();
+        m_waitTicks--;
+        if (m_waitTicks)
+        {
+            VERBOSE(VB_IMPORTANT, LOC +
+                    QString("Stage 2 init scheduled %1 seconds from now.")
+                    .arg(m_waitTicks*5,2));
+        }
+        else
+        {
+            killTimer(m_timerId);
+            m_timerId = 0;
+            Init();
+        }
     }
 }
 

@@ -67,6 +67,7 @@ class Stage2Init : public QObject
     const MythCommandLineParser &m_cmdline;
     MainServer                  *m_mainServer;
     int                          m_timerId;
+    int                          m_waitTicks;
 };
 
 
