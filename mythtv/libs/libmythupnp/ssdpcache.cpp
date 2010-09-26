@@ -23,6 +23,7 @@
 
 #include "upnp.h"
 #include "mythevent.h"
+#include "mythverbose.h"
 
 int SSDPCacheEntries::g_nAllocated = 0;       // Debugging only
 
@@ -114,7 +115,7 @@ void SSDPCacheEntries::Insert(const QString &sUSN, DeviceLocation *pEntry)
     QString usn = GetNormalizedUSN(sUSN);
 
     EntryMap::iterator it = m_mapEntries.find(usn);
-    if (it != m_mapEntries.end() && *it)
+    if ((it != m_mapEntries.end()) && (*it != NULL))
         (*it)->Release();
 
     m_mapEntries[usn] = pEntry;

@@ -671,6 +671,7 @@ int run_backend(const MythCommandLineParser &cmdline)
     bool ismaster = gCoreContext->IsMasterHost();
 
     g_pUPnp = new MediaServer(ismaster, !cmdline.IsUPnPEnabled() );
+    UPnp::PerformSearch("ssdp:all");
 
     if (!ismaster)
     {
@@ -722,14 +723,15 @@ Stage2Init::Stage2Init(const MythCommandLineParser &cmdline) :
     m_cmdline(cmdline),
     m_mainServer(NULL),
     m_timerId(0),
-    m_waitTicks(6)
+    m_waitTicks(3)
 {
     if (g_pUPnp != NULL)
     {
         // Allow required time for UPnP SSDP responses.
         m_timerId = startTimer(5 * 1000);
         VERBOSE(VB_IMPORTANT, LOC +
-                "Stage 2 init scheduled 30 seconds from now.");
+                QString("Stage 2 init scheduled %1 seconds from now.")
+                .arg(5 * m_waitTicks));
     }
     else
     {

@@ -21,13 +21,15 @@
 //
 //////////////////////////////////////////////////////////////////////////////
 
+#include <algorithm>
+
 #include "upnp.h"
 
 #include "upnptasksearch.h"
 #include "upnptaskcache.h"
 
-#include "multicast.h"
-#include "broadcast.h"
+#include "mmulticastsocketdevice.h"
+#include "mbroadcastsocketdevice.h"
 
 #include <QRegExp>
 #include <QStringList>
@@ -61,11 +63,11 @@ SSDP::SSDP( int nServicePort ) :
         UPnp::g_pConfig->GetValue( "UPnP/SSDP/SearchPort", SSDP_SEARCHPORT );
 
     m_Sockets[ SocketIdx_Search    ] =
-        new MSocketDevice( MSocketDevice::Datagram );
+        new MMulticastSocketDevice();
     m_Sockets[ SocketIdx_Multicast ] =
-        new QMulticastSocket( SSDP_GROUP, m_nPort );
+        new MMulticastSocketDevice(SSDP_GROUP, m_nPort);
     m_Sockets[ SocketIdx_Broadcast ] =
-        new QBroadcastSocket( "255.255.255.255", m_nPort );
+        new MBroadcastSocketDevice("255.255.255.255", m_nPort);
 
     m_Sockets[ SocketIdx_Search    ]->setBlocking( false );
     m_Sockets[ SocketIdx_Multicast ]->setBlocking( false );
@@ -156,15 +158,20 @@ void SSDP::DisableNotifications()
 /////////////////////////////////////////////////////////////////////////////
 //
 /////////////////////////////////////////////////////////////////////////////
-
-void SSDP::PerformSearch( const QString &sST )
+void SSDP::PerformSearch(const QString &sST, uint timeout_secs)
 {
-    QString rRequest = QString( "M-SEARCH * HTTP/1.1\r\n"
-                                "HOST: 239.255.255.250:1900\r\n"
-                                "MAN: \"ssdp:discover\"\r\n"
-                                "MX: 2\r\n"
-                                "ST: %1\r\n"
-                                "\r\n" ).arg( sST );
+    timeout_secs = std::max(std::min(timeout_secs, 5U), 1U);
+    QString rRequest = QString(
+        "M-SEARCH * HTTP/1.1\r\n"
+        "HOST: 239.255.255.250:1900\r\n"
+        "MAN: \"ssdp:discover\"\r\n"
+        "MX: %1\r\n"
+        "ST: %2\r\n"
+        "\r\n")
+        .arg(timeout_secs).arg(sST);
+
+    VERBOSE(VB_IMPORTANT, QString("\n\n%1\n").arg(rRequest));
+
     QByteArray sRequest = rRequest.toUtf8();
 
     MSocketDevice *pSocket = m_Sockets[ SocketIdx_Search ];

@@ -1,5 +1,5 @@
 //////////////////////////////////////////////////////////////////////////////
-// Program Name: multicast.h
+// Program Name: mmulticastsocketdevice.h
 // Created     : Oct. 1, 2005
 //
 // Purpose     : Multicast QSocketDevice Implmenetation
@@ -21,69 +21,55 @@
 //
 //////////////////////////////////////////////////////////////////////////////
 
-#ifndef __MULTICAST_H__
-#define __MULTICAST_H__
+#ifndef _MULTICAST_SOCKET_DEVICE_H_
+#define _MULTICAST_SOCKET_DEVICE_H_
+
+#include <sys/socket.h>
+#include <netinet/ip.h>
 
 // Qt headers
-#include <QString>
-#include <QByteArray>
+#include <QNetworkInterface>
 #include <QHostAddress>
+#include <QByteArray>
+#include <QString>
 
 // MythTV headers
 #include "msocketdevice.h"
-#include "compat.h"
 #include "mythverbose.h"
+#include "compat.h"
 
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 //
-// QMulticastSocket Class Definition/Implementation
+// MMulticastSocketDevice Class Definition/Implementation
 //
 /////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////
 
-// -=>TODO: Need to add support for Multi-Homed machines.
-
-class QMulticastSocket : public MSocketDevice
+class MMulticastSocketDevice : public MSocketDevice
 {
-    public:
+  public:
+    MMulticastSocketDevice() :
+        MSocketDevice(MSocketDevice::Datagram),
+        m_local_addresses(QNetworkInterface::allAddresses()),
+        m_port(0)
+    {
+        memset(&m_imr, 0, sizeof(struct ip_mreq));
+    }
 
-        QHostAddress    m_address;
-        quint16         m_port;
-        struct ip_mreq  m_imr;
+    MMulticastSocketDevice(QString sAddress, quint16 nPort, u_char ttl = 0);
 
-    public:
+    virtual ~MMulticastSocketDevice();
 
-        QMulticastSocket( QString sAddress, quint16 nPort, u_char ttl = 0 )
-         : MSocketDevice( MSocketDevice::Datagram )
-        {
-            m_address.setAddress( sAddress );
-            m_port = nPort;
+    virtual qint64 writeBlock(
+        const char *data, quint64 len,
+        const QHostAddress & host, quint16 port);
 
-            if (ttl == 0)
-                ttl = 4;
-
-//            ttl = UPnp::g_pConfig->GetValue( "UPnP/TTL", 4 );
-            QByteArray addr = sAddress.toLatin1();
-            m_imr.imr_multiaddr.s_addr = inet_addr( addr.constData() );
-            m_imr.imr_interface.s_addr = htonl(INADDR_ANY);       
-
-            if ( setsockopt( socket(), IPPROTO_IP, IP_ADD_MEMBERSHIP, &m_imr, sizeof( m_imr )) < 0) 
-            {
-                VERBOSE(VB_IMPORTANT, QString( "QMulticastSocket: setsockopt - IP_ADD_MEMBERSHIP Error" ));
-            }
-
-            setsockopt( socket(), IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl) );
-
-            setAddressReusable( true );
-
-            bind( m_address, m_port ); 
-        }
-
-        virtual ~QMulticastSocket()
-        {
-            setsockopt( socket(), IPPROTO_IP, IP_DROP_MEMBERSHIP, &m_imr, sizeof(m_imr));
-        }
+  public:
+    QList<QHostAddress> m_local_addresses;
+    QHostAddress        m_address;
+    quint16             m_port;
+    struct ip_mreq      m_imr;
 };
 
-#endif
+#endif // _MULTICAST_SOCKET_DEVICE_H_

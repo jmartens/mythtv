@@ -21,9 +21,10 @@
 //
 //////////////////////////////////////////////////////////////////////////////
 
-#include "upnp.h"
+#include "mythverbose.h"
 #include "upnpdevice.h"
 #include "httpcomms.h"
+#include "upnp.h"
 
 #include <cerrno>
 
