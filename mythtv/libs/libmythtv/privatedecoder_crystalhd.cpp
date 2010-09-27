@@ -356,9 +356,9 @@ bool PrivateDecoderCrystalHD::Reset(void)
     {
         m_fetcher_pause = true;
         int tries = 0;
-        while (!m_fetcher_paused && tries < 50)
+        while (!m_fetcher_paused && (tries++ < 50))
             usleep(10000);
-        if (m_fetcher_paused)
+        if (!m_fetcher_paused)
             VERBOSE(VB_IMPORTANT, LOC + "Failed to pause fetcher thread");
     }
 
@@ -381,6 +381,14 @@ bool PrivateDecoderCrystalHD::Reset(void)
     st = DtsFlushInput(m_device, 4);
     CHECK_ST
     return true;;
+}
+
+bool PrivateDecoderCrystalHD::HasBufferedFrames(void)
+{
+    m_decoded_frames_lock.lock();
+    bool result = m_decoded_frames.size() > 0;
+    m_decoded_frames_lock.unlock();
+    return result;
 }
 
 int PrivateDecoderCrystalHD::ProcessPacket(AVStream *stream, AVPacket *pkt)
@@ -406,13 +414,8 @@ int PrivateDecoderCrystalHD::ProcessPacket(AVStream *stream, AVPacket *pkt)
     while (m_packet_buffers.size() > 0)
     {
 
-        BC_DTS_STATUS drv_status;
-        INIT_ST
-        st = DtsGetDriverStatus(m_device, &drv_status);
-        CHECK_ST
-
         PacketBuffer *buffer = m_packet_buffers.last();
-        if (drv_status.cpbEmptySize < buffer->size)
+        if (GetTxFreeSize(0) < buffer->size)
         {
             usleep(10000);
             return 0;
@@ -449,11 +452,14 @@ int PrivateDecoderCrystalHD::ProcessPacket(AVStream *stream, AVPacket *pkt)
         }
 
         usleep(1000);
-        uint64_t chd_timestamp = 0; // msec units
-        if (buffer->pts != (int64_t)AV_NOPTS_VALUE)
-            chd_timestamp = (uint64_t)(buffer->pts * 1000);
+        uint64_t chd_timestamp = 0; // 100 nsec units
+        if (buffer->pts != (int64_t)AV_NOPTS_VALUE) 
+            chd_timestamp = (uint64_t)(av_q2d(stream->time_base) * buffer->pts * 10000000); 
+        VERBOSE(VB_TIMESTAMP|VB_EXTRA, LOC + QString("decoder input timecode %1 ms (pts %2)")
+                .arg(chd_timestamp / 10000).arg(buffer->pts));
 
         // TODO check for busy state
+        INIT_ST
         st = DtsProcInput(m_device, buf, size, chd_timestamp, false);
         CHECK_ST
 
@@ -482,9 +488,11 @@ int PrivateDecoderCrystalHD::GetFrame(AVStream *stream,
         return result;
 
     if (pkt && pkt->size)
+    {
         result = ProcessPacket(stream, pkt);
-    if (result < 0)
-        return result;
+        if (result < 0)
+            return result;
+    }
 
     m_decoded_frames_lock.lock();
     int available = m_decoded_frames.size();
@@ -504,11 +512,11 @@ int PrivateDecoderCrystalHD::GetFrame(AVStream *stream,
     VideoFrame *frame = m_decoded_frames.takeLast();
     m_decoded_frames_lock.unlock();
 
-    VERBOSE(VB_TIMESTAMP|VB_EXTRA, LOC + QString("Output PTS timecode (%1)")
-            .arg(frame->timecode * av_q2d(stream->time_base)));
-
     *got_picture_ptr = 1;
-    picture->reordered_opaque = (int64_t)(frame->timecode / 1000);
+    picture->reordered_opaque = (int64_t)(frame->timecode / av_q2d(stream->time_base)
+                                                          / 10000000);
+    VERBOSE(VB_TIMESTAMP|VB_EXTRA, LOC + QString("decoder output timecode %1 ms (pts %2)")
+            .arg(frame->timecode / 10000).arg(picture->reordered_opaque));
     picture->interlaced_frame = frame->interlaced_frame;
     picture->top_field_first  = frame->top_field_first;
     picture->repeat_pict      = frame->repeat_pict;
@@ -671,8 +679,6 @@ void PrivateDecoderCrystalHD::AddFrameToQueue(void)
     m_decoded_frames.insert(0, m_frame);
     VERBOSE(VB_PLAYBACK|VB_EXTRA, LOC + QString("Decoded frame queue size %1")
             .arg(m_decoded_frames.size()));
-    VERBOSE(VB_TIMESTAMP|VB_EXTRA, LOC + QString("Inserting frame with timecode %1")
-            .arg(m_frame->timecode));
     m_decoded_frames_lock.unlock();
     m_frame = NULL;
 }
@@ -745,6 +751,7 @@ void PrivateDecoderCrystalHD::CheckPicInfo(BC_DTS_PROC_OUT *out)
 void PrivateDecoderCrystalHD::CheckStatus(void)
 {
     BC_DTS_STATUS status;
+    status.cpbEmptySize = 0x00000000; // set bit 31 for real HW free size
     INIT_ST
     st = DtsGetDriverStatus(m_device, &status);
     CHECK_ST
@@ -777,6 +784,22 @@ void PrivateDecoderCrystalHD::CheckStatus(void)
             .arg(status.NextTimeStamp));
     VERBOSE(VB_PLAYBACK, LOC + QString("PicNumFlags     : %1")
             .arg(status.picNumFlags));
+}
+
+int PrivateDecoderCrystalHD::GetTxFreeSize(bool hwsel)
+{
+    BC_DTS_STATUS status;
+    if (hwsel)
+        status.cpbEmptySize = 0xC0000000; // set bit 31 for real HW free size
+    else
+        status.cpbEmptySize = 0x40000000; // set bit 30 for TX only status
+    INIT_ST
+    st = DtsGetDriverStatus(m_device, &status);
+    CHECK_ST
+    if (!ok)
+        return -1;
+    
+    return status.cpbEmptySize;
 }
 
 QString device_to_string(BC_DEVICE_TYPE device)

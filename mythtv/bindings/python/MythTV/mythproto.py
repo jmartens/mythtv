@@ -6,7 +6,8 @@ Provides connection cache and data handlers for accessing the backend.
 
 from __future__ import with_statement
 
-from static import PROTO_VERSION, BACKEND_SEP, RECSTATUS
+from static import PROTO_VERSION, BACKEND_SEP, RECSTATUS, AUDIO_PROPS, \
+                   VIDEO_PROPS, SUBTITLE_TYPES
 from exceptions import MythError, MythDBError, MythBEError, MythFileError
 from logging import MythLog
 from altdict import DictData
@@ -737,7 +738,8 @@ class FreeSpace( DictData, SplitInt ):
         self.usedspace = self.joinInt(self.us_high, self.us_low)
         self.freespace = self.totalspace - self.usedspace
 
-class Program( DictData, RECSTATUS, CMPRecord ):
+class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
+                         SUBTITLE_TYPES, CMPRecord ):
     """Represents a program with all detail returned by the backend."""
 
     _field_order = [ 'title',        'subtitle',     'description',

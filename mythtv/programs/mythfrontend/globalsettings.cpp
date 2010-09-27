@@ -3290,15 +3290,15 @@ static HostComboBox *MythLanguage()
     QMap<QString, QString> langMap = MythTranslation::getLanguages();
     QStringList langs = langMap.values();
     langs.sort();
-    QString langCode = gCoreContext->GetSetting("Language");
+    QString langCode = gCoreContext->GetSetting("Language").toLower();
     if (langCode.isEmpty())
-        langCode = "en_us";
+        langCode = "en_US";
     gc->clearSelections();
     for (QStringList::Iterator it = langs.begin(); it != langs.end(); ++it)
     {
         QString label = *it;
         QString value = langMap.key(label);
-        gc->addSelection(label, value, (value == langCode));
+        gc->addSelection(label, value, (value.toLower() == langCode));
     }
 
     gc->setHelpText(
@@ -3333,9 +3333,9 @@ static void ISO639_fill_selections(SelectSetting *widget, uint i)
     }
 }
 
-static HostComboBox *ISO639PreferredLanguage(uint i)
+static GlobalComboBox *ISO639PreferredLanguage(uint i)
 {
-    HostComboBox *gc = new HostComboBox(QString("ISO639Language%1").arg(i));
+    GlobalComboBox *gc = new GlobalComboBox(QString("ISO639Language%1").arg(i));
     gc->setLabel(QObject::tr("Guide language #%1").arg(i+1));
     // We should try to get language from "MythLanguage"
     // then use code 2 to code 3 map in iso639.h

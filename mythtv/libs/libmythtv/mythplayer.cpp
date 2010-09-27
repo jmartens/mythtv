@@ -383,7 +383,7 @@ bool MythPlayer::Pause(void)
     PauseVideo();
     audio.Pause(true);
     PauseBuffer();
-    allpaused = decoderPaused && videoPaused && audio.IsPaused() && bufferPaused;
+    allpaused = decoderPaused && videoPaused && bufferPaused;
     QMutexLocker locker(&decoder_change_lock);
     if (GetDecoder() && videoOutput)
     {
@@ -607,6 +607,7 @@ void MythPlayer::ReinitOSD(void)
                                       scaling, 1.0f);
             if (osd->Bounds() != visible)
             {
+                bool audio_paused = audio.IsPaused();
                 bool was_paused = Pause();
                 uint old = textDisplayMode;
                 ToggleCaptions(old);
@@ -614,7 +615,7 @@ void MythPlayer::ReinitOSD(void)
                 SetupTeletextViewer();
                 EnableCaptions(old, false);
                 if (!was_paused)
-                    Play();
+                    Play(play_speed, normal_speed, !audio_paused);
             }
         }
 
@@ -1830,6 +1831,9 @@ void MythPlayer::AVSync(bool limit_delay)
 
 void MythPlayer::DisplayPauseFrame(void)
 {
+    if (!videoOutput || ! videosync)
+        return;
+
     if (videoOutput->IsErrored())
     {
         SetErrored(QObject::tr("Serious error detected in Video Output"));
@@ -2594,7 +2598,7 @@ void MythPlayer::EventLoop(void)
             if (!msg.isEmpty())
                 SetOSDStatus(msg, kOSDTimeout_Med);
             if (jump)
-                DoJumpToFrame(jumpto);
+                DoJumpToFrame(jumpto, true, true);
         }
         commBreakMap.SkipCommercials(0);
         return;
@@ -2612,7 +2616,7 @@ void MythPlayer::EventLoop(void)
         if (!msg.isEmpty())
             SetOSDStatus(msg, kOSDTimeout_Med);
         if (jump)
-            DoJumpToFrame(jumpto);
+            DoJumpToFrame(jumpto, true, true);
     }
 
     // Handle cutlist skipping
@@ -2630,7 +2634,7 @@ void MythPlayer::EventLoop(void)
         }
         else
         {
-            DoJumpToFrame(jumpto);
+            DoJumpToFrame(jumpto, true, true);
         }
     }
 }
@@ -2651,9 +2655,13 @@ bool MythPlayer::PauseDecoder(void)
         return decoderPaused;
     }
 
+    int tries = 0;
     pauseDecoder = true;
-    while (!eof && !decoderThreadPause.wait(&decoderPauseLock, 100))
+    while (decoderThread && !killdecoder && !eof && (tries++ < 100) &&
+          !decoderThreadPause.wait(&decoderPauseLock, 100))
+    {
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Waited 100ms for decoder to pause");
+    }
     pauseDecoder = false;
     decoderPauseLock.unlock();
     return decoderPaused;
@@ -2671,9 +2679,13 @@ void MythPlayer::UnpauseDecoder(void)
         return;
     }
 
+    int tries = 0;
     unpauseDecoder = true;
-    while (!decoderThreadUnpause.wait(&decoderPauseLock, 100))
+    while (decoderThread && !killdecoder && (tries++ < 100) &&
+          !decoderThreadUnpause.wait(&decoderPauseLock, 100))
+    {
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Waited 100ms for decoder to unpause");
+    }
     unpauseDecoder = false;
     decoderPauseLock.unlock();
 }
@@ -3063,11 +3075,7 @@ void MythPlayer::ChangeSpeed(void)
     {
         videoOutput->SetPrebuffering(ffrew_skip == 1);
         if (play_speed != 0.0f && !(last_speed == 0.0f && ffrew_skip == 1))
-        {
-            WaitForSeek(framesPlayed);
-            SaveAudioTimecodeOffset(GetAudioTimecodeOffset());
-            ClearAfterSeek();
-        }
+            DoJumpToFrame(framesPlayed);
     }
 
     float temp_speed = (play_speed == 0.0) ? audio.GetStretchFactor() : play_speed;
@@ -3293,12 +3301,13 @@ bool MythPlayer::DoFastForward(uint64_t frames, bool override_seeks,
     return true;
 }
 
-void MythPlayer::DoJumpToFrame(uint64_t frame)
+void MythPlayer::DoJumpToFrame(uint64_t frame, bool override_seeks,
+                               bool seeks_wanted)
 {
     if (frame > framesPlayed)
-        DoFastForward(frame - framesPlayed, true, true);
+        DoFastForward(frame - framesPlayed, override_seeks, seeks_wanted);
     else if (frame < framesPlayed)
-        DoRewind(framesPlayed - frame, true, true);
+        DoRewind(framesPlayed - frame, override_seeks, seeks_wanted);
 }
 
 void MythPlayer::WaitForSeek(uint64_t frame, bool override_seeks,
@@ -3312,12 +3321,38 @@ void MythPlayer::WaitForSeek(uint64_t frame, bool override_seeks,
                            (allpaused && !deleteMap.IsEditing()) ? true: after;
     GetDecoder()->setExactSeeks(before);
 
+    uint64_t max = totalFrames;
+    if ((livetv || (watchingrecording && player_ctx->recorder &&
+                   player_ctx->recorder->IsValidRecorder())))
+    {
+        max = (uint64_t)player_ctx->recorder->GetFramesWritten();
+    }
+    if (frame >= max)
+        frame = max - 1;
+
     decoderSeekLock.lock();
     decoderSeek = frame;
     decoderSeekLock.unlock();
 
+    int count = 0;
+    bool need_clear = false;
     while (decoderSeek >= 0)
+    {
         usleep(1000);
+
+        // provide some on screen feedback if seeking is slow
+        count++;
+        if (!(count % 150) && !hasFullPositionMap)
+        {
+            int num = (count / 150) % 4;
+            SetOSDMessage(QObject::tr("Searching") + QString().fill('.', num),
+                          kOSDTimeout_Short);
+            DisplayPauseFrame();
+            need_clear = true;
+        }
+    }
+    if (need_clear && osd)
+        osd->HideWindow("osd_message");
     GetDecoder()->setExactSeeks(after);
 }
 
@@ -3901,7 +3936,7 @@ VideoFrame* MythPlayer::GetRawVideoFrame(long long frameNumber)
 
     if (frameNumber >= 0)
     {
-        DoJumpToFrame(frameNumber);
+        DoJumpToFrame(frameNumber, true, true);
         ClearAfterSeek();
     }
 
@@ -4020,9 +4055,10 @@ bool MythPlayer::TranscodeGetNextFrame(
         {
             VERBOSE(VB_GENERAL, QString("Fast-Forwarding from %1 to %2")
                 .arg(lastDecodedFrameNumber).arg(jumpto));
-            if (jumpto == totalFrames)
+            if (jumpto >= totalFrames)
                 return false;
 
+            // For 0.25, move this to DoJumpToFrame(jumpto)
             WaitForSeek(jumpto);
             GetDecoder()->ClearStoredData();
             ClearAfterSeek();
@@ -4245,8 +4281,7 @@ bool MythPlayer::DoJumpChapter(int chapter)
     }
 
     SaveAudioTimecodeOffset(GetAudioTimecodeOffset());
-    WaitForSeek((uint64_t)desiredFrame);
-    ClearAfterSeek(false);
+    DoJumpToFrame(desiredFrame);
     jumpchapter = 0;
     return true;
 }

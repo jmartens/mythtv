@@ -154,7 +154,7 @@
             <area>125,83,537,150</area>
             <align>left,top</align>
             <multiline>yes</multiline>
-            <template>%|"SUBTITLE|"% %LONGREPEAT%%STARS| %%DESCRIPTION%</template>
+            <template>%"|SUBTITLE|" %%LONGREPEAT%%(|STARS|) %%DESCRIPTION%</template>
         </textarea>
     </window>
 
@@ -214,7 +214,7 @@
             <area>125,83,537,150</area>
             <align>left,top</align>
             <multiline>yes</multiline>
-            <template>%|"SUBTITLE|"% %LONGREPEAT%%STARS| %%DESCRIPTION%</template>
+            <template>%"|SUBTITLE|" %%LONGREPEAT%%(|STARS|) %%DESCRIPTION%</template>
         </textarea>
     </window>
 
@@ -238,13 +238,9 @@
         </shape>
         <textarea name="title">
             <font>small</font>
-            <area>6,8,300,25</area>
-            <align>left,top</align>
-        </textarea>
-        <textarea name="message">
-            <font>small</font>
             <area>9,12,294,125</area>
             <align>allcenter</align>
+            <value>Channel Editor</value>
         </textarea>
 
         <textarea name="callsign_label">
@@ -302,7 +298,7 @@
         </textedit>
 
         <button name="probe">
-            <position>45,367</position>
+            <area>45,367,94,33</area>
             <value>Probe</value>
             <statetype name="buttonstate">
                 <state name="active">

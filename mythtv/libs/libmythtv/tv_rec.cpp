@@ -105,6 +105,7 @@ TVRec::TVRec(int capturecardnum)
       triggerEventSleepLock(QMutex::NonRecursive),
       triggerEventSleepSignal(false),
       m_switchingBuffer(false),
+      m_recStatus(rsUnknown),
       // Current recording info
       curRecording(NULL), autoRunJobs(JOB_NONE),
       overrecordseconds(0),
@@ -147,6 +148,8 @@ bool TVRec::Init(void)
 
     if (!GetDevices(cardid, genOpt, dvbOpt, fwOpt))
         return false;
+
+    m_recStatus = rsUnknown;
 
     // configure the Channel instance
     QString startchannel = GetStartChannel(cardid, genOpt.defaultinput);
@@ -400,7 +403,7 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
     QMutexLocker lock(&stateChangeLock);
     QString msg("");
 
-    RecStatusType retval = rsAborted;
+    m_recStatus = rsAborted;
 
     // Flush out any pending state changes
     WaitForEventThreadSleep();
@@ -429,8 +432,8 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
 
         ClearFlags(kFlagCancelNextRecording);
 
-        retval = rsRecording;
-        return retval;
+        m_recStatus = rsRecording;
+        return m_recStatus;
     }
 
     bool cancelNext = false;
@@ -572,16 +575,16 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         // Make sure scheduler is allowed to end this recording
         ClearFlags(kFlagCancelNextRecording);
 
+        m_recStatus = rsTuning;
         ChangeState(kState_RecordingOnly);
-
-        retval = rsRecording;
     }
     else if (!cancelNext && (GetState() == kState_WatchingLiveTV))
     {
         SetPseudoLiveTVRecording(new ProgramInfo(*rcinfo));
         recordEndTime = GetRecordEndTime(rcinfo);
+        m_recStatus = rsRecording;
 
-        // We want the frontend to to change channel for recording
+        // We want the frontend to change channel for recording
         // and disable the UI for channel change, PiP, etc.
 
         QString message = QString("LIVETV_WATCH %1 1").arg(cardid);
@@ -589,8 +592,6 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         rcinfo->ToStringList(prog);
         MythEvent me(message, prog);
         gCoreContext->dispatch(me);
-
-        retval = rsRecording;
     }
     else
     {
@@ -602,13 +603,13 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         if (cancelNext)
         {
             msg += "But a user has canceled this recording";
-            retval = rsCancelled;
+            m_recStatus = rsCancelled;
         }
         else
         {
             msg += QString("But the current state is: %1")
                 .arg(StateToString(internalState));
-            retval = rsTunerBusy;
+            m_recStatus = rsTunerBusy;
         }
 
         if (curRecording && internalState == kState_RecordingOnly)
@@ -627,11 +628,18 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
     WaitForEventThreadSleep();
 
     if ((curRecording) && (curRecording->GetRecordingStatus() == rsFailed) &&
-        (retval == rsRecording))
-        retval = rsFailed;
+        (m_recStatus == rsRecording || m_recStatus == rsTuning))
+        m_recStatus = rsFailed;
 
-    return retval;
+    return m_recStatus;
 }
+
+RecStatusType TVRec::GetRecordingStatus(void) const
+{
+    QMutexLocker pendlock(&pendingRecLock);
+    return m_recStatus;
+}
+
 
 /** \fn TVRec::StopRecording(bool killFile)
  *  \brief Changes from a recording state to kState_None.
@@ -648,6 +656,10 @@ void TVRec::StopRecording(bool killFile)
         // wait for state change to take effect
         WaitForEventThreadSleep();
         ClearFlags(kFlagCancelNextRecording|kFlagKillRec);
+
+        pendingRecLock.lock();
+        m_recStatus = rsUnknown;
+        pendingRecLock.unlock();
     }
 }
 
@@ -906,14 +918,6 @@ void TVRec::TeardownRecorder(bool killFile)
         curRecording->SaveResolutionProperty(
             (avg_height > 1000) ? VID_1080 :
             ((avg_height > 700) ? VID_720 : VID_UNKNOWN));
-        VERBOSE(VB_IMPORTANT, "*********************************************");
-        VERBOSE(VB_IMPORTANT, "*********************************************");
-        VERBOSE(VB_IMPORTANT, QString("avg_height: %1").arg(avg_height));
-        VERBOSE(VB_IMPORTANT, QString("vidprop: 0x%1")
-                .arg((avg_height > 1000) ? VID_1080 :
-                     ((avg_height > 700) ? VID_720 : VID_UNKNOWN)));
-        VERBOSE(VB_IMPORTANT, "*********************************************");
-        VERBOSE(VB_IMPORTANT, "*********************************************");
 
         int secsSince = curRecording->GetRecordingStartTime()
             .secsTo(QDateTime::currentDateTime());
@@ -3579,14 +3583,24 @@ void TVRec::TuningFrequency(const TuningRequest &request)
 MPEGStreamData *TVRec::TuningSignalCheck(void)
 {
     if (signalMonitor->IsAllGood())
+    {
         VERBOSE(VB_RECORD, LOC + "Got good signal");
+
+        pendingRecLock.lock();
+        m_recStatus = rsRecording;
+        pendingRecLock.unlock();
+    }
     else if (signalMonitor->IsErrored())
     {
         VERBOSE(VB_RECORD, LOC_ERR + "SignalMonitor failed");
         ClearFlags(kFlagNeedToStartRecorder);
-        if (curRecording)
-            curRecording->SetRecordingStatus(rsFailed);
 
+        pendingRecLock.lock();
+        m_recStatus = rsFailed;
+        pendingRecLock.unlock();
+
+        if (curRecording)
+            curRecording->SetRecordingStatus(m_recStatus);
         if (HasFlags(kFlagEITScannerRunning))
         {
             scanner->StopActiveScan();

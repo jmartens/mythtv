@@ -94,15 +94,15 @@ ChanInfo *XMLTVParser::parseChannel(QDomElement &element, QUrl &baseUrl)
             }
             else if (info.tagName() == "display-name")
             {
-                if (chaninfo->name.length() == 0)
+                if (chaninfo->name.isEmpty())
                 {
                     chaninfo->name = info.text();
                 }
-                else if (isJapan && chaninfo->callsign.length() == 0)
+                else if (isJapan && chaninfo->callsign.isEmpty())
                 {
                     chaninfo->callsign = info.text();
                 }
-                else if (chaninfo->chanstr.length() == 0)
+                else if (chaninfo->chanstr.isEmpty())
                 {
                     chaninfo->chanstr = info.text();
                 }
@@ -154,7 +154,7 @@ static void fromXMLTVDate(QString &timestr, QDateTime &dt, int localTimezoneOffs
 {
     if (timestr.isEmpty())
     {
-        cerr << "Ignoring empty timestamp." << endl;
+        VERBOSE(VB_XMLTV, "Found empty Date/Time in XMLTV data, ignoring");
         return;
     }
 
@@ -403,7 +403,7 @@ ProgInfo *XMLTVParser::parseProgram(
                 QDomElement item = values.item(0).toElement();
                 if (item.isNull())
                     continue;
-                ProgRating rating;
+                EventRating rating;
                 rating.system = info.attribute("system", "");
                 rating.rating = getFirstText(item);
                 pginfo->ratings.append(rating);
@@ -413,10 +413,13 @@ ProgInfo *XMLTVParser::parseProgram(
                 pginfo->previouslyshown = true;
 
                 QString prevdate = info.attribute("start");
-                QDateTime date;
-                fromXMLTVDate(prevdate, date,
-                              localTimezoneOffset);
-                pginfo->originalairdate = date.date();
+                if (!prevdate.isEmpty())
+                {
+                    QDateTime date;
+                    fromXMLTVDate(prevdate, date,
+                                localTimezoneOffset);
+                    pginfo->originalairdate = date.date();
+                }
             }
             else if (info.tagName() == "credits")
             {

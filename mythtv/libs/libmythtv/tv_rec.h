@@ -148,6 +148,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
 
     void RecordPending(const ProgramInfo *rcinfo, int secsleft, bool hasLater);
     RecStatusType StartRecording(const ProgramInfo *rcinfo);
+    RecStatusType GetRecordingStatus(void) const;
 
     void StopRecording(bool killFile = false);
     /// \brief Tells TVRec to finish the current recording as soon as possible.
@@ -362,6 +363,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     QWaitCondition triggerEventSleepWait;
     bool           triggerEventSleepSignal;
     bool           m_switchingBuffer;
+    RecStatusType  m_recStatus;
 
     // Current recording info
     RecordingInfo *curRecording;

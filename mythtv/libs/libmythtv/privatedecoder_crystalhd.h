@@ -36,7 +36,7 @@ class FetcherThread : public QThread
 typedef struct PacketBuffer_
 {
     uint8_t *buf;
-    uint     size;
+    int      size;
     int64_t  pts;
 } PacketBuffer;
 
@@ -63,6 +63,8 @@ class PrivateDecoderCrystalHD : public PrivateDecoder
                           AVFrame *picture,
                           int *got_picture_ptr,
                           AVPacket *pkt);
+    virtual bool HasBufferedFrames(void);
+    virtual bool NeedsReorderedPTS(void) { return true; }
 
   private:
     void FetchFrames(void);
@@ -75,6 +77,7 @@ class PrivateDecoderCrystalHD : public PrivateDecoder
     void CheckProcOutput(BC_DTS_PROC_OUT *out);
     void CheckPicInfo(BC_DTS_PROC_OUT *out);
     void CheckStatus(void);
+    int GetTxFreeSize(bool hwsel);
 
     HANDLE             m_device;
     BC_DEVICE_TYPE     m_device_type;
