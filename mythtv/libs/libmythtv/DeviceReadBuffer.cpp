@@ -294,7 +294,7 @@ void DeviceReadBuffer::fill_ringbuffer(void)
         if (read_size)
         {
             ssize_t len = read(_stream_fd, writePtr, read_size);
-            if (!CheckForErrors(len, errcnt))
+            if (!CheckForErrors(len, read_size, errcnt))
             {
                 if (errcnt > 5)
                     break;
@@ -403,8 +403,22 @@ bool DeviceReadBuffer::Poll(void) const
 #endif //!USING_MINGW
 }
 
-bool DeviceReadBuffer::CheckForErrors(ssize_t len, uint &errcnt)
+bool DeviceReadBuffer::CheckForErrors(
+    ssize_t len, size_t requested_len, uint &errcnt)
 {
+    if (len > (ssize_t)requested_len)
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Driver is retruning bogus values on read");
+        if (++errcnt > 5)
+        {
+            VERBOSE(VB_RECORD, LOC + "Too many errors.");
+            QMutexLocker locker(&lock);
+            error = true;
+        }
+        return false;
+    }
+
 #ifdef USING_MINGW
 #warning mingw DeviceReadBuffer::CheckForErrors
     VERBOSE(VB_IMPORTANT, LOC_ERR +

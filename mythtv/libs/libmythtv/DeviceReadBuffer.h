@@ -76,7 +76,7 @@ class DeviceReadBuffer
     uint GetUsed(void) const;
     uint GetContiguousUnused(void) const;
 
-    bool CheckForErrors(ssize_t read_len, uint &err_cnt);
+    bool CheckForErrors(ssize_t read_len, size_t requested_len, uint &err_cnt);
     void ReportStats(void);
 
     QString          videodevice;
