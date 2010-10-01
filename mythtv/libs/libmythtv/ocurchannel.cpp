@@ -13,6 +13,11 @@
 #define LOC     QString("OCURChan(%1): ").arg(GetDevice())
 #define LOC_ERR QString("OCURChan(%1), Error: ").arg(GetDevice())
 
+// TODO CardUtil::IsSingleInputCard() returns true for OCUR tuners,
+// but according to the API they can have multiple inputs.
+// CardUtil::ProbeInputs() needs to be patched to support this
+// in addition to the changes needed here.
+
 OCURChannel::OCURChannel(TVRec *parent, const QString &device) :
     DTVChannel(parent), m_device(device)
 {
