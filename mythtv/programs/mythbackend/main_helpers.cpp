@@ -723,7 +723,7 @@ Stage2Init::Stage2Init(const MythCommandLineParser &cmdline) :
     m_cmdline(cmdline),
     m_mainServer(NULL),
     m_timerId(0),
-    m_waitTicks(3)
+    m_waitTicks(1)
 {
     if (g_pUPnp != NULL)
     {
