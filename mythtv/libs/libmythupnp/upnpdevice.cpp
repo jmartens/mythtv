@@ -675,6 +675,44 @@ QString UPnpDeviceDesc::GetHostName()
     return m_sHostName;
 }
 
+/////////////////////////////////////////////////////////////////////////////
+//
+//
+//
+//
+//
+/////////////////////////////////////////////////////////////////////////////
+
+UPnpService UPnpDevice::GetService(const QString &urn, bool *found) const
+{
+    UPnpService srv;
+
+    bool done = false;
+
+    UPnpServiceList::const_iterator it = m_listServices.begin();
+    for (; it != m_listServices.end(); ++it)
+    {
+        if ((*it)->m_sServiceType == urn)
+        {
+            srv = **it;
+            done = true;
+            break;
+        }
+    }
+
+    if (!done)
+    {
+        UPnpDeviceList::const_iterator dit = m_listDevices.begin();
+        for (; dit != m_listDevices.end() && !done; ++dit)
+            srv = (*dit)->GetService(urn, &done);
+    }
+
+    if (found)
+        *found = done;
+
+    return srv;
+}
+
 QString UPnpDevice::toString(uint padding) const
 {
     QString ret =

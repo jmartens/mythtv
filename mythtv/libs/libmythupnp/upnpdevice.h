@@ -161,6 +161,8 @@ class UPNP_PUBLIC UPnpDevice
             return m_sUDN;
         }
 
+        UPnpService GetService(const QString &urn, bool *found = NULL) const;
+
         QString toString(uint padding = 0) const;
 };
 
