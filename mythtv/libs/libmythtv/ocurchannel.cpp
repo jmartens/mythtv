@@ -48,12 +48,14 @@ bool OCURChannel::Open(void)
     QString uuid = dev[0];
     uint    num  = dev[1].toUInt();
 
-    QString tuner_nt =
-        QString("urn:schemas-opencable-com:service:Tuner:%1").arg(num);
+    bool using_cable_card = true;
+    QString desired_service = (using_cable_card) ?
+        QString("schemas-opencable-com:service:CAS:1") :
+        QString("schemas-opencable-com:service:Tuner:1");
 
-    QString tuner_usn =
-        QString("uuid:%1::urn:schemas-opencable-com:service:Tuner:%2")
-        .arg(uuid).arg(num);
+
+    QString tuner_nt  = QString("urn:%1").arg(desired_service);
+    QString tuner_usn = QString("uuid:%1::%2").arg(uuid).arg(tuner_nt);
 
     VERBOSE(VB_CHANNEL, LOC + QString("NT  = %1").arg(tuner_nt));
     VERBOSE(VB_CHANNEL, LOC + QString("USN = %1").arg(tuner_usn));
@@ -61,12 +63,8 @@ bool OCURChannel::Open(void)
     DeviceLocation *loc = UPnp::Find(tuner_nt, tuner_usn);
     if (loc)
     {
-        VERBOSE(VB_IMPORTANT, LOC + "DeviceLocation: " + loc->toString());
-        VERBOSE(VB_IMPORTANT, LOC + "Name&Details: " +
-                loc->GetNameAndDetails());
-
         UPnpDeviceDesc *desc = loc->GetDeviceDesc(
-            false /* TODO??? in qt thread */);
+            true /* TODO??? in qt thread */);
         if (desc)
         {
             m_upnp_nt  = tuner_nt;
@@ -75,8 +73,32 @@ bool OCURChannel::Open(void)
             const UPnpDevice &upnpdev = desc->m_rootDevice;
             VERBOSE(VB_IMPORTANT, LOC + upnpdev.toString());
 
-            //SOAPClient::Init();
+            QString control_url =
+                upnpdev.GetService(tuner_nt).m_sControlURL;
 
+            QString control_path;
+            if (control_url.startsWith("http://"))
+            {
+                QUrl url(control_url);
+                control_path = url.path();
+                url.setPath("");
+                control_url = url.toString();
+            }
+            else
+            {
+                control_path = control_url;
+                QUrl url(loc->m_sLocation);
+                url.setPath("");
+                control_url = url.toString();
+            }
+
+            if (control_path.left(1) != "/")
+                control_path = "/" + control_path;
+
+            //VERBOSE(VB_IMPORTANT, LOC + QString("Control URL: %1/%2")
+            //        .arg(control_url).arg(control_path));
+
+            SOAPClient::Init(control_url, tuner_nt, control_path);
 
             delete desc;
         }
@@ -144,9 +166,16 @@ bool OCURChannel::SetChannelByString(const QString &channum)
         return false;
     }
 
-    QString virtual_channel = freqid;
-
-    bool ok = SetChannelByVirtualChannel(virtual_channel);
+    bool ok = false;
+    if (m_upnp_nt.contains("CAS"))
+    {
+        uint32_t virtual_channel = freqid.toUInt();
+        ok = SetChannelByVirtualChannel(virtual_channel);
+    }
+    else
+    {
+        // TODO handle Tuner service (full DTV tuning)
+    }
 
     if (ok)
     {
@@ -159,17 +188,32 @@ bool OCURChannel::SetChannelByString(const QString &channum)
     return ok;
 }
 
-bool OCURChannel::SetChannelByVirtualChannel(const QString &vchan)
+bool OCURChannel::SetChannelByVirtualChannel(uint32_t vchan)
 {
     DeviceLocation *loc = UPnp::Find(m_upnp_nt, m_upnp_usn);
     if (!loc)
         return false;
-
-    // TODO Channel change code goes here
-
     loc->Release();
 
-    SetSIStandard("scte");
-    SetDTVInfo(0,0,0,0,1);
-    return true;
+    QString    method   = "SetChannel";
+    QStringMap args;
+    args["NewChannelNumber"] = QString::number(vchan);
+    args["NewSourceId"]      = "0";
+    args["NewCaptureMode"]   = "Live";
+    int        err_code;
+    QString    err_desc;
+    bool ok = SendSOAPRequest(
+        method, args, err_code, err_desc, true /*inQtThread*/);
+
+    if (!ok)
+    {
+        VERBOSE(VB_IMPORTANT, QString("Error Code: %1\n\t\t\tDescription: %2")
+                .arg(err_code).arg(err_desc));
+    }
+    else
+    {
+        SetSIStandard("scte");
+        SetDTVInfo(0,0,0,0,1);
+    }
+    return ok;
 }

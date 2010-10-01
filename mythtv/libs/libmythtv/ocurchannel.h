@@ -42,7 +42,7 @@ class OCURChannel : public DTVChannel, SOAPClient
     bool Tune(const DTVMultiplex&, QString) { return true; }
 
   protected:
-    bool SetChannelByVirtualChannel(const QString &vchan);
+    bool SetChannelByVirtualChannel(uint32_t vchan);
 
   protected:
     vector<DTVTunerType>  m_tuner_types;
