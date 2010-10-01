@@ -204,7 +204,7 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
     // Add appropriate headers
     // --------------------------------------------------------------
 
-    QHttpRequestHeader header;
+    QHttpRequestHeader header("POST", sMethod, 1, 0);
 
     header.setValue("CONTENT-TYPE", "text/xml; charset=\"utf-8\"" );
     header.setValue("SOAPACTION",
@@ -220,8 +220,8 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
     os.setCodec("UTF-8");
 
     os << "<?xml version=\"1.0\" encoding=\"utf-8\"?>\r\n"; 
-    os << "<s:Envelope s:encodingStyle=\""
-        "http://schemas.xmlsoap.org/soap/encoding/\""
+    os << "<s:Envelope "
+        " s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\""
         " xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">\r\n";
     os << " <s:Body>\r\n";
     os << "  <u:" << sMethod << " xmlns:u=\"" << m_sNamespace << "\">\r\n";
@@ -249,6 +249,11 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
 
     QBuffer buff(&aBuffer);
 
+    VERBOSE(VB_UPNP|VB_EXTRA,
+            QString("SOAPClient(%1) sending:\n").arg(url.toString()) +
+            header.toString() +
+            QString("\n%1\n").arg(aBuffer.constData()));
+
     QString sXml = HttpComms::postHttp(
         url,
         &header,
@@ -258,11 +263,16 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
         0,     // redirects
         false, // allow gzip
         NULL,  // login
-        bInQtThread);
+        bInQtThread,
+        QString() // userAgent, UPnP/1.0 very strict on format if set
+        );
 
     // --------------------------------------------------------------
     // Parse response
     // --------------------------------------------------------------
+
+    VERBOSE(VB_UPNP|VB_EXTRA, "SOAPClient response:\n" +QString("%1\n")
+            .arg(sXml));
 
     // TODO handle timeout without response correctly.
 
@@ -272,9 +282,11 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
 
     if (!doc.setContent(sXml, true, &sErrDesc, &nErrCode))
     {
-        VERBOSE(VB_UPNP, QString("MythXMLClient::SendSOAPRequest( %1 ) - "
-                                 "Invalid response from %2" )
-                .arg(sMethod).arg(url.toString()));
+        VERBOSE(VB_UPNP,
+                QString("MythXMLClient::SendSOAPRequest( %1 ) - "
+                        "Invalid response from %2")
+                .arg(sMethod).arg(url.toString()) + 
+                QString("%1: %2").arg(nErrCode).arg(sErrDesc));
 
         return false;
     }
@@ -294,9 +306,9 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
         // --------------------------------------------------------------
 
         nErrCode = GetNodeValue(
-            doc, "Envelope/Body/Fault/detail/UPnPResult/errorCode", 500);
+            doc, "Envelope/Body/Fault/detail/UPnPError/errorCode", 500);
         sErrDesc = GetNodeValue(
-            doc, "Envelope/Body/Fault/detail/UPnPResult/errorDescription",
+            doc, "Envelope/Body/Fault/detail/UPnPError/errorDescription",
             QString("Unknown"));
 
         return false;
