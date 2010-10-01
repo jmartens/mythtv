@@ -468,10 +468,12 @@ bool V4LChannel::SetChannelByString(const QString &channum)
         mplexid = 0;
     }
     bool isFrequency = ok && (frequency > 10000000);
+    bool hasTuneToChan =
+        !(*it)->tuneToChannel.isEmpty() && (*it)->tuneToChannel != "Undefined";
 
     // If we are tuning to a freqid, rather than an actual frequency,
     // we need to set the frequency table to use.
-    if (!isFrequency)
+    if (!isFrequency || hasTuneToChan)
     {
         if (freqtable == "default" || freqtable.isEmpty())
             SetFreqTable(defaultFreqTable);
@@ -483,7 +485,7 @@ bool V4LChannel::SetChannelByString(const QString &channum)
     SetFormat(tvformat);
 
     // If a tuneToChannel is set make sure we're still on it
-    if (!(*it)->tuneToChannel.isEmpty() && (*it)->tuneToChannel != "Undefined")
+    if (hasTuneToChan)
         TuneTo((*it)->tuneToChannel, 0);
 
     // Tune to proper frequency
@@ -533,19 +535,19 @@ bool V4LChannel::SetChannelByString(const QString &channum)
     return true;
 }
 
-bool V4LChannel::TuneTo(const QString &channum, int finetune)
+bool V4LChannel::TuneTo(const QString &freqid, int finetune)
 {
-    int i = GetCurrentChannelNum(channum);
+    int i = GetCurrentChannelNum(freqid);
     VERBOSE(VB_CHANNEL, QString("Channel(%1)::TuneTo(%2): "
                                 "curList[%3].freq(%4)")
-            .arg(device).arg(channum).arg(i)
+            .arg(device).arg(freqid).arg(i)
             .arg((i != -1) ? curList[i].freq : -1));
 
     if (i == -1)
     {
         VERBOSE(VB_IMPORTANT, QString("Channel(%1)::TuneTo(%2): Error, "
                                       "failed to find channel.")
-                .arg(device).arg(channum));
+                .arg(device).arg(freqid));
         return false;
     }
 

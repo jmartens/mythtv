@@ -3,7 +3,7 @@
 #ifndef MPEGRECORDER_H_
 #define MPEGRECORDER_H_
 
-#include "dtvrecorder.h"
+#include "v4lrecorder.h"
 #include "tspacket.h"
 #include "mpegstreamdata.h"
 #include "DeviceReadBuffer.h"
@@ -11,7 +11,7 @@
 struct AVFormatContext;
 struct AVPacket;
 
-class MpegRecorder : public DTVRecorder,
+class MpegRecorder : public V4LRecorder,
                      public DeviceReaderCB
 {
   public:
@@ -56,9 +56,8 @@ class MpegRecorder : public DTVRecorder,
 
     bool OpenMpegFileAsInput(void);
     bool OpenV4L2DeviceAsInput(void);
-    bool SetIVTVDeviceOptions(int chanfd);
     bool SetV4L2DeviceOptions(int chanfd);
-    bool SetFormat(int chanfd);
+    bool SetVideoCaptureFormat(int chanfd);
     bool SetLanguageMode(int chanfd);
     bool SetRecordingVolume(int chanfd);
     bool SetVBIOptions(int chanfd);
@@ -76,6 +75,8 @@ class MpegRecorder : public DTVRecorder,
     void SetBitrate(int bitrate, int maxbitrate, const QString & reason);
     void HandleResolutionChanges(void);
 
+    virtual void FormatCC(uint code1, uint code2); // RecorderBase
+
     bool deviceIsMpegFile;
     int bufferSize;
 
@@ -83,10 +84,10 @@ class MpegRecorder : public DTVRecorder,
     QString  card;
     QString  driver;
     uint32_t version;
-    bool     usingv4l2;
-    bool     has_buggy_vbi;
-    bool     has_v4l2_vbi;
-    bool     requires_special_pause;
+    bool     supports_sliced_vbi;
+    /// Some drivers require streaming to be disabled before
+    /// an input switch and other channel format setting...
+    bool     use_encoding_pause_hack;
 
     // State
     mutable QMutex start_stop_encoding_lock;

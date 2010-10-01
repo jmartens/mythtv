@@ -70,7 +70,7 @@ class MPUBLIC RecorderBase
 
     /** \brief Set an specific option.
      *
-     *   Base options include: codec, audiodevice, videodevice, vbidevice,
+     *   Base options include: codec, videodevice,
      *   tvformat&nbsp;(ntsc,ntsc-jp,pal-m),
      *   vbiformat&nbsp;("none","pal teletext","ntsc").
      */
@@ -247,11 +247,8 @@ class MPUBLIC RecorderBase
     bool           weMadeBuffer;
 
     QString        videocodec;
-    QString        audiodevice;
     QString        videodevice;
-    QString        vbidevice;
 
-    int            vbimode;
     bool           ntsc;
     bool           ntsc_framerate;
     double         video_frame_rate;

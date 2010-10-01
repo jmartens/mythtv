@@ -385,11 +385,11 @@ class TunerCardAudioInput : public ComboBoxSetting, public CaptureCardDBStorage
     QString last_cardtype;
 };
 
-class DVBAudioDevice : public LineEditSetting, public CaptureCardDBStorage
+class EmptyAudioDevice : public LineEditSetting, public CaptureCardDBStorage
 {
     Q_OBJECT
   public:
-    DVBAudioDevice(const CaptureCard &parent) :
+    EmptyAudioDevice(const CaptureCard &parent) :
         LineEditSetting(this),
         CaptureCardDBStorage(this, parent, "audiodevice")
     {
@@ -410,12 +410,12 @@ class DVBAudioDevice : public LineEditSetting, public CaptureCardDBStorage
     }
 };
 
-class DVBVbiDevice : public LineEditSetting, public CaptureCardDBStorage
+class EmptyVBIDevice : public LineEditSetting, public CaptureCardDBStorage
 {
     Q_OBJECT
 
   public:
-    DVBVbiDevice(const CaptureCard &parent) :
+    EmptyVBIDevice(const CaptureCard &parent) :
         LineEditSetting(this),
         CaptureCardDBStorage(this, parent, "vbidevice")
     {
@@ -503,6 +503,9 @@ class V4LConfigurationGroup : public VerticalConfigurationGroup
     TunerCardInput    *input;
 };
 
+class VideoDevice;
+class VBIDevice;
+
 class MPEGConfigurationGroup: public VerticalConfigurationGroup
 {
    Q_OBJECT
@@ -515,6 +518,8 @@ class MPEGConfigurationGroup: public VerticalConfigurationGroup
 
   private:
     CaptureCard       &parent;
+    VideoDevice       *device;
+    VBIDevice         *vbidevice;
     TransLabelSetting *cardinfo;
     TunerCardInput    *input;
 };
@@ -558,6 +563,8 @@ class ASIConfigurationGroup: public VerticalConfigurationGroup
     InstanceCount     *instances;
 };
 
+class TunerCardInput;
+class InstanceCount;
 class OCURDevice;
 
 class OCURConfigurationGroup: public VerticalConfigurationGroup
@@ -574,6 +581,8 @@ class OCURConfigurationGroup: public VerticalConfigurationGroup
     CaptureCard       &parent;
     OCURDevice        *device;
     TransLabelSetting *cardinfo;
+    TunerCardInput    *input;
+    InstanceCount     *instances;
 };
 
 class ImportConfigurationGroup: public VerticalConfigurationGroup

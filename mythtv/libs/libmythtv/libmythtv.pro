@@ -151,6 +151,7 @@ HEADERS += filtermanager.h          recordingprofile.h
 HEADERS += remoteencoder.h          videosource.h
 HEADERS += cardutil.h               sourceutil.h
 HEADERS += videometadatautil.h
+HEADERS += vbi608extractor.h
 HEADERS += cc608decoder.h           cc608reader.h
 HEADERS += cc708decoder.h           cc708reader.h
 HEADERS += cc708window.h            subtitlereader.h
@@ -175,6 +176,7 @@ SOURCES += filtermanager.cpp        recordingprofile.cpp
 SOURCES += remoteencoder.cpp        videosource.cpp
 SOURCES += cardutil.cpp             sourceutil.cpp
 SOURCES += videometadatautil.cpp
+SOURCES += vbi608extractor.cpp
 SOURCES += cc608decoder.cpp         cc608reader.cpp
 SOURCES += cc708decoder.cpp         cc708reader.cpp
 SOURCES += cc708window.cpp          subtitlereader.cpp
@@ -471,7 +473,9 @@ using_backend {
     # Support for Video4Linux devices
     using_v4l {
         HEADERS += v4lchannel.h                analogsignalmonitor.h
+        HEADERS += v4lrecorder.h
         SOURCES += v4lchannel.cpp              analogsignalmonitor.cpp
+        SOURCES += v4lrecorder.cpp
 
         DEFINES += USING_V4L
     }

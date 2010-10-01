@@ -29,17 +29,14 @@ using namespace std;
 #include <QString>
 
 // MythTV headers
-#include "recorderbase.h"
+#include "v4lrecorder.h"
 #include "format.h"
-#include "cc608decoder.h"
 #include "filter.h"
 #include "minilzo.h"
 
 #include "mythexp.h"
 
 struct video_audio;
-struct VBIData;
-struct cc;
 class RTjpeg;
 class RingBuffer;
 class ChannelBase;
@@ -47,7 +44,7 @@ class FilterManager;
 class FilterChain;
 class AudioInput;
 
-class MPUBLIC NuppelVideoRecorder : public RecorderBase, public CC608Input
+class MPUBLIC NuppelVideoRecorder : public V4LRecorder, public CC608Input
 {
  public:
     NuppelVideoRecorder(TVRec *rec, ChannelBase *channel);
@@ -109,11 +106,9 @@ class MPUBLIC NuppelVideoRecorder : public RecorderBase, public CC608Input
  protected:
     static void *WriteThread(void *param);
     static void *AudioThread(void *param);
-    static void *VbiThread(void *param);
 
     void doWriteThread(void);
     void doAudioThread(void);
-    void doVbiThread(void);
 
  private:
     inline void WriteFrameheader(rtframeheader *fh);
@@ -139,10 +134,10 @@ class MPUBLIC NuppelVideoRecorder : public RecorderBase, public CC608Input
     void DoV4L2(void);
     void DoMJPEG(void);
 
-    void FormatTeletextSubtitles(struct VBIData *vbidata);
-    void FormatCC(struct cc *cc);
-    void AddTextData(unsigned char *buf, int len,
-                     int64_t timecode, char type);
+    virtual void FormatTT(struct VBIData*); // RecorderBase
+    virtual void FormatCC(struct cc*); // RecorderBase
+    virtual void AddTextData(unsigned char*,int,int64_t,char); // CC608Decoder
+
     void UpdateResolutions(void);
     
     bool encoding;
@@ -212,7 +207,6 @@ class MPUBLIC NuppelVideoRecorder : public RecorderBase, public CC608Input
 
     pthread_t write_tid;
     pthread_t audio_tid;
-    pthread_t vbi_tid;
 
     bool recording;
     bool errored;

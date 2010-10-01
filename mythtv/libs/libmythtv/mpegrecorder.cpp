@@ -80,14 +80,14 @@ const char* MpegRecorder::aspectRatio[] =
 };
 
 MpegRecorder::MpegRecorder(TVRec *rec) :
-    DTVRecorder(rec),
+    V4LRecorder(rec),
     // Debugging variables
     deviceIsMpegFile(false),      bufferSize(0),
     // Driver info
     card(QString::null),          driver(QString::null),
-    version(0),                   usingv4l2(false),
-    has_buggy_vbi(true),          has_v4l2_vbi(false),
-    requires_special_pause(false),
+    version(0),
+    supports_sliced_vbi(false),
+    use_encoding_pause_hack(false),
     // State
     start_stop_encoding_lock(QMutex::Recursive),
     // Pausing state
@@ -197,7 +197,7 @@ void MpegRecorder::SetOption(const QString &opt, int value)
         else if (opt.left(4) == "high")
             high_mpeg4avgbitrate = value;
         else
-            RecorderBase::SetOption(opt, value);
+            V4LRecorder::SetOption(opt, value);
     }
     else if (opt.right(17) == "_mpeg4peakbitrate")
     {
@@ -208,10 +208,10 @@ void MpegRecorder::SetOption(const QString &opt, int value)
         else if (opt.left(4) == "high")
             high_mpeg4peakbitrate = value;
         else
-            RecorderBase::SetOption(opt, value);
+            V4LRecorder::SetOption(opt, value);
     }
     else
-        RecorderBase::SetOption(opt, value);
+        V4LRecorder::SetOption(opt, value);
 }
 
 void MpegRecorder::SetOption(const QString &opt, const QString &value)
@@ -287,7 +287,7 @@ void MpegRecorder::SetOption(const QString &opt, const QString &value)
     }
     else
     {
-        RecorderBase::SetOption(opt, value);
+        V4LRecorder::SetOption(opt, value);
     }
 }
 
@@ -312,7 +312,7 @@ void MpegRecorder::SetOptionsFromProfile(RecordingProfile *profile,
     {
         SetOption("videodevice", videodev);
     }
-
+    SetOption("vbidevice", vbidev);
     SetOption("audiodevice", audiodev);
 
     SetOption("tvformat", gCoreContext->GetSetting("TVFormat"));
@@ -388,74 +388,72 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
         return false;
     }
 
-    if (CardUtil::GetV4LInfo(chanfd, card, driver, version))
+    bufferSize             = 4096;
+    use_encoding_pause_hack = false;
+
+    struct v4l2_capability cap;
+    memset(&cap, 0, sizeof(cap));
+
+    bool supports_tuner, supports_audio;
+
+    if (ioctl(chanfd, VIDIOC_QUERYCAP, &cap) >= 0)
     {
-        if (driver == "ivtv")
+        driver  = QString::fromAscii((const char*)(cap.driver));
+        card    = QString::fromAscii((const char*)(cap.card));
+        version = cap.version;
+        supports_sliced_vbi = !!(cap.capabilities & V4L2_CAP_SLICED_VBI_CAPTURE);
+        supports_tuner      = !!(cap.capabilities & V4L2_CAP_TUNER);
+        supports_audio      = !!(cap.capabilities & V4L2_CAP_AUDIO);
+
+        /// Determine hacks needed for specific drivers & driver versions
+        if (CardUtil::GetV4LInfo(chanfd, card, driver, version))
         {
-            bufferSize    = 4096;
-            usingv4l2     = (version >= IVTV_KERNEL_VERSION(0, 8, 0));
-            has_v4l2_vbi  = (version >= IVTV_KERNEL_VERSION(0, 3, 8));
-            has_buggy_vbi = true;
-            requires_special_pause =
-                (version >= IVTV_KERNEL_VERSION(0, 10, 0));
-        }
-        else if (driver == "pvrusb2")
-        {
-            bufferSize    = 4096;
-            usingv4l2     = true;
-            has_v4l2_vbi  = true;
-            has_buggy_vbi = true;
-            requires_special_pause = false;
-        }
-        else if (driver == "hdpvr")
-        {
-            bufferSize = 1500 * TSPacket::kSize;
-            usingv4l2 = true;
-            requires_special_pause = true;
-            m_h264_parser.use_I_forKeyframes(false);
-        }
-        else
-        {
-            bufferSize    = 4096;
-            usingv4l2     = has_v4l2_vbi = true;
-            has_buggy_vbi = requires_special_pause = false;
+            if (driver == "ivtv")
+            {
+                use_encoding_pause_hack =
+                    (version >= IVTV_KERNEL_VERSION(0, 10, 0));
+            }
+            else if (driver == "hdpvr")
+            {
+                bufferSize = 1500 * TSPacket::kSize;
+                use_encoding_pause_hack = true;
+                m_h264_parser.use_I_forKeyframes(false);
+            }
         }
     }
-
-    VERBOSE(VB_RECORD, LOC + QString("usingv4l2(%1) has_v4l2_vbi(%2) "
-                                     "has_buggy_vbi(%3)")
-            .arg(usingv4l2).arg(has_v4l2_vbi).arg(has_buggy_vbi));
-
-
-    if ((driver != "hdpvr") && !SetFormat(chanfd))
-        return false;
-
-    if (driver != "hdpvr")
-    {
-        SetLanguageMode(chanfd);        // we don't care if this fails...
-        SetRecordingVolume(chanfd); // we don't care if this fails...
-    }
-
-    bool ok = true;
-    if (usingv4l2)
-        ok = SetV4L2DeviceOptions(chanfd);
     else
     {
-        ok = SetIVTVDeviceOptions(chanfd);
-        if (!ok)
-            usingv4l2 = ok = SetV4L2DeviceOptions(chanfd);
+        VERBOSE(VB_IMPORTANT, LOC_ERR + "V4L version 1, unsupported");
+        close(chanfd);
+        chanfd = -1;
+        return false;
     }
 
-    if (!ok)
+    if (!SetVideoCaptureFormat(chanfd))
+    {
+        close(chanfd);
+        chanfd = -1;
+        return false;
+    }
+
+    if (supports_tuner)
+        SetLanguageMode(chanfd);    // we don't care if this fails...
+
+    if (supports_audio)
+        SetRecordingVolume(chanfd); // we don't care if this fails...
+
+    if (!SetV4L2DeviceOptions(chanfd))
         return false;
 
-    SetVBIOptions(chanfd);
+    SetVBIOptions(chanfd); // we don't care if this fails...
 
     readfd = open(vdevice.constData(), O_RDWR | O_NONBLOCK);
 
     if (readfd < 0)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Can't open video device." + ENO);
+        close(chanfd);
+        chanfd = -1;
         return false;
     }
 
@@ -474,6 +472,10 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
         _error = true;
+        close(chanfd);
+        chanfd = -1;
+        close(readfd);
+        readfd = -1;
         return false;
     }
 
@@ -481,17 +483,27 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
         _error = true;
+        close(chanfd);
+        chanfd = -1;
+        close(readfd);
+        readfd = -1;
         return false;
     }
 
     VERBOSE(VB_RECORD, LOC + "DRB ready");
 
+    if (vbi_fd >= 0)
+        vbi_thread = new VBIThread(this);
+
     return true;
 }
 
 
-bool MpegRecorder::SetFormat(int chanfd)
+bool MpegRecorder::SetVideoCaptureFormat(int chanfd)
 {
+    if (driver == "hdpvr")
+        return true;
+
     struct v4l2_format vfmt;
     bzero(&vfmt, sizeof(vfmt));
 
@@ -535,10 +547,7 @@ bool MpegRecorder::SetLanguageMode(int chanfd)
             vt.audmode = V4L2_TUNER_MODE_LANG2;
             break;
         case 2:
-            if (usingv4l2)
-                vt.audmode = V4L2_TUNER_MODE_LANG1_LANG2;
-            else
-                vt.audmode = V4L2_TUNER_MODE_STEREO;
+            vt.audmode = V4L2_TUNER_MODE_LANG1_LANG2;
             break;
         default:
             vt.audmode = V4L2_TUNER_MODE_LANG1;
@@ -673,43 +682,6 @@ uint MpegRecorder::GetFilteredAudioBitRate(uint audio_layer) const
 {
     return ((2 == audio_layer) ? max(audbitratel2, 10) :
             ((3 == audio_layer) ? audbitratel3 : max(audbitratel1, 6)));
-}
-
-bool MpegRecorder::SetIVTVDeviceOptions(int chanfd)
-{
-    struct ivtv_ioctl_codec ivtvcodec;
-    bzero(&ivtvcodec, sizeof(ivtvcodec));
-
-    if (ioctl(chanfd, IVTV_IOC_G_CODEC, &ivtvcodec) < 0)
-    {
-        // Downgrade to VB_RECORD warning when ioctl isn't supported,
-        // unless the driver is completely missitng it probably
-        // supports the Linux v2.6.18 v4l2 mpeg encoder API.
-        VERBOSE((22 == errno) ? VB_RECORD : VB_IMPORTANT,
-                ((22 == errno) ? LOC_WARN : LOC_ERR) +
-                "Error getting codec params using old IVTV ioctl" + ENO);
-        return false;
-    }
-
-    uint audio_rate  = GetFilteredAudioSampleRate();
-    uint audio_layer = GetFilteredAudioLayer();
-    uint audbitrate  = GetFilteredAudioBitRate(audio_layer);
-
-    ivtvcodec.audio_bitmask  = audio_rate | (audio_layer << 2);
-    ivtvcodec.audio_bitmask |= audbitrate << 4;
-    ivtvcodec.aspect         = aspectratio;
-    ivtvcodec.bitrate        = min(bitrate, maxbitrate) * 1000;
-    ivtvcodec.bitrate_peak   = maxbitrate * 1000;
-    ivtvcodec.framerate      = ntsc_framerate ? 0 : 1; // 1->25fps, 0->30fps
-    ivtvcodec.stream_type    = GetFilteredStreamType();
-
-    if (ioctl(chanfd, IVTV_IOC_S_CODEC, &ivtvcodec) < 0)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Error setting codec params" + ENO);
-        return false;
-    }
-
-    return true;
 }
 
 static int streamtype_ivtv_to_v4l2(int st)
@@ -887,120 +859,56 @@ bool MpegRecorder::SetV4L2DeviceOptions(int chanfd)
 
 bool MpegRecorder::SetVBIOptions(int chanfd)
 {
-    if (!vbimode)
+    if (VBIMode::None == vbimode)
         return true;
 
-    if (driver == "hdpvr" || driver.left(7) == "saa7164")
+    if (driver == "hdpvr")
         return true;
-
-    if (has_buggy_vbi)
-    {
-        cout<<" *********************** WARNING ***********************"<<endl;
-        cout<<" ivtv drivers prior to 0.10.0 can cause lockups when    "<<endl;
-        cout<<" reading VBI. Drivers between 0.10.5 and 1.0.3+ do not  "<<endl;
-        cout<<" properly capture VBI data on PVR-250 and PVR-350 cards."<<endl;
-        cout<<endl;
-    }
-
-    /****************************************************************/
-    /** First tell driver which services we want to capture.       **/
-
-#ifdef IVTV_IOC_S_VBI_EMBED
-    // used for ivtv driver versions 0.2.0-0.3.7
-    if (!has_v4l2_vbi)
-    {
-        struct ivtv_sliced_vbi_format vbifmt;
-        bzero(&vbifmt, sizeof(struct ivtv_sliced_vbi_format));
-        vbifmt.service_set = (1 == vbimode) ? VBI_TYPE_TELETEXT : VBI_TYPE_CC;
-
-        if (ioctl(chanfd, IVTV_IOC_S_VBI_MODE, &vbifmt) < 0)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_WARN +
-                    "Can't enable VBI recording (1)" + ENO);
-
-            return false;
-        }
-
-        if (ioctl(chanfd, IVTV_IOC_G_VBI_MODE, &vbifmt) >= 0)
-        {
-            VERBOSE(VB_RECORD, LOC + QString(
-                        "VBI service:%1, packet size:%2, io size:%3")
-                    .arg(vbifmt.service_set).arg(vbifmt.packet_size)
-                    .arg(vbifmt.io_size));
-        }
-    }
-#endif // IVTV_IOC_S_VBI_EMBED
 
 #ifdef V4L2_CAP_SLICED_VBI_CAPTURE
-    // used for ivtv driver versions 0.3.8+
-    if (has_v4l2_vbi)
+    if (supports_sliced_vbi)
     {
         struct v4l2_format vbifmt;
-        bzero(&vbifmt, sizeof(struct v4l2_format));
+        memset(&vbifmt, 0, sizeof(struct v4l2_format));
         vbifmt.type = V4L2_BUF_TYPE_SLICED_VBI_CAPTURE;
-        vbifmt.fmt.sliced.service_set |= (1 == vbimode) ?
+        vbifmt.fmt.sliced.service_set |= (VBIMode::PAL_TT == vbimode) ?
             V4L2_SLICED_VBI_625 : V4L2_SLICED_VBI_525;
 
         if (ioctl(chanfd, VIDIOC_S_FMT, &vbifmt) < 0)
         {
             VERBOSE(VB_IMPORTANT, LOC_WARN +
-                    "Can't enable VBI recording (3)" + ENO);
-
-            return false;
+                    "Unable to enable VBI embedding" + ENO);
         }
-
-        if (ioctl(chanfd, VIDIOC_G_FMT, &vbifmt) >= 0)
+        else if (ioctl(chanfd, VIDIOC_G_FMT, &vbifmt) >= 0)
         {
             VERBOSE(VB_RECORD, LOC + QString("VBI service: %1, io size: %2")
                     .arg(vbifmt.fmt.sliced.service_set)
                     .arg(vbifmt.fmt.sliced.io_size));
+
+            struct v4l2_ext_control vbi_ctrl;
+            vbi_ctrl.id      = V4L2_CID_MPEG_STREAM_VBI_FMT;
+            vbi_ctrl.value   = V4L2_MPEG_STREAM_VBI_FMT_IVTV;
+
+            struct v4l2_ext_controls ctrls;
+            memset(&ctrls, 0, sizeof(struct v4l2_ext_controls));
+            ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
+            ctrls.count      = 1;
+            ctrls.controls   = &vbi_ctrl;
+
+            if (ioctl(chanfd, VIDIOC_S_EXT_CTRLS, &ctrls) < 0)
+            {
+                VERBOSE(VB_IMPORTANT, LOC_WARN +
+                        "Unable to set VBI embedding format" + ENO);
+            }
+            else
+            {
+                return true;
+            }
         }
     }
 #endif // V4L2_CAP_SLICED_VBI_CAPTURE
 
-    /****************************************************************/
-    /** Second, tell driver to embed the captions in the stream.   **/
-
-#ifdef IVTV_IOC_S_VBI_EMBED
-    // used for ivtv driver versions 0.2.0-0.7.x
-    if (!usingv4l2)
-    {
-        int embedon = 1;
-        if (ioctl(chanfd, IVTV_IOC_S_VBI_EMBED, &embedon) < 0)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_WARN +
-                    "Can't enable VBI recording (4)" + ENO);
-
-            return false;
-        }
-    }
-#endif // IVTV_IOC_S_VBI_EMBED
-
-#ifdef V4L2_CAP_SLICED_VBI_CAPTURE
-    // used for ivtv driver versions 0.8.0+
-    if (usingv4l2)
-    {
-        struct v4l2_ext_control vbi_ctrl;
-        vbi_ctrl.id      = V4L2_CID_MPEG_STREAM_VBI_FMT;
-        vbi_ctrl.value   = V4L2_MPEG_STREAM_VBI_FMT_IVTV;
-
-        struct v4l2_ext_controls ctrls;
-        bzero(&ctrls, sizeof(struct v4l2_ext_controls));
-        ctrls.ctrl_class = V4L2_CTRL_CLASS_MPEG;
-        ctrls.count      = 1;
-        ctrls.controls   = &vbi_ctrl;
-
-        if (ioctl(chanfd, VIDIOC_S_EXT_CTRLS, &ctrls) < 0)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_WARN +
-                    "Can't enable VBI recording (5)" + ENO);
-
-            return false;
-        }
-    }
-#endif // V4L2_CAP_SLICED_VBI_CAPTURE
-
-    return true;
+    return OpenVBIDevice() >= 0;
 }
 
 bool MpegRecorder::Open(void)
@@ -1008,11 +916,7 @@ bool MpegRecorder::Open(void)
     memset(_stream_id,  0, sizeof(_stream_id));
     memset(_pid_status, 0, sizeof(_pid_status));
     memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
-
-    if (deviceIsMpegFile)
-        return OpenMpegFileAsInput();
-    else
-        return OpenV4L2DeviceAsInput();
+    return (deviceIsMpegFile) ? OpenMpegFileAsInput() : OpenV4L2DeviceAsInput();
 }
 
 void MpegRecorder::StartRecording(void)
@@ -1084,7 +988,7 @@ void MpegRecorder::StartRecording(void)
     {
         VERBOSE(VB_RECORD, LOC + "Initial startup of recorder");
 
-        if (requires_special_pause && !StartEncoding(readfd))
+        if (use_encoding_pause_hack && !StartEncoding(readfd))
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to start recording");
             _error = true;
@@ -1261,7 +1165,7 @@ void MpegRecorder::StartRecording(void)
         delete _device_read_buffer;
         _device_read_buffer = NULL;
     }
-    if (requires_special_pause)
+    if (use_encoding_pause_hack)
         StopEncoding(readfd);
 
     FinishRecording();
@@ -1356,9 +1260,7 @@ bool MpegRecorder::PauseAndWait(int timeout)
                 _device_read_buffer->WaitForPaused(4000);
             }
 
-            // Some drivers require streaming to be disabled before
-            // an input switch and other channel format setting.
-            if (requires_special_pause)
+            if (use_encoding_pause_hack)
                 StopEncoding(readfd);
 
             paused = true;
@@ -1382,9 +1284,7 @@ bool MpegRecorder::PauseAndWait(int timeout)
             _seen_sps = false;
         }
 
-        // Some drivers require streaming to be disabled before
-        // an input switch and other channel format setting.
-        if (requires_special_pause)
+        if (use_encoding_pause_hack)
             StartEncoding(readfd);
 
         if (_device_read_buffer)
@@ -1406,7 +1306,7 @@ void MpegRecorder::RestartEncoding(void)
 
     QMutexLocker locker(&start_stop_encoding_lock);
 
-    if (requires_special_pause)
+    if (use_encoding_pause_hack)
         StopEncoding(readfd);
 
     // Make sure the next things in the file are a PAT & PMT
@@ -1419,7 +1319,7 @@ void MpegRecorder::RestartEncoding(void)
         HandleSingleProgramPMT(_stream_data->PMTSingleProgram());
     }
 
-    if (requires_special_pause && !StartEncoding(readfd))
+    if (use_encoding_pause_hack && !StartEncoding(readfd))
     {
         if (0 != close(readfd))
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Close error" + ENO);
@@ -1571,4 +1471,15 @@ void MpegRecorder::HandleResolutionChanges(void)
 
         SetBitrate(bitrate, maxbitrate, "New");
     }
+}
+
+void MpegRecorder::FormatCC(uint code1, uint code2)
+{
+    VERBOSE(VB_VBI, LOC + QString("FormatCC(0x%1,0x%2)")
+            .arg(code1,0,16).arg(code2,0,16));
+    // TODO add to CC data vector
+
+    // TODO find video frames in output and insert cc_data
+    // as CEA-708 user_data packets containing CEA-608 captions
+    ///at picture data level
 }

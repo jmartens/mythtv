@@ -43,8 +43,6 @@ using namespace std;
 RecorderBase::RecorderBase(TVRec *rec)
     : tvrec(rec),               ringBuffer(NULL),
       weMadeBuffer(true),       videocodec("rtjpeg"),
-      audiodevice("/dev/dsp"),  videodevice("/dev/video"),
-      vbidevice("/dev/vbi"),    vbimode(0),
       ntsc(true),               ntsc_framerate(true),
       video_frame_rate(29.97),
       m_videoAspect(0),         m_videoHeight(0),
@@ -104,12 +102,8 @@ void RecorderBase::SetOption(const QString &name, const QString &value)
 {
     if (name == "videocodec")
         videocodec = value;
-    else if (name == "audiodevice")
-        audiodevice = value;
     else if (name == "videodevice")
         videodevice = value;
-    else if (name == "vbidevice")
-        vbidevice = value;
     else if (name == "tvformat")
     {
         ntsc = false;
@@ -135,14 +129,11 @@ void RecorderBase::SetOption(const QString &name, const QString &value)
         else
             SetFrameRate(25.00);
     }
-    else if (name == "vbiformat")
+    else
     {
-        if (value.toLower() == "pal teletext")
-            vbimode = 1;
-        else if (value.toLower().left(4) == "ntsc")
-            vbimode = 2;
-        else
-            vbimode = 0;
+        VERBOSE(VB_GENERAL, LOC_WARN +
+                QString("SetOption(%1,%2): Option not recognized")
+                .arg(name).arg(value));
     }
 }
 
@@ -459,6 +450,7 @@ void RecorderBase::FrameRateChange(uint framerate, long long frame)
     if (curRecording)
         curRecording->SaveFrameRate(frame, framerate);
 }
+
 
 RecorderBase *RecorderBase::CreateRecorder(
     TVRec                  *tvrec,
