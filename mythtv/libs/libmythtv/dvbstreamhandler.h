@@ -62,12 +62,15 @@ class DVBStreamHandler : public StreamHandler
     virtual PIDInfo *CreatePIDInfo(uint pid, uint stream_type, int pes_type)
         { return new DVBPIDInfo(pid, stream_type, pes_type); }
 
+    virtual void SetRunningDesired(bool desired); // StreamHandler
+
   private:
     QString           _dvr_dev_path;
     volatile bool     _allow_retune;
 
     DTVSignalMonitor *_sigmon;
     DVBChannel       *_dvbchannel;
+    DeviceReadBuffer *_drb;
 
     // for caching TS monitoring supported value.
     static QMutex             _rec_supports_ts_monitoring_lock;

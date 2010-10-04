@@ -91,8 +91,16 @@ DVBStreamHandler::DVBStreamHandler(const QString &dvb_device) :
     _allow_retune(false),
 
     _sigmon(NULL),
-    _dvbchannel(NULL)
+    _dvbchannel(NULL),
+    _drb(NULL)
 {
+}
+
+void DVBStreamHandler::SetRunningDesired(bool desired)
+{
+    if (_drb && _running_desired && !desired)
+        _drb->Stop();
+    StreamHandler::SetRunningDesired(desired);
 }
 
 void DVBStreamHandler::run(void)
@@ -119,10 +127,6 @@ void DVBStreamHandler::run(void)
  */
 void DVBStreamHandler::RunTS(void)
 {
-    DeviceReadBuffer *drb = NULL;
-    if (_needs_buffering)
-        drb = new DeviceReadBuffer(this);
-
     QByteArray dvr_dev_path = _dvr_dev_path.toAscii();
     int dvr_fd = open(dvr_dev_path.constData(), O_RDONLY | O_NONBLOCK);
     if (dvr_fd < 0)
@@ -146,11 +150,11 @@ void DVBStreamHandler::RunTS(void)
     }
     bzero(buffer, buffer_size);
 
-    if (drb)
+    DeviceReadBuffer *drb = NULL;
+    if (_needs_buffering)
     {
-        bool ok = drb->Setup(_device, dvr_fd);
-
-        if (!ok)
+        drb = new DeviceReadBuffer(this);
+        if (!drb->Setup(_device, dvr_fd));
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
             delete drb;
@@ -163,7 +167,11 @@ void DVBStreamHandler::RunTS(void)
         drb->Start();
     }
 
-    SetRunning(true, drb, false);
+    SetRunning(true, _needs_buffering, false);
+    {
+        QMutexLocker locker(&_start_stop_lock);
+        _drb = drb;
+    }
 
     VERBOSE(VB_RECORD, LOC + "RunTS(): begin");
 
@@ -247,6 +255,11 @@ void DVBStreamHandler::RunTS(void)
 
     RemoveAllPIDFilters();
 
+    {
+        QMutexLocker locker(&_start_stop_lock);
+        _drb = NULL;
+    }
+
     if (drb)
     {
         if (drb->IsRunning())
@@ -259,7 +272,7 @@ void DVBStreamHandler::RunTS(void)
 
     VERBOSE(VB_RECORD, LOC + "RunTS(): " + "end");
 
-    SetRunning(false, (bool) drb, false);
+    SetRunning(false, _needs_buffering, false);
 }
 
 /** \fn DVBStreamHandler::RunSR(void)

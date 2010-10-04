@@ -133,7 +133,7 @@ void StreamHandler::Start(void)
         if ((_using_section_reader && !_allow_section_reader) ||
             (_needs_buffering      && !_using_buffering))
         {
-            _running_desired = false;
+            SetRunningDesired(false);
             while (!_running_desired && _running)
                 _running_state_changed.wait(&_start_stop_lock, 100);
         }
@@ -145,7 +145,7 @@ void StreamHandler::Start(void)
     _eit_pids.clear();
 
     _error = false;
-    _running_desired = true;
+    SetRunningDesired(true);
     QThread::start();
 
     while (!_running && !_error && _running_desired)
@@ -160,7 +160,7 @@ void StreamHandler::Start(void)
     if (_error)
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Start failed");
-        _running_desired = false;
+        SetRunningDesired(false);
     }
 }
 
@@ -170,7 +170,7 @@ void StreamHandler::Stop(void)
 
     do
     {
-        _running_desired = false;
+        SetRunningDesired(false);
         while (!_running_desired && _running)
             _running_state_changed.wait(&_start_stop_lock, 100);
         if (_running_desired)

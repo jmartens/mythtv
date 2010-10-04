@@ -74,6 +74,8 @@ class ASIStreamHandler : public StreamHandler
     virtual void AddNamedOutputFile(const QString &file); // StreamHandler
     virtual void RemoveNamedOutputFile(const QString &file); // StreamHandler
 
+    virtual void SetRunningDesired(bool desired); // StreamHandler
+
   private:
     int                                     _device_num;
     int                                     _buf_size;
@@ -81,6 +83,7 @@ class ASIStreamHandler : public StreamHandler
     uint                                    _packet_size;
     ASIClockSource                          _clock_source;
     ASIRXMode                               _rx_mode;
+    DeviceReadBuffer                       *_drb;
 
     ThreadedFileWriter                     *_mpts_fd;
     QMap<QString,int>                       _mpts_files;

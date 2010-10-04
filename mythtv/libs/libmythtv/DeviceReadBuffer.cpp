@@ -311,6 +311,7 @@ void DeviceReadBuffer::fill_ringbuffer(void)
 
     lock.lock();
     running = false;
+    eof     = true;
     lock.unlock();
 }
 

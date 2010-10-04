@@ -106,7 +106,7 @@ ASIStreamHandler::ASIStreamHandler(const QString &device) :
     StreamHandler(device), 
     _device_num(-1), _buf_size(-1), _fd(-1),
     _packet_size(TSPacket::kSize), _clock_source(kASIInternalClock),
-    _rx_mode(kASIRXSyncOnActualSize), _mpts_fd(NULL)
+    _rx_mode(kASIRXSyncOnActualSize), _drb(NULL), _mpts_fd(NULL)
 {
 }
 
@@ -122,6 +122,13 @@ void ASIStreamHandler::SetRXMode(ASIRXMode m)
     _rx_mode = m;
     // TODO we should make it possible to set this immediately
     // not wait for the next open
+}
+
+void ASIStreamHandler::SetRunningDesired(bool desired)
+{
+    if (_drb && _running_desired && !desired)
+        _drb->Stop();
+    StreamHandler::SetRunningDesired(desired);
 }
 
 void ASIStreamHandler::run(void)
@@ -143,6 +150,7 @@ void ASIStreamHandler::run(void)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
         delete drb;
+        drb = NULL;
         Close();
         _error = true;
         return;
@@ -154,6 +162,7 @@ void ASIStreamHandler::run(void)
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate buffer");
         delete drb;
+        drb = NULL;
         Close();
         _error = true;
         return;
@@ -163,6 +172,11 @@ void ASIStreamHandler::run(void)
     SetRunning(true, true, false);
 
     drb->Start();
+
+    {
+        QMutexLocker locker(&_start_stop_lock);
+        _drb = drb;
+    }
 
     int remainder = 0;
     while (_running_desired && !_error)
@@ -228,6 +242,11 @@ void ASIStreamHandler::run(void)
     VERBOSE(VB_RECORD, LOC + "run(): " + "shutdown");
 
     RemoveAllPIDFilters();
+
+    {
+        QMutexLocker locker(&_start_stop_lock);
+        _drb = NULL;
+    }
 
     if (drb->IsRunning())
         drb->Stop();
