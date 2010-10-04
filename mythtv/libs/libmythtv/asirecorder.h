@@ -28,17 +28,19 @@ class TVRec;
 SUBSYSTEM=="asi", OWNER="mythtv", GROUP="video", MODE="0660", RUN+="/etc/udev/asi.sh" OPTIONS+="last_rule"
 \endverbatim
 Also, create a /etc/udev/asi.sh file with the following contents:
-\verbatim
+\htmlonly
+<pre>
 #!/bin/sh
 
 for VAL in buffers bufsize dev granularity mode null_packets timestamps transport uevent clock_source; do
-  sudo chown mythtv /sys/devices/*/*/*/dvbm/*/asi*/$VAL ;
-  sudo chgrp video /sys/devices/*/*/*/dvbm/*/asi*/$VAL ;
-  sudo chmod g+rw /sys/devices/*/*/*/dvbm/*/asi*/$VAL ;
-  sudo chmod g-x /sys/devices/*/*/*/dvbm/*/asi*/$VAL ;
-  sudo ls -l /sys/devices/*/*/*/dvbm/*/asi*/$VAL ;
+  chown mythtv /sys/devices/&#42;/&#42;/&#42;/dvbm/&#42;/asi&#42;/$VAL ;
+  chgrp video /sys/devices/&#42;/&#42;/&#42;/dvbm/&#42;/asi&#42;/$VAL ;
+  chmod g+rw /sys/devices/&#42;/&#42;/&#42;/dvbm/&#42;/asi&#42;/$VAL ;
+  chmod g-x /sys/devices/&#42;/&#42;/&#42;/dvbm/&#42;/asi&#42;/$VAL ;
+  ls -l /sys/devices/&#42;/&#42;/&#42;/dvbm/&#42;/asi&#42;/$VAL ;
 done
-\endverbatim
+</pre>
+\endhtmlonly
  *
  * Be sure to mark asi.sh as executable with "chmod a+x /etc/udev/asi.sh"
  * udev will silently ignore it if it is not marked.
