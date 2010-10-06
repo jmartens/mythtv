@@ -18,7 +18,7 @@ HEADERS += mythtimer.h mythsignalingtimer.h mythdirs.h exitcodes.h
 HEADERS += lcddevice.h mythstorage.h remotefile.h decodeencode.h
 HEADERS += mythcorecontext.h mythsystem.h mythlocale.h storagegroup.h
 HEADERS += mythcoreutil.h mythdownloadmanager.h mythtranslation.h
-HEADERS += unzip.h unzip_p.h zipentry_p.h iso639.h iso3166.h
+HEADERS += unzip.h unzip_p.h zipentry_p.h iso639.h iso3166.h mythdbutil.h
 
 SOURCES += mythsocket.cpp mythsocketthread.cpp msocketdevice.cpp
 SOURCES += mythdbcon.cpp mythdb.cpp oldsettings.cpp mythverbose.cpp

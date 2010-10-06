@@ -3,9 +3,10 @@ using namespace std;
 
 #include "DeviceReadBuffer.h"
 #include "mythcorecontext.h"
+#include "mythverbose.h"
+#include "mythdbutil.h"
 #include "tspacket.h"
 #include "compat.h"
-#include "mythverbose.h"
 
 #ifndef USING_MINGW
 #include <sys/poll.h>
@@ -38,6 +39,21 @@ DeviceReadBuffer::DeviceReadBuffer(DeviceReaderCB *cb, bool use_poll)
       max_used(0),                  avg_used(0),
       avg_cnt(0)
 {
+    for (int i = 0; i < 2; i++)
+    {
+        wake_pipe[i] = -1;
+        wake_pipe_flags[i] = 0;
+    }
+
+#ifdef USING_MINGW
+#warning mingw DeviceReadBuffer::Poll
+    if (using_poll)
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "mingw DeviceReadBuffer::Poll is not implemented");
+        using_poll = false;
+    }
+#endif
 }
 
 DeviceReadBuffer::~DeviceReadBuffer()
@@ -153,6 +169,8 @@ void DeviceReadBuffer::Stop(void)
         run = false;
     }
 
+    WakePoll();
+
     pthread_join(thread, NULL);
 }
 
@@ -160,6 +178,7 @@ void DeviceReadBuffer::SetRequestPause(bool req)
 {
     QMutexLocker locker(&lock);
     request_pause = req;
+    WakePoll();
 }
 
 void DeviceReadBuffer::SetPaused(bool val)
@@ -170,6 +189,39 @@ void DeviceReadBuffer::SetPaused(bool val)
         pauseWait.wakeAll();
     else
         unpauseWait.wakeAll();
+}
+
+// The WakePoll code is copied from MythSocketThread::WakeReadyReadThread()
+void DeviceReadBuffer::WakePoll(void) const
+{
+    if (wake_pipe[1] < 0)
+        return;
+
+    char buf[1] = { '0' };
+    ssize_t wret = 0;
+    while (wret <= 0)
+    {
+        wret = ::write(wake_pipe[1], &buf, 1);
+        if ((wret < 0) && (EAGAIN != errno) && (EINTR != errno))
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR + "WakePoll failed.");
+            ClosePipes();
+            break;
+        }
+    }
+}
+
+void DeviceReadBuffer::ClosePipes(void) const
+{
+    for (uint i = 0; i < 2; i++)
+    {
+        if (wake_pipe[i] >= 0)
+        {
+            ::close(wake_pipe[i]);
+            wake_pipe[i] = -1;
+            wake_pipe_flags[i] = 0;
+        }
+    }
 }
 
 bool DeviceReadBuffer::IsPaused(void) const
@@ -263,6 +315,9 @@ void DeviceReadBuffer::fill_ringbuffer(void)
     running = true;
     lock.unlock();
 
+    if (using_poll)
+        setup_pipe(wake_pipe, wake_pipe_flags);
+
     while (run)
     {
         if (!HandlePausing())
@@ -309,6 +364,8 @@ void DeviceReadBuffer::fill_ringbuffer(void)
         }
     }
 
+    ClosePipes();
+
     lock.lock();
     running = false;
     eof     = true;
@@ -338,25 +395,38 @@ bool DeviceReadBuffer::HandlePausing(void)
 bool DeviceReadBuffer::Poll(void) const
 {
 #ifdef USING_MINGW
-#warning mingw DeviceReadBuffer::Poll
-    VERBOSE(VB_IMPORTANT, LOC_ERR +
-            "mingw DeviceReadBuffer::Poll is not implemented");
     return false;
 #else
     bool retval = true;
     MythTimer timer;
     timer.start();
 
+    int poll_cnt = 1;
+    struct pollfd polls[2];
+    memset(polls, 0, sizeof(polls));
+
+    polls[0].fd      = _stream_fd;
+    polls[0].events  = POLLIN | POLLPRI;
+    polls[0].revents = 0;
+
+    if (wake_pipe[0] >= 0)
+    {
+        poll_cnt = 2;
+        polls[1].fd      = wake_pipe[0];
+        polls[1].events  = POLLIN;
+        polls[1].revents = 0;
+    }
+
     while (true)
     {
-        struct pollfd polls;
-        polls.fd      = _stream_fd;
-        polls.events  = POLLIN | POLLPRI;
-        polls.revents = 0;
+        polls[0].revents = 0;
+        polls[1].revents = 0;
+        poll_cnt = (wake_pipe[0] >= 0) ? poll_cnt : 1;
 
-        int ret = poll(&polls, 1 /*number of polls*/, 10 /*msec*/);
+        int timeout = (1 == poll_cnt) ? 10 : -1;
+        int ret = poll(polls, poll_cnt, timeout);
 
-        if (polls.revents & (POLLHUP | POLLNVAL))
+        if (polls[0].revents & (POLLHUP | POLLNVAL))
         {
             VERBOSE(VB_IMPORTANT, LOC + "poll error");
             error = true;
@@ -369,12 +439,12 @@ bool DeviceReadBuffer::Poll(void) const
             break; // are we supposed to pause, stop, etc.
         }
 
-        if (polls.revents & POLLPRI)
+        if (polls[0].revents & POLLPRI)
         {
-            readerCB->PriorityEvent(polls.fd);
+            readerCB->PriorityEvent(polls[0].fd);
         }
 
-        if (polls.revents & POLLIN)
+        if (polls[0].revents & POLLIN)
         {
             if (ret > 0)
                 break; // we have data to read :)
@@ -398,6 +468,14 @@ bool DeviceReadBuffer::Poll(void) const
                     return true;
                 }
             }
+        }
+
+        // Clear out any pending pipe reads
+        if ((poll_cnt > 1) && (polls[1].revents & POLLIN))
+        {
+            char dummy[128];
+            int cnt = (wake_pipe_flags[0] & O_NONBLOCK) ? 128 : 1;
+            (void) ::read(wake_pipe[0], dummy, cnt);
         }
     }
     return retval;

@@ -67,11 +67,13 @@ class DeviceReadBuffer
 
     bool HandlePausing(void);
     bool Poll(void) const;
+    void WakePoll(void) const;
     uint WaitForUnused(uint bytes_needed) const;
     uint WaitForUsed  (uint bytes_needed) const;
 
     bool IsPauseRequested(void) const;
     bool IsOpen(void) const { return _stream_fd >= 0; }
+    void ClosePipes(void) const;
     uint GetUnused(void) const;
     uint GetUsed(void) const;
     uint GetContiguousUnused(void) const;
@@ -81,6 +83,8 @@ class DeviceReadBuffer
 
     QString          videodevice;
     int              _stream_fd;
+    mutable int      wake_pipe[2];
+    mutable long     wake_pipe_flags[2];
 
     DeviceReaderCB  *readerCB;
     pthread_t        thread;
