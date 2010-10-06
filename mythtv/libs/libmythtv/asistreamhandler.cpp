@@ -231,7 +231,7 @@ void ASIStreamHandler::run(void)
         for (; sit != _stream_data_list.end(); ++sit)
             remainder = sit.key()->ProcessData(buffer, len);
 
-        if (_mpts_fd)
+        if (_mpts_fd >= 0)
             _mpts_fd->Write(buffer, len - remainder);
 
         _listener_lock.unlock();
@@ -326,7 +326,7 @@ bool ASIStreamHandler::Open(void)
 
     // pid counter?
 
-    return false;
+    return _fd >= 0;
 }
 
 void ASIStreamHandler::Close(void)
