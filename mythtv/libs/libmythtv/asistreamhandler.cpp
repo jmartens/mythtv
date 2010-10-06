@@ -188,6 +188,9 @@ void ASIStreamHandler::run(void)
         len = drb->Read(
             &(buffer[remainder]), buffer_size - remainder);
 
+        if (!_running_desired)
+            break;
+
         // Check for DRB errors
         if (drb->IsErrored())
         {
