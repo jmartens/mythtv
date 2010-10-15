@@ -44,6 +44,47 @@
 #define LOC_WARN QString("CardUtil, Warning: ")
 #define LOC_ERR  QString("CardUtil, Error: ")
 
+QString CardUtil::GetScanableCardTypes(void)
+{
+    QString cardTypes = "";
+
+#ifdef USING_DVB
+    cardTypes += "'DVB'";
+#endif // USING_DVB
+
+#ifdef USING_V4L
+    if (!cardTypes.isEmpty())
+        cardTypes += ",";
+    cardTypes += "'V4L'";
+# ifdef USING_IVTV
+    cardTypes += ",'MPEG'";
+# endif // USING_IVTV
+#endif // USING_V4L
+
+#ifdef USING_IPTV
+    if (!cardTypes.isEmpty())
+        cardTypes += ",";
+    cardTypes += "'FREEBOX'";
+#endif // USING_IPTV
+
+#ifdef USING_HDHOMERUN
+    if (!cardTypes.isEmpty())
+        cardTypes += ",";
+    cardTypes += "'HDHOMERUN'";
+#endif // USING_HDHOMERUN
+
+#ifdef USING_ASI
+    if (!cardTypes.isEmpty())
+        cardTypes += ",";
+    cardTypes += "'ASI'";
+#endif
+
+    if (cardTypes.isEmpty())
+        cardTypes = "'DUMMY'";
+
+    return QString("(%1)").arg(cardTypes);
+}
+
 bool CardUtil::IsTunerShared(uint cardidA, uint cardidB)
 {
     VERBOSE(VB_IMPORTANT, QString("IsTunerShared(%1,%2)")

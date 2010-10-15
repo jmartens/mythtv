@@ -39,8 +39,8 @@ class ASIChannel : public DTVChannel
         { return m_tuner_types; }
 
     // Channel scanning stuff
-    bool TuneMultiplex(uint, QString) { return false; }
-    bool Tune(const DTVMultiplex&, QString) { return false; }
+    bool TuneMultiplex(uint, QString) { return true; }
+    bool Tune(const DTVMultiplex&, QString) { return true; }
 
   private:
     vector<DTVTunerType>     m_tuner_types;

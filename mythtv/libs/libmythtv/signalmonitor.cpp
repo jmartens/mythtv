@@ -43,6 +43,11 @@ extern "C" {
 #   include "firewirechannel.h"
 #endif
 
+#ifdef USING_ASI
+#   include "asisignalmonitor.h"
+#   include "asichannel.h"
+#endif
+
 #include "channelchangemonitor.h"
 
 #undef DBG_SM
@@ -128,6 +133,15 @@ SignalMonitor *SignalMonitor::Init(QString cardtype, int db_cardnum,
         FirewireChannel *fc = dynamic_cast<FirewireChannel*>(channel);
         if (fc)
             signalMonitor = new FirewireSignalMonitor(db_cardnum, fc);
+    }
+#endif
+
+#ifdef USING_ASI
+    if (cardtype.toUpper() == "ASI")
+    {
+        ASIChannel *fc = dynamic_cast<ASIChannel*>(channel);
+        if (fc)
+            signalMonitor = new ASISignalMonitor(db_cardnum, fc);
     }
 #endif
 

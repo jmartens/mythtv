@@ -131,8 +131,9 @@ class MPUBLIC CardUtil
         return
             (rawtype == "FIREWIRE")  || (rawtype == "HDPVR") ||
             (rawtype == "IMPORT")    || (rawtype == "DEMO")  ||
-            (rawtype == "ASI");
+            (rawtype == "GO7007")    || (rawtype == "MJPEG");
     }
+    static QString      GetScanableCardTypes(void);
 
     static bool         IsEITCapable(const QString &rawtype)
     {

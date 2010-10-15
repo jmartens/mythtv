@@ -1953,6 +1953,25 @@ bool ChannelScanSM::ScanTransport(uint mplexid, bool follow_nit)
     return false;
 }
 
+bool ChannelScanSM::ScanCurrentTransport(const QString &sistandard)
+{
+    scanTransports.clear();
+    nextIt = scanTransports.end();
+
+    signalTimeout = 30000;
+    QString name;
+    TransportScanItem item(sourceID, sistandard, name, 0, signalTimeout);
+    scanTransports.push_back(item);
+
+    timer.start();
+    waitingForTables = false;
+    extend_scan_list = false;
+    transportsScanned = 0;
+    nextIt   = scanTransports.begin();
+    scanning = true;
+    return true;
+}
+
 /** \fn ChannelScanSM::CheckImportedList(const DTVChannelInfoList&,uint,QString&,QString&,QString&)
  *  \brief If we as scanning a dvb-utils import verify channel is in list..
  */
