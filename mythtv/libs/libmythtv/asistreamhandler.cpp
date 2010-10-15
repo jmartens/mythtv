@@ -106,7 +106,7 @@ ASIStreamHandler::ASIStreamHandler(const QString &device) :
     StreamHandler(device), 
     _device_num(-1), _buf_size(-1), _fd(-1),
     _packet_size(TSPacket::kSize), _clock_source(kASIInternalClock),
-    _rx_mode(kASIRXSyncOnActualSize), _drb(NULL), _mpts_fd(NULL)
+    _rx_mode(kASIRXSyncOnActualSize), _drb(NULL), _mpts(NULL)
 {
 }
 
@@ -234,8 +234,8 @@ void ASIStreamHandler::run(void)
         for (; sit != _stream_data_list.end(); ++sit)
             remainder = sit.key()->ProcessData(buffer, len);
 
-        if (_mpts_fd >= 0)
-            _mpts_fd->Write(buffer, len - remainder);
+        if (_mpts != NULL)
+            _mpts->Write(buffer, len - remainder);
 
         _listener_lock.unlock();
 
@@ -390,7 +390,7 @@ static bool named_output_file_common(
 void ASIStreamHandler::AddNamedOutputFile(const QString &file)
 {
     _mpts_files[file] = -1;
-    named_output_file_common(_device, _mpts_fd, _mpts_files);
+    named_output_file_common(_device, _mpts, _mpts_files);
 }
 
 void ASIStreamHandler::RemoveNamedOutputFile(const QString &file)
@@ -399,7 +399,7 @@ void ASIStreamHandler::RemoveNamedOutputFile(const QString &file)
     if (it != _mpts_files.end())
     {
         _mpts_files.erase(it);
-        named_output_file_common(_device, _mpts_fd, _mpts_files);
+        named_output_file_common(_device, _mpts, _mpts_files);
     }
 }
 

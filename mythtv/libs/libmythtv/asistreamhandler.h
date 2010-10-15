@@ -85,7 +85,7 @@ class ASIStreamHandler : public StreamHandler
     ASIRXMode                               _rx_mode;
     DeviceReadBuffer                       *_drb;
 
-    ThreadedFileWriter                     *_mpts_fd;
+    ThreadedFileWriter                     *_mpts;
     QMap<QString,int>                       _mpts_files;
 
     // for implementing Get & Return
