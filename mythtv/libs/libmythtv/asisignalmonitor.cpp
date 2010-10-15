@@ -40,7 +40,7 @@
  *  \param _flags   Flags to start with
  */
 ASISignalMonitor::ASISignalMonitor(
-    int db_cardnum, ASIChannel* _channel, uint64_t _flags) :
+    int db_cardnum, ASIChannel *_channel, uint64_t _flags) :
     DTVSignalMonitor(db_cardnum, _channel, _flags),
     streamHandlerStarted(false), streamHandler(NULL)
 {

@@ -15,8 +15,8 @@ typedef QMap<uint,int> FilterMap;
 class ASISignalMonitor: public DTVSignalMonitor
 {
   public:
-    ASISignalMonitor(int db_cardnum, ASIChannel* _channel,
-                      uint64_t _flags = 0);
+    ASISignalMonitor(int db_cardnum, ASIChannel *_channel,
+                     uint64_t _flags = 0);
     virtual ~ASISignalMonitor();
 
     void Stop(void);
@@ -29,7 +29,7 @@ class ASISignalMonitor: public DTVSignalMonitor
     ASIChannel *GetASIChannel(void);
 
   protected:
-    bool               streamHandlerStarted;
+    bool              streamHandlerStarted;
     ASIStreamHandler *streamHandler;
 };
 
