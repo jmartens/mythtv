@@ -204,7 +204,7 @@ bool StreamHandler::AddPIDFilter(PIDInfo *info)
 {
 #ifdef DEBUG_PID_FILTERS
     VERBOSE(VB_RECORD, LOC + QString("AddPIDFilter(0x%1)")
-            .arg(pid, 0, 16));
+            .arg(info->_pid, 0, 16));
 #endif // DEBUG_PID_FILTERS
 
     QMutexLocker writing_locker(&_pid_lock);
