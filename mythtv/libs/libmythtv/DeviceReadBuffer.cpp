@@ -194,12 +194,10 @@ void DeviceReadBuffer::SetPaused(bool val)
 // The WakePoll code is copied from MythSocketThread::WakeReadyReadThread()
 void DeviceReadBuffer::WakePoll(void) const
 {
-    if (wake_pipe[1] < 0)
-        return;
-
-    char buf[1] = { '0' };
+    char buf[1];
+    buf[0] = '0';
     ssize_t wret = 0;
-    while (wret <= 0)
+    while (running && (wret <= 0) && (wake_pipe[1] >= 0))
     {
         wret = ::write(wake_pipe[1], &buf, 1);
         if ((wret < 0) && (EAGAIN != errno) && (EINTR != errno))
