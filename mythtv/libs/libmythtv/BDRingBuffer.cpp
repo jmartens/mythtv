@@ -8,13 +8,17 @@
 #include "iso639.h"
 #include "BDRingBuffer.h"
 #include "mythverbose.h"
+#include "mythcorecontext.h"
+#include "mythlocale.h"
 #include "mythdirs.h"
 #include "bluray.h"
 
 #define LOC     QString("BDRingBuffer: ")
 
 BDRingBufferPriv::BDRingBufferPriv()
-    : bdnav(NULL), m_numTitles(0)
+    : bdnav(NULL), m_overlay(NULL),
+      m_is_hdmv_navigation(false),
+      m_currentEvent(NULL), m_numTitles(0)
 {
 }
 
@@ -61,6 +65,23 @@ bool BDRingBufferPriv::OpenFile(const QString &filename)
 
     bdnav = bd_open(filename.toLatin1().data(), keyfilepath);
 
+    // The following settings affect HDMV navigation (default audio track selection,
+    // parental controls, menu language, etc.  They are not yet used.
+
+    // Set parental level "age" to 99 for now.  TODO: Add support for FE level
+    bd_set_player_setting(bdnav, BLURAY_PLAYER_SETTING_PARENTAL, 99);
+    // Set preferred language to FE guide language
+    const char *langpref = gCoreContext->GetSetting("ISO639Language0", "eng").toLatin1().data();
+    QString QScountry  = gCoreContext->GetLocale()->GetCountryCode().toLower();
+    const char *country = QScountry.toLatin1().data();
+    bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_AUDIO_LANG, langpref);
+    // Set preferred presentation graphics language to the FE guide language
+    bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_PG_LANG, langpref);
+    // Set preferred menu language to the FE guide language
+    bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_MENU_LANG, langpref);
+    // Set player country code via MythLocale. (not a region setting)
+    bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_COUNTRY_CODE, country);
+
     VERBOSE(VB_IMPORTANT, LOC + QString("Using %1 as keyfile...")
             .arg(QString(keyfilepath)));
     if (!bdnav)
@@ -94,8 +115,21 @@ bool BDRingBufferPriv::OpenFile(const QString &filename)
         }
     }
 
-    // Now that we've settled on which index the main title is, get info.
+    bd_free_title_info(titleInfo);
+
+    // First, attempt to initialize the disc in HDMV navigation mode.
+    // If this fails, fall back to the traditional built-in title switching
+    // mode.
+    //if (bd_play(bdnav) < 0)
     SwitchTitle(m_mainTitle);
+    //else
+    //{
+    //    m_is_hdmv_navigation = true;
+    //
+    //    Register the Menu Overlay Callback
+    //    bd_register_overlay_proc(bdnav, handleevent, m_overlay);
+    //    TODO: Initialize the title info, start listening for BD_EVENTs
+    //}
 
     return true;
 }
@@ -221,7 +255,11 @@ uint64_t BDRingBufferPriv::GetTotalReadPosition(void)
 
 int BDRingBufferPriv::safe_read(void *data, unsigned sz)
 {
-    bd_read(bdnav, (unsigned char *)data, sz);
+    if (m_is_hdmv_navigation)
+        bd_read_ext(bdnav, (unsigned char *)data, sz, m_currentEvent);
+    else
+        bd_read(bdnav, (unsigned char *)data, sz);
+
     m_currentTime = bd_tell(bdnav);
 
     return sz;
@@ -300,3 +338,47 @@ int BDRingBufferPriv::GetSubtitleLanguage(uint streamID)
     }
     return iso639_str3_to_key("und");
 }
+
+void BDRingBufferPriv::PressButton(int32_t key, int64_t pts)
+{
+    if (!bdnav)
+        return;
+
+    if (pts <= 0)
+        return;
+
+    if (key < 0)
+        return;
+
+    bd_user_input(bdnav, pts, key);
+}
+
+/** \brief jump to a dvd root or chapter menu
+ */
+bool BDRingBufferPriv::GoToMenu(const QString str)
+{
+    if (!m_is_hdmv_navigation)
+        return false;
+
+    VERBOSE(VB_PLAYBACK, QString("BDRingBuf: GoToMenu %1").arg(str));
+
+    if (str.compare("popup") == 0)
+    {
+//        if (bd_popup_call(bdnav) < 0)
+//            return false;
+//        else
+//            return true;
+    }
+    else if (str.compare("root") == 0)
+    {
+        if (bd_menu_call(bdnav) < 0)
+            return false;
+        else
+            return true;
+    }
+    else
+        return false;
+
+    return false;
+}
+

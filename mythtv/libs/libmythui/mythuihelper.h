@@ -8,6 +8,7 @@
 #include <QThreadPool>
 
 #include "mythexp.h"
+#include "themeinfo.h"
 
 #define DEFAULT_UI_THEME "Terra"
 #define FALLBACK_UI_THEME "MythCenter-wide"
@@ -84,14 +85,13 @@ class MPUBLIC MythUIHelper
 
     void ThemeWidget(QWidget *widget);
 
-    int  NormalizeFontSize(const int pointSize);
-
     QString FindThemeDir(const QString &themename);
     QString FindMenuThemeDir(const QString &menuname);
     QString GetThemeDir(void);
     QString GetThemeName(void);
     QStringList GetThemeSearchPath(void);
     QString GetMenuThemeDir(void);
+    QList<ThemeInfo> GetThemes(ThemeType type);
 
     bool FindThemeFile(QString &filename);
 
@@ -131,6 +131,9 @@ class MPUBLIC MythUIHelper
 
     double GetPixelAspectRatio(void) const;
     QSize GetBaseSize(void) const;
+
+    void SetFontStretch(int stretch);
+    int GetFontStretch(void) const;
 
   protected:
     MythUIHelper();

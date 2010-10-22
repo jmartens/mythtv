@@ -2035,7 +2035,7 @@ void TV::HandleStateChange(PlayerContext *mctx, PlayerContext *ctx)
                     .arg(playbackURL).arg(ctx->tvchain->GetCardType(-1)));
 
             ctx->SetRingBuffer(new RingBuffer(playbackURL, false, true,
-                                              opennow ? 2000 : -1));
+                               opennow ? RingBuffer::kLiveTVOpenTimeout : -1));
             ctx->buffer->SetLiveMode(ctx->tvchain);
         }
 
@@ -4447,9 +4447,6 @@ bool TV::ActivePostQHandleAction(PlayerContext *ctx,
     {
         if (!islivetv || !CommitQueuedInput(ctx))
         {
-            if (isDVD && ctx->buffer && ctx->buffer->DVD())
-                ctx->buffer->DVD()->JumpToTitle(false);
-
             ctx->LockDeletePlayer(__FILE__, __LINE__);
             if (ctx->player)
             {
@@ -6496,7 +6493,7 @@ void TV::SwitchCards(PlayerContext *ctx,
             QString playbackURL = ctx->playingInfo->GetPlaybackURL(true);
             bool opennow = (ctx->tvchain->GetCardType(-1) != "DUMMY");
             ctx->SetRingBuffer(new RingBuffer(playbackURL, false, true,
-                                              opennow ? 2000 : -1));
+                               opennow ? RingBuffer::kLiveTVOpenTimeout : -1));
 
             ctx->tvchain->SetProgram(*ctx->playingInfo);
             ctx->buffer->SetLiveMode(ctx->tvchain);
@@ -11431,12 +11428,14 @@ void TV::DVDJumpForward(PlayerContext *ctx)
     if (!ctx->HasPlayer() || !ctx->buffer || !ctx->buffer->isDVD())
         return;
 
-    if (ctx->buffer->DVD()->InStillFrame())
+    bool in_still = ctx->buffer->DVD()->InStillFrame();
+    bool in_menu  = ctx->buffer->DVD()->IsInMenu();
+    if (in_still && !ctx->buffer->DVD()->NumMenuButtons())
     {
         ctx->buffer->DVD()->SkipStillFrame();
         UpdateOSDSeekMessage(ctx, tr("Skip Still Frame"), kOSDTimeout_Med);
     }
-    else if (!ctx->buffer->DVD()->EndOfTitle())
+    else if (!ctx->buffer->DVD()->EndOfTitle() && !in_still && !in_menu)
     {
         ctx->LockDeletePlayer(__FILE__, __LINE__);
         if (ctx->player)
@@ -11445,7 +11444,7 @@ void TV::DVDJumpForward(PlayerContext *ctx)
 
         UpdateOSDSeekMessage(ctx, tr("Next Chapter"), kOSDTimeout_Med);
     }
-    else if (!ctx->buffer->DVD()->NumMenuButtons())
+    else if (!in_still && !in_menu)
     {
         uint titleLength = ctx->buffer->DVD()->GetTotalTimeOfTitle();
         uint chapterLength = ctx->buffer->DVD()->GetChapterLength();

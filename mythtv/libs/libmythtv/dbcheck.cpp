@@ -20,7 +20,7 @@ using namespace std;
    mythtv/bindings/perl/MythTV.pm
 */
 /// This is the DB schema version expected by the running MythTV instance.
-const QString currentDatabaseVersion = "1264";
+const QString currentDatabaseVersion = "1265";
 
 static bool UpdateDBVersionNumber(const QString &newnumber, QString &dbver);
 static bool performActualUpdate(
@@ -5493,6 +5493,19 @@ NULL
     if (dbver == "1263")
     {
         const char *updates[] = {
+"UPDATE settings SET hostname = NULL WHERE value='ISO639Language0' AND data != 'aar' AND hostname IS NOT NULL LIMIT 1;",
+"UPDATE settings SET hostname = NULL WHERE value='ISO639Language1' AND data != 'aar' AND hostname IS NOT NULL LIMIT 1;",
+"DELETE FROM settings WHERE value='ISO639Language0' AND hostname IS NOT NULL;",
+"DELETE FROM settings WHERE value='ISO639Language1' AND hostname IS NOT NULL;",
+NULL
+};
+        if (!performActualUpdate(updates, "1264", dbver))
+            return false;
+    }
+
+    if (dbver == "1264")
+    {
+        const char *updates[] = {
 "INSERT INTO profilegroups SET name = 'ASI Recorder (DVEO)', cardtype = 'ASI', is_default = 1;",
 "INSERT INTO recordingprofiles SET name = \"Default\", profilegroup = 14;",
 "INSERT INTO recordingprofiles SET name = \"Live TV\", profilegroup = 14;",
@@ -5510,7 +5523,7 @@ NULL
 "INSERT INTO recordingprofiles SET name = \"Low Quality\", profilegroup = 16;",
 NULL
 };
-        if (!performActualUpdate(updates, "1264", dbver))
+        if (!performActualUpdate(updates, "1265", dbver))
             return false;
     }
 

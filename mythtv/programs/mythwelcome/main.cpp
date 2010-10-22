@@ -12,15 +12,17 @@
 #include "mythcontext.h"
 #include "mythverbose.h"
 #include "mythversion.h"
-#include "settings.h"
 #include "mythtranslation.h"
 #include "mythdbcon.h"
 #include "exitcodes.h"
 #include "compat.h"
-#include "mythuihelper.h"
 #include "lcddevice.h"
 #include "mythcommandlineparser.h"
 #include "tv.h"
+
+// libmythui
+#include "mythmainwindow.h"
+#include "mythuihelper.h"
 
 // mythwelcome
 #include "welcomedialog.h"

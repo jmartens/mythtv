@@ -3376,7 +3376,8 @@ void TVRec::TuningShutdowns(const TuningRequest &request)
         if (request.flags & kFlagCloseRec)
             FinishedRecording(lastTuningRequest.program);
 
-        if (HasFlags(kFlagRecorderRunning))
+        if (HasFlags(kFlagRecorderRunning) ||
+            (curRecording && curRecording->GetRecordingStatus() == rsFailed))
         {
             stateChangeLock.unlock();
             TeardownRecorder(request.flags & kFlagKillRec);
@@ -3582,13 +3583,18 @@ void TVRec::TuningFrequency(const TuningRequest &request)
  */
 MPEGStreamData *TVRec::TuningSignalCheck(void)
 {
+    pendingRecLock.lock();
+    if (m_recStatus == rsTuning && signalMonitor->IsTuned())
+    {
+        // Channel has been changed.
+        // Note: SM could still be running waiting for a valid signal
+        m_recStatus = rsRecording;
+    }
+    pendingRecLock.unlock();
+
     if (signalMonitor->IsAllGood())
     {
         VERBOSE(VB_RECORD, LOC + "Got good signal");
-
-        pendingRecLock.lock();
-        m_recStatus = rsRecording;
-        pendingRecLock.unlock();
     }
     else if (signalMonitor->IsErrored())
     {

@@ -14,10 +14,6 @@
 MythUIClock::MythUIClock(MythUIType *parent, const QString &name)
            : MythUIText(parent, name)
 {
-    m_Time = QDateTime::currentDateTime();
-    m_nextUpdate = m_Time.addSecs(1);
-    m_Message = m_Time.toString(m_Format);
-
     m_DateFormat = GetMythDB()->GetSetting("DateFormat", "ddd d MMMM");
     m_ShortDateFormat = GetMythDB()->GetSetting("ShortDateFormat", "ddd d");
     m_TimeFormat = GetMythDB()->GetSetting("TimeFormat", "hh:mm");
@@ -33,25 +29,48 @@ MythUIClock::~MythUIClock()
     m_Font = NULL;
 }
 
-/**
- *  \copydoc MythUIType::Pulse()
+/** \brief Looks up the time and sets the clock if the current time is
+ *         greater than or equal to m_nextUpdate.
  */
 void MythUIClock::Pulse(void)
 {
     m_Time = QDateTime::currentDateTime();
-
-    if (m_Time > m_nextUpdate)
-    {
-        QString newMsg;
-
-        newMsg = m_Time.toString(m_Format);
-
-        SetText(newMsg);
-
-        m_nextUpdate = m_Time.addSecs(1);
-    }
+    if (m_nextUpdate.isNull() || (m_Time >= m_nextUpdate))
+        MythUIText::SetText(GetTimeText());
 
     MythUIText::Pulse();
+}
+
+/** \brief This creates a string based on m_Time, and sets m_nextUpdate
+ *         to the second following m_Time.
+ *
+ *  It's important to note that this function do not look up the
+ *  wall clock time, but depends on m_Time being set ahead of time.
+ *
+ */
+QString MythUIClock::GetTimeText(void)
+{
+    QString newMsg = m_Time.toString(m_Format);
+
+    m_nextUpdate = m_Time.addSecs(1);
+    m_nextUpdate = QDateTime(
+        m_Time.date(), m_Time.time().addMSecs(m_Time.time().msec()));
+
+    return newMsg;
+}
+
+/** \brief This sets the text, unless the string is blank, in that
+ *         case the time is looked up and set as the text instead.
+ */
+void MythUIClock::SetText(const QString &text)
+{
+    QString txt = text;
+    if (txt.isEmpty())
+    {
+        m_Time = QDateTime::currentDateTime();
+        txt = GetTimeText();
+    }
+    MythUIText::SetText(txt);
 }
 
 /**
@@ -68,9 +87,11 @@ bool MythUIClock::ParseElement(
         format.replace("%DATE%", m_DateFormat, Qt::CaseInsensitive);
         format.replace("%SHORTDATE%", m_ShortDateFormat, Qt::CaseInsensitive);
         m_Format = format;
+        m_Message = QDateTime::currentDateTime().toString(m_Format);
     }
     else
     {
+        m_Message = QDateTime::currentDateTime().toString(m_Format);
         return MythUIText::ParseElement(filename, element, showWarnings);
     }
 

@@ -1475,6 +1475,7 @@ rdft_select="fft"
 # decoders / encoders / hardware accelerators
 aac_decoder_select="mdct rdft"
 aac_encoder_select="mdct"
+aac_latm_decoder_select="aac_decoder"
 ac3_decoder_select="mdct ac3_parser"
 alac_encoder_select="lpc"
 amrnb_decoder_select="lsp"
@@ -3858,7 +3859,7 @@ enabled debug && add_cxxflags -g"$debuglevel"
 check_cflags -Wall
 check_cflags -Wno-parentheses
 check_cflags -Wno-switch
-check_cflags -Wdisabled-optimization
+! disabled optimizations && check_cflags -Wdisabled-optimization
 check_cflags -Wpointer-arith
 check_cflags -Wredundant-decls
 check_cflags -Wno-pointer-sign

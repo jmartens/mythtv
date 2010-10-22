@@ -403,7 +403,7 @@ bool DTVRecorder::FindMPEG2Keyframes(const TSPacket* tspacket)
     if (frameRate && frameRate != m_frameRate)
     {
         m_frameRate = frameRate;
-        VERBOSE(VB_GENERAL, QString("FindMPEG2Keyframes: frame rate = %1")
+        VERBOSE(VB_RECORD, QString("FindMPEG2Keyframes: frame rate = %1")
                 .arg(frameRate));
         FrameRateChange(frameRate, _frames_written_count);
     }
@@ -515,8 +515,15 @@ void DTVRecorder::HandleKeyframe(uint64_t extra)
         long long startpos = ringBuffer->GetWritePosition();
         // FIXME: handle keyframes with start code spanning over two ts packets
         startpos += _payload_buffer.size() + extra;
-        positionMapDelta[frameNum] = startpos;
-        positionMap[frameNum]      = startpos;
+
+        // Don't put negative offsets into the database, they get munged into
+        // MAX_INT64 - offset, which is an exceedingly large number, and
+        // certainly not valid.
+        if (startpos >= 0)
+        {
+            positionMapDelta[frameNum] = startpos;
+            positionMap[frameNum]      = startpos;
+        }
     }
     positionMapLock.unlock();
 
@@ -673,7 +680,7 @@ bool DTVRecorder::FindH264Keyframes(const TSPacket *tspacket)
     if (frameRate != 0 && frameRate != m_frameRate)
     {
 
-        VERBOSE( VB_UPNP, QString("FindH264Keyframes: timescale: %1, tick: %2, framerate: %3") 
+        VERBOSE( VB_RECORD, QString("FindH264Keyframes: timescale: %1, tick: %2, framerate: %3") 
                       .arg( m_h264_parser.GetTimeScale() ) 
                       .arg( m_h264_parser.GetUnitsInTick() )
                       .arg( frameRate ) );
@@ -745,12 +752,6 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
         const int stream_id = _start_code & 0x000000ff;
         if (_video_bytes_remaining)
         {
-            if ((stream_id >= PESStreamID::SliceStartCodeBegin) &&
-                (stream_id <= PESStreamID::SliceStartCodeEnd))
-            { // pes_packet_length is meaningless
-                _other_bytes_remaining =
-                    std::max(_other_bytes_remaining, _video_bytes_remaining);
-            }
             if (PESStreamID::PictureStartCode == stream_id)
             { // pes_packet_length is meaningless
                 pes_packet_length = -1;
@@ -823,7 +824,7 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
         if (hasKeyFrame)
         {
             _last_keyframe_seen = _frames_seen_count;
-            HandleKeyframe(bufstart - bufptr);
+            HandleKeyframe(bufptr - bufstart);
         }
 
         if (hasFrame)
@@ -850,7 +851,7 @@ void DTVRecorder::FindPSKeyFrames(const uint8_t *buffer, uint len)
         if (frameRate && frameRate != m_frameRate)
         {
             m_frameRate = frameRate;
-            VERBOSE(VB_GENERAL, QString("FindPSKeyFrames: frame rate = %1")
+            VERBOSE(VB_RECORD, QString("FindPSKeyFrames: frame rate = %1")
                     .arg(frameRate));
             FrameRateChange(frameRate, _frames_written_count);
         }

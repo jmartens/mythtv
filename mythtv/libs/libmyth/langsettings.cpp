@@ -66,9 +66,34 @@ bool LanguageSelection::Create(void)
 
 void LanguageSelection::Load(void)
 {
-    QString langCode = gCoreContext->GetLocale()->GetLanguageCode();
-    QString localeCode = gCoreContext->GetLocale()->GetLocaleCode();
-    QString countryCode = gCoreContext->GetLocale()->GetCountryCode();
+    MythLocale *locale = new MythLocale();
+
+    QString langCode;
+
+    if (gCoreContext->GetLocale())
+    {
+        // If the global MythLocale instance exists, then we should use it
+        // since it's informed by previously chosen values from the
+        // database.
+        *locale = *gCoreContext->GetLocale();
+    }
+    else
+    {
+        // If no global MythLocale instance exists then we're probably
+        // bootstrapping before the database is available, in that case
+        // we want to load language from the locale XML defaults if they
+        // exist.
+        // e.g. the locale defaults might define en_GB for Australia which has
+        // no translation of it's own. We can't automatically derive en_GB
+        // from en_AU which MythLocale will arrive at and there is no 'en'
+        // translation.
+        langCode = locale->GetLocaleSetting("Language");
+    }
+
+    if (langCode.isEmpty())
+        langCode = locale->GetLanguageCode();
+    QString localeCode = locale->GetLocaleCode();
+    QString countryCode = locale->GetCountryCode();
 
     VERBOSE(VB_GENERAL, QString("System Locale (%1), Country (%2), Language "
                                 "(%3)").arg(localeCode).arg(countryCode)
@@ -78,19 +103,28 @@ void LanguageSelection::Load(void)
     QStringList langs = langMap.values();
     langs.sort();
     MythUIButtonListItem *item;
+    bool foundLanguage = false;
     for (QStringList::Iterator it = langs.begin(); it != langs.end(); ++it)
     {
         QString nativeLang = *it;
         QString code = langMap.key(nativeLang); // Slow, but map is small
+        QString language = GetISO639EnglishLanguageName(code);
         item = new MythUIButtonListItem(m_languageList, nativeLang);
+        item->SetText(language, "language");
         item->SetText(nativeLang, "nativelanguage");
         item->SetData(code);
 
          // We have to compare against locale for languages like en_GB
         if (code.toLower() == m_language.toLower() ||
             code == langCode || code == localeCode)
+        {
             m_languageList->SetItemCurrent(item);
+            foundLanguage = true;
+        }
     }
+
+    if (!foundLanguage)
+        m_languageList->SetValueByData("en_US");
 
     CodeToNameMap localesMap = GetISO3166EnglishCountryMap();
     QStringList locales = localesMap.values();
@@ -110,6 +144,8 @@ void LanguageSelection::Load(void)
         if (code == m_country || code == countryCode)
             m_countryList->SetItemCurrent(item);
     }
+
+    delete locale;
 }
 
 bool LanguageSelection::m_languageChanged = false;
@@ -118,8 +154,9 @@ bool LanguageSelection::prompt(bool force)
 {
     m_languageChanged = false;
     QString language = gCoreContext->GetSetting("Language", "");
+    QString country = gCoreContext->GetSetting("Country", "");
     // Ask for language if we don't already know.
-    if (force || language.isEmpty())
+    if (force || language.isEmpty() || country.isEmpty())
     {
         MythScreenStack *mainStack = GetMythMainWindow()->GetMainStack();
         if (!mainStack)

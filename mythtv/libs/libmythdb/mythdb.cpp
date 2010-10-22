@@ -50,6 +50,13 @@ void DestroyMythDB(void)
     MythDB::destroyMythDB();
 }
 
+struct SingleSetting
+{
+    QString key;
+    QString value;
+    QString host;
+};
+
 typedef QHash<QString,QString> SettingsMap;
 
 class MythDBPrivate
@@ -73,6 +80,9 @@ class MythDBPrivate
     SettingsMap settingsCache;
     /// Overridden this session only
     SettingsMap overriddenSettings;
+    /// Settings which should be written to the database as soon as it becomes
+    /// available
+    QList<SingleSetting> delayedSettings;
 };
 
 static const int settings_reserve = 61;
@@ -87,6 +97,7 @@ MythDBPrivate::MythDBPrivate()
 
 MythDBPrivate::~MythDBPrivate()
 {
+    VERBOSE(VB_DATABASE, "Destroying MythDBPrivate");
     delete m_settings;
 }
 
@@ -234,7 +245,11 @@ bool MythDB::SaveSettingOnHost(const QString &key,
                                const QString &host)
 {
     QString LOC  = QString("SaveSettingOnHost('%1') ").arg(key);
-    bool success = false;
+    if (key.isEmpty())
+    {
+        VERBOSE(VB_IMPORTANT, LOC + "- Illegal null key");
+        return false;
+    }
 
     if (d->ignoreDatabase)
     {
@@ -245,16 +260,19 @@ bool MythDB::SaveSettingOnHost(const QString &key,
 
     if (d->m_DBparams.dbHostName.isEmpty())  // Bootstrapping without database?
     {
-        VERBOSE(VB_IMPORTANT, LOC + "- No database yet");
+        if (host.toLower() == d->m_localhostname)
+            OverrideSettingForSession(key, newValue);
+        if (!d->suppressDBMessages)
+            VERBOSE(VB_IMPORTANT, LOC + "- No database yet");
+        SingleSetting setting;
+        setting.host = host;
+        setting.key = key;
+        setting.value = newValue;
+        d->delayedSettings.append(setting);
         return false;
     }
 
-    if (key.isEmpty())
-    {
-        VERBOSE(VB_IMPORTANT, LOC + "- Illegal null key");
-        return false;
-    }
-
+    bool success = false;
 
     MSqlQuery query(MSqlQuery::InitCon());
     if (query.isConnected())
@@ -335,7 +353,8 @@ QString MythDB::GetSetting(const QString &_key, const QString &defaultval)
     MSqlQuery query(MSqlQuery::InitCon());
     if (!query.isConnected())
     {
-        VERBOSE(VB_IMPORTANT,
+        if (!d->suppressDBMessages)
+            VERBOSE(VB_IMPORTANT,
                 QString("Database not open while trying to load setting: %1")
                 .arg(key));
         return d->m_settings->GetSetting(key, defaultval);
@@ -347,7 +366,7 @@ QString MythDB::GetSetting(const QString &_key, const QString &defaultval)
         "WHERE value = :KEY AND hostname = :HOSTNAME");
     query.bindValue(":KEY", key);
     query.bindValue(":HOSTNAME", d->m_localhostname);
-    
+
     if (query.exec() && query.next())
     {
         value = query.value(0).toString();
@@ -472,7 +491,8 @@ bool MythDB::GetSettings(QMap<QString,QString> &_key_value_pairs)
                 "ORDER BY hostname DESC")
             .arg(d->m_localhostname).arg(keylist)))
     {
-        DBError("GetSettings", query);
+        if (!d->suppressDBMessages)
+            DBError("GetSettings", query);
         return false;
     }
 
@@ -483,7 +503,7 @@ bool MythDB::GetSettings(QMap<QString,QString> &_key_value_pairs)
         if (it != keymap.end())
             **it = query.value(1).toString();
     }
-  
+
     if (d->useSettingsCache)
     {
         d->settingsCacheLock.lockForWrite();
@@ -503,7 +523,7 @@ bool MythDB::GetSettings(QMap<QString,QString> &_key_value_pairs)
         }
         d->settingsCacheLock.unlock();
     }
-  
+
     return true;
 }
 
@@ -582,7 +602,8 @@ QString MythDB::GetSettingOnHost(const QString &_key, const QString &_host,
     MSqlQuery query(MSqlQuery::InitCon());
     if (!query.isConnected())
     {
-        VERBOSE(VB_IMPORTANT,
+        if (!d->suppressDBMessages)
+            VERBOSE(VB_IMPORTANT,
                 QString("Database not open while trying to "
                         "load setting: %1").arg(key));
         return value;
@@ -818,4 +839,14 @@ void MythDB::ActivateSettingsCache(bool activate)
 
     d->useSettingsCache = activate;
     ClearSettingsCache();
+}
+
+void MythDB::WriteDelayedSettings(void)
+{
+     while (!d->delayedSettings.isEmpty() &&
+            !d->m_DBparams.dbHostName.isEmpty())
+     {
+        SingleSetting setting = d->delayedSettings.takeFirst();
+        SaveSettingOnHost(setting.key, setting.value, setting.host);
+     }
 }

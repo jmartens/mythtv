@@ -12,29 +12,47 @@
 #include "mythdb.h"
 #include "mythdirs.h"
 
-MythLocale::MythLocale(QString localeName)
+MythLocale::MythLocale(QString localeName) :
+    m_defaultsLoaded(false)
 {
-    QLocale locale;
+    QString dbLanguage = GetMythDB()->GetSetting("Language", "");
+    QString dbCountry = GetMythDB()->GetSetting("Country", "");
 
     if (!localeName.isEmpty())
-        locale = QLocale(localeName);
+    {
+        m_localeCode = localeName;
+    }
+    else if (!dbLanguage.isEmpty() &&
+             !dbCountry.isEmpty())
+    {
+        QString langcode = dbLanguage.section('_',0,0);
+        m_localeCode = QString("%1_%2").arg(langcode)
+                                       .arg(dbCountry.toUpper());
+    }
     else
-        locale = QLocale::system();
+    {
+        QLocale locale = QLocale::system();
 
-    if (locale.name().isEmpty() || locale.name() == "C")
-        locale = QLocale("en_US");
-
-    m_localeCode = locale.name();
-    m_country = locale.country();
-    m_language = locale.language();
-
+        if (locale.name().isEmpty() || locale.name() == "C")
+        {
+            // If all else has failed use the US locale
+            m_localeCode = "en_US";
+        }
+        else
+            m_localeCode = locale.name();
+    }
 }
 
 QString MythLocale::GetCountryCode(void) const
 {
-    QString isoCountry = m_localeCode.section("_", 1, 1);
+    QString isoCountry = m_localeCode.section('_', 1, 1);
 
     return isoCountry;
+}
+
+QString MythLocale::GetCountry() const
+{
+    return GetISO3166EnglishCountryName(GetCountryCode());
 }
 
 QString MythLocale::GetNativeCountry(void) const
@@ -44,9 +62,14 @@ QString MythLocale::GetNativeCountry(void) const
 
 QString MythLocale::GetLanguageCode(void) const
 {
-    QString isoLanguage = m_localeCode.section("_", 0, 0);
+    QString isoLanguage = m_localeCode.section('_', 0, 0);
 
     return isoLanguage;
+}
+
+QString MythLocale::GetLanguage() const
+{
+    return GetISO639EnglishLanguageName(GetLanguageCode());
 }
 
 QString MythLocale::GetNativeLanguage(void) const
@@ -56,6 +79,7 @@ QString MythLocale::GetNativeLanguage(void) const
 
 bool MythLocale::LoadDefaultsFromXML(void)
 {
+    m_defaultsLoaded = true;
     m_globalSettings.clear();
     QDomDocument doc;
 
@@ -133,7 +157,8 @@ bool MythLocale::LoadDefaultsFromXML(void)
 
 void MythLocale::SaveLocaleDefaults(bool overwrite)
 {
-    if (!LoadDefaultsFromXML())
+    if (!m_defaultsLoaded &&
+        !LoadDefaultsFromXML())
         return;
 
     SettingsMap::iterator it;
@@ -171,3 +196,15 @@ void MythLocale::ResetToStandardDefaults(void)
     return;
 }
 
+QString MythLocale::GetLocaleSetting(const QString &key)
+{
+    if (!m_defaultsLoaded &&
+        !LoadDefaultsFromXML())
+        return QString();
+
+    QString value = m_globalSettings.value(key);
+    if (m_hostSettings.contains(key))
+        value = m_hostSettings.value(key);
+
+    return value;
+}

@@ -200,6 +200,9 @@ void OSD::OverrideUIScale(void)
     if (uirect == m_Rect)
         return;
 
+    m_savedFontStretch = GetMythUI()->GetFontStretch();
+    GetMythUI()->SetFontStretch(m_fontStretch);
+
     int width, height;
     MythUIHelper::getMythUI()->GetScreenSettings(width,  m_SavedWMult,
                                                  height, m_SavedHMult);
@@ -220,6 +223,7 @@ void OSD::RevertUIScale(void)
 {
     if (m_UIScaleOverride)
     {
+        GetMythUI()->SetFontStretch(m_savedFontStretch);
         GetMythMainWindow()->SetScalingFactors(m_SavedWMult, m_SavedHMult);
         GetMythMainWindow()->SetUIScreenRect(m_SavedUIRect);
     }
@@ -952,7 +956,7 @@ TeletextScreen* OSD::InitTeletext(void)
     else
     {
         OverrideUIScale();
-        tt = new TeletextScreen(m_parent, OSD_WIN_TELETEXT);
+        tt = new TeletextScreen(m_parent, OSD_WIN_TELETEXT, m_fontStretch);
         if (tt)
         {
             if (tt->Create())
@@ -1057,7 +1061,7 @@ SubtitleScreen* OSD::InitSubtitles(void)
     else
     {
         OverrideUIScale();
-        sub = new SubtitleScreen(m_parent, OSD_WIN_SUBTITLE);
+        sub = new SubtitleScreen(m_parent, OSD_WIN_SUBTITLE, m_fontStretch);
         if (sub)
         {
             if (sub->Create())

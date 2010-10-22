@@ -136,12 +136,14 @@ class DecoderBase
 
     virtual void UpdateFramesPlayed(void);
     long long GetFramesRead(void) const { return framesRead; };
+    long long GetFramesPlayed(void) const { return framesPlayed; };
 
     virtual QString GetCodecDecoderName(void) const = 0;
     virtual QString GetRawEncodingType(void) { return QString(); }
     virtual MythCodecID GetVideoCodecID(void) const = 0;
     virtual void *GetVideoCodecPrivate(void) { return NULL; }
 
+    virtual void ResetPosMap(void);
     virtual bool SyncPositionMap(void);
     virtual bool PosMapFromDb(void);
     virtual bool PosMapFromEnc(void);

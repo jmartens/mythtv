@@ -13,7 +13,7 @@
 
 # Script info
     $NAME           = 'MythTV Database Restore Script';
-    $VERSION        = '1.0.13';
+    $VERSION        = '1.0.16';
 
 # Some variables we'll use here
     our ($username, $homedir, $mythconfdir, $database_information_file);
@@ -67,19 +67,24 @@
                'schemaver|DBSchemaVer=s'            => \$db_schema_version,
                'directory|DBBackupDirectory=s'      => \$backup_directory,
                'filename|DBBackupFilename=s'        => \$backup_filename,
-               'partial_restore|new_hardware'       => \$partial_restore,
-               'with_plugin_data|plugin_data'       => \$with_plugin_data,
-               'restore_xmltvids|xmltvids'          => \$restore_xmltvids,
-               'mysql_client|client=s'              => \$mysql_client,
+               'partial_restore|new_hardware|'.
+               'partial-restore|new-hardware'       => \$partial_restore,
+               'with_plugin_data|plugin_data|'.
+               'with-plugin-data|plugin-data'       => \$with_plugin_data,
+               'restore_xmltvids|'.
+               'restore-xmltvids|xmltvids'          => \$restore_xmltvids,
+               'mysql_client|mysql-client|client=s' => \$mysql_client,
                'uncompress=s'                       => \$uncompress,
-               'drop_database|drop_db'              => \$drop_database,
-               'create_database|create_db|mc_sql'   => \$create_database,
-               'change_hostname'                    => \$change_hostname,
-               'new_hostname=s'                     => \$new_hostname,
-               'old_hostname=s'                     => \$old_hostname,
+               'drop_database|drop_db|'.
+               'drop-database|drop-db'              => \$drop_database,
+               'create_database|create_db|mc_sql|'.
+               'create-database|create-db|mc-sql'   => \$create_database,
+               'change_hostname|change-hostname'    => \$change_hostname,
+               'new_hostname|new-hostname=s'        => \$new_hostname,
+               'old_hostname|old-hostname=s'        => \$old_hostname,
                'usage|help|h+'                      => \$usage,
                'version'                            => \$show_version,
-               'script_version|v'                   => \$show_version_script,
+               'script_version|script-version|v'    => \$show_version_script,
                'verbose|debug|d+'                   => \$debug
               );
 
@@ -1068,7 +1073,7 @@ EOF
         verbose($verbose_level_debug, 'Setting database character set.');
         $query = qq{ALTER DATABASE $mysql_conf{'db_name'}
                     DEFAULT CHARACTER SET latin1
-                    COLLATE latin1_general_ci;};
+                    COLLATE latin1_swedish_ci;};
         $sth = $dbh->prepare($query);
         if (! $sth->execute())
         {
@@ -1451,6 +1456,80 @@ EOF
         return $exit;
     }
 
+    sub get_db_schema_ver
+    {
+        connect_to_database(1, 1) if (!defined($dbh));
+        if (!defined($dbh))
+        {
+            verbose($verbose_level_error,
+                    '', 'ERROR: Unable to connect to database.');
+            return -1;
+        }
+        my $query = 'SELECT data FROM settings WHERE value = ?';
+        if (defined($dbh))
+        {
+            my $sth = $dbh->prepare($query);
+            if ($sth->execute('DBSchemaVer'))
+            {
+                while (my @data = $sth->fetchrow_array)
+                {
+                    $mysql_conf{'db_schemaver'} = $data[0];
+                    verbose($verbose_level_debug,
+                            '', 'Found DBSchemaVer:'.
+                            " $mysql_conf{'db_schemaver'}.");
+                }
+            }
+            else
+            {
+                verbose($verbose_level_debug,
+                        "Unable to retrieve DBSchemaVer from".
+                        " database.");
+            }
+        }
+
+        return 0;
+    }
+
+    sub set_database_charset
+    {
+        return 0 if (!$create_database && !$drop_database);
+
+        if (get_db_schema_ver && ! $mysql_conf{'db_schemaver'})
+        {
+            verbose($verbose_level_error,
+                    "Unknown database schema version.  Assuming current.");
+            $mysql_conf{'db_schemaver'} = '1216';
+        }
+
+        if ($mysql_conf{'db_schemaver'} > 1215)
+        {
+            connect_to_database(0, 1) if (!defined($dbh));
+            if (!defined($dbh))
+            {
+                verbose($verbose_level_error,
+                        '', 'ERROR: Unable to connect to database.');
+                return -1;
+            }
+
+            verbose($verbose_level_debug, 'Setting database character set.');
+
+            my ($query, $sth);
+            $query = qq{ALTER DATABASE $mysql_conf{'db_name'}
+                        DEFAULT CHARACTER SET utf8
+                        COLLATE utf8_general_ci;};
+            $sth = $dbh->prepare($query);
+            if (! $sth->execute())
+            {
+                verbose($verbose_level_error,
+                        '', 'ERROR: Unable to set database character set.',
+                        $sth->errstr);
+                return -16;
+            }
+        }
+
+        return 0;
+    }
+
     sub restore_backup
     {
         my $exit = 0;
@@ -1676,8 +1755,12 @@ EOF
         elsif (!uncompress_backup_file)
         {
             $status = restore_backup;
-            verbose($verbose_level_always,
-                    '', 'Successfully restored backup.') if (!$status);
+            if (!$status)
+            {
+                verbose($verbose_level_always,
+                        '', 'Successfully restored backup.');
+                $status = set_database_charset;
+            }
         }
     }
 

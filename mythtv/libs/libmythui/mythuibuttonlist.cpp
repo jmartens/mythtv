@@ -2890,8 +2890,7 @@ void MythUIButtonListItem::SetToRealButton(MythUIStateType *button, bool selecte
             TextProperties textprop = string_it.value();
 
             QString newText = text->GetTemplateText();
-            if (newText.isEmpty())
-                newText = text->GetDefaultText();
+
             QRegExp regexp("%(([^\\|%]+)?\\||\\|(.))?(\\w+)(\\|(.+))?%");
             regexp.setMinimal(true);
             if (!newText.isEmpty() && newText.contains(regexp))
@@ -2905,7 +2904,7 @@ void MythUIButtonListItem::SetToRealButton(MythUIStateType *button, bool selecte
                     QString value = m_strings.value(key).text;
                     if (!value.isEmpty())
                     {
-                        replacement = QString("%1%2%3")
+                        replacement = QString("%1%2%3%4")
                                                 .arg(regexp.cap(2))
                                                 .arg(regexp.cap(3))
                                                 .arg(m_strings.value(key).text)
@@ -2919,7 +2918,10 @@ void MythUIButtonListItem::SetToRealButton(MythUIStateType *button, bool selecte
             else
                 newText = textprop.text;
 
-            text->SetText(newText);
+            if (newText.isEmpty())
+                text->Reset();
+            else
+                text->SetText(newText);
             text->SetFontState(textprop.state.isEmpty() ? m_fontState : textprop.state);
         }
         ++string_it;

@@ -99,7 +99,7 @@ MythCoreContextPrivate::MythCoreContextPrivate(MythCoreContext *lparent,
       m_backend(false),
       m_database(GetMythDB()),
       m_UIThread(QThread::currentThread()),
-      m_locale(new MythLocale())
+      m_locale(NULL)
 {
 }
 
@@ -119,8 +119,10 @@ MythCoreContextPrivate::~MythCoreContextPrivate()
 
     delete m_locale;
 
-    if (m_database)
+    if (m_database) {
         DestroyMythDB();
+        m_database = NULL;
+    }
 }
 
 /// If another thread has already started WOL process, wait on them...
@@ -186,6 +188,7 @@ bool MythCoreContext::Init(void)
 MythCoreContext::~MythCoreContext()
 {
     delete d;
+    d = NULL;
 }
 
 void MythCoreContext::SetAppName(QString appName)
@@ -761,7 +764,7 @@ bool MythCoreContext::SendReceiveStringList(QStringList &strlist,
             msg += (i?",":"") + strlist[i];
         msg += (strlist.size() > 2) ? "...)" : ")";
         msg += " called from UI thread";
-        VERBOSE(VB_IMPORTANT, msg);
+        VERBOSE(VB_GENERAL|VB_EXTRA, msg);
     }
 
     QString query_type = "UNKNOWN";
@@ -1163,8 +1166,17 @@ void MythCoreContext::ResetLanguage(void)
     d->language.clear();
 }
 
+void MythCoreContext::InitLocale(void )
+{
+    if (!d->m_locale)
+        d->m_locale = new MythLocale();
+}
+
 void MythCoreContext::SaveLocaleDefaults(void)
 {
+    if (!d->m_locale)
+        InitLocale();
+
     if (!d->m_locale->GetLocaleCode().isEmpty())
     {
         VERBOSE(VB_GENERAL, QString("Current locale %1")

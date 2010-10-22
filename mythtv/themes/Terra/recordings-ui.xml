@@ -214,7 +214,7 @@
         </shape>
 
         <textarea name="title" from="basetextarea">
-            <area>48,438,810,35</area>
+            <area>48,438,910,35</area>
             <font>baselarge</font>
         </textarea>
 
@@ -273,7 +273,7 @@
         <textarea name="description" from="basetextarea">
             <area>48,487,1190,145</area>
             <multiline>yes</multiline>
-            <template>%|"SUBTITLE|"% %DESCRIPTION%</template>
+            <template>%"|SUBTITLE|" %%DESCRIPTION%</template>
             <align>vcenter</align>
         </textarea>
 

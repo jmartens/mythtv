@@ -4,6 +4,7 @@
 #include <QCoreApplication>
 #include <QDomDocument>
 #include <QFontInfo>
+#include <QRect>
 
 #include "mythverbose.h"
 #include "mythdb.h"
@@ -19,7 +20,7 @@
 
 MythFontProperties::MythFontProperties() :
     m_brush(QColor(Qt::white)), m_hasShadow(false), m_shadowAlpha(255),
-    m_hasOutline(false), m_outlineAlpha(255), m_bFreeze(false)
+    m_hasOutline(false), m_outlineAlpha(255), m_bFreeze(false), m_stretch(100)
 {
     CalcHash();
 }
@@ -115,6 +116,40 @@ void MythFontProperties::CalcHash(void)
         if (m_shadowOffset.y() < 0 && m_shadowOffset.y() < -m_outlineSize)
             m_drawingOffset.setY(-m_shadowOffset.y());
     }
+}
+
+void MythFontProperties::Rescale(int height)
+{
+    m_face.setPixelSize(m_relativeSize * height);
+}
+
+void MythFontProperties::Rescale(void)
+{
+    QRect rect = GetMythMainWindow()->GetUIScreenRect();
+    Rescale(rect.height());
+}
+
+void MythFontProperties::AdjustStretch(int stretch)
+{
+    int newStretch = (int)(((float)m_stretch * ((float)stretch / 100.0f)) + 0.5f);
+
+    if (newStretch <= 0)
+        newStretch = 1;
+
+    m_face.setStretch(newStretch);
+}
+
+void MythFontProperties::SetPixelSize(float size)
+{
+    QSize baseSize = GetMythUI()->GetBaseSize();
+    m_relativeSize = size / (float)(baseSize.height());
+    m_face.setPixelSize(GetMythMainWindow()->NormY((int)(size + 0.5f)));
+}
+
+void MythFontProperties::SetPointSize(uint points)
+{
+    float pixels = (float)points / 72.0 * 100.0;
+    SetPixelSize(pixels);
 }
 
 void MythFontProperties::Freeze(void)
@@ -334,33 +369,35 @@ MythFontProperties *MythFontProperties::ParseFromXml(
 
                 if (stretch == "ultracondensed" ||
                     stretch == "1")
-                    newFont->m_face.setStretch(QFont::UltraCondensed);
+                    newFont->m_stretch = QFont::UltraCondensed;
                 else if (stretch == "extracondensed" ||
                          stretch == "2")
-                    newFont->m_face.setStretch(QFont::ExtraCondensed);
+                    newFont->m_stretch = QFont::ExtraCondensed;
                 else if (stretch == "condensed" ||
                          stretch == "3")
-                    newFont->m_face.setStretch(QFont::Condensed);
+                    newFont->m_stretch = QFont::Condensed;
                 else if (stretch == "semicondensed" ||
                          stretch == "4")
-                    newFont->m_face.setStretch(QFont::SemiCondensed);
+                    newFont->m_stretch = QFont::SemiCondensed;
                 else if (stretch == "unstretched" ||
                          stretch == "5")
-                    newFont->m_face.setStretch(QFont::Unstretched);
+                    newFont->m_stretch = QFont::Unstretched;
                 else if (stretch == "semiexpanded" ||
                          stretch == "6")
-                    newFont->m_face.setStretch(QFont::SemiExpanded);
+                    newFont->m_stretch = QFont::SemiExpanded;
                 else if (stretch == "expanded" ||
                          stretch == "7")
-                    newFont->m_face.setStretch(QFont::Expanded);
+                    newFont->m_stretch = QFont::Expanded;
                 else if (stretch == "extraexpanded" ||
                          stretch == "8")
-                    newFont->m_face.setStretch(QFont::ExtraExpanded);
+                    newFont->m_stretch = QFont::ExtraExpanded;
                 else if (stretch == "ultraexpanded" ||
                          stretch == "9")
-                    newFont->m_face.setStretch(QFont::UltraExpanded);
+                    newFont->m_stretch = QFont::UltraExpanded;
                 else
-                    newFont->m_face.setStretch(QFont::Unstretched);
+                    newFont->m_stretch = QFont::Unstretched;
+
+                newFont->m_face.setStretch(newFont->m_stretch);
             }
             else
             {
@@ -382,12 +419,11 @@ MythFontProperties *MythFontProperties::ParseFromXml(
     }
     else if (pixelsize > 0)
     {
-        newFont->m_face.setPixelSize(GetMythMainWindow()->NormY(pixelsize));
+        newFont->SetPixelSize(pixelsize);
     }
     else if (size > 0)
     {
-        newFont->m_face.setPointSize(
-            GetMythMainWindow()->NormalizeFontSize(size));
+        newFont->SetPointSize(size);
     }
 
     newFont->Unfreeze();
@@ -469,6 +505,21 @@ void FontMap::Clear(void)
 
     //FIXME: remove
     globalFontMap.clear();
+}
+
+void FontMap::Rescale(int height)
+{
+    if (height <= 0)
+    {
+        QRect rect = GetMythMainWindow()->GetUIScreenRect();
+        height = rect.height();
+    }
+
+    QMap<QString, MythFontProperties>::iterator it;
+    for (it = m_FontMap.begin(); it != m_FontMap.end(); ++it)
+    {
+        (*it).Rescale(height);
+    }
 }
 
 FontMap *FontMap::GetGlobalFontMap(void)

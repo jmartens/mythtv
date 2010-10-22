@@ -112,6 +112,7 @@ class MythContextPrivate : public QObject
     QString         m_DBhostCp;  ///< dbHostName backup
 
     UPnp             *m_UPnP;    ///< For automatic backend discover
+    bool              m_ExternalUPnP; ///< If the UPnP was handed in via Init()
     XmlConfiguration *m_XML;
     HttpServer       *m_HTTP;
 
@@ -217,7 +218,7 @@ static void eject_cb(void)
 MythContextPrivate::MythContextPrivate(MythContext *lparent)
     : parent(lparent),
       m_gui(false),
-      m_UPnP(NULL), m_XML(NULL), m_HTTP(NULL),
+      m_UPnP(NULL), m_ExternalUPnP(false), m_XML(NULL), m_HTTP(NULL),
       disableeventpopup(false),
       disablelibrarypopup(false),
       pluginmanager(NULL),
@@ -289,6 +290,7 @@ bool MythContextPrivate::Init(const bool gui, UPnp *UPnPclient,
     if (UPnPclient)
     {
         m_UPnP = UPnPclient;
+        m_ExternalUPnP = true;
 #ifndef _WIN32
         m_XML  = (XmlConfiguration *)UPnp::g_pConfig;
 #endif
@@ -305,6 +307,7 @@ bool MythContextPrivate::Init(const bool gui, UPnp *UPnPclient,
 
     // ---- keep all DB-using stuff below this line ----
 
+    gCoreContext->InitLocale();
     gCoreContext->SaveLocaleDefaults();
 
     if (gui)
@@ -834,14 +837,14 @@ void MythContextPrivate::SilenceDBerrors(void)
 {
     // This silences any DB errors from Get*Setting(),
     // (which is the vast majority of them)
-    gCoreContext->GetDB()->IgnoreDatabase(true);
+    gCoreContext->GetDB()->SetSuppressDBMessages(true);
 
     // Save the configured hostname, so that we can
     // still display it in the DatabaseSettings screens
     if (m_DBparams.dbHostName.length())
         m_DBhostCp = m_DBparams.dbHostName;
 
-    m_DBparams.dbHostName = "";
+    m_DBparams.dbHostName.clear();
     gCoreContext->GetDB()->SetDatabaseParams(m_DBparams);
 }
 
@@ -854,7 +857,7 @@ void MythContextPrivate::EnableDBerrors(void)
         gCoreContext->GetDB()->SetDatabaseParams(m_DBparams);
     }
 
-    gCoreContext->GetDB()->IgnoreDatabase(false);
+    gCoreContext->GetDB()->SetSuppressDBMessages(false);
 }
 
 
@@ -897,8 +900,8 @@ bool MythContextPrivate::InitUPnP(void)
 
 void MythContextPrivate::DeleteUPnP(void)
 {
-    if (m_UPnP && !m_HTTP)  // Init was passed an existing UPnP
-        return;             // so let the caller delete it cleanly
+    if (m_ExternalUPnP)  // Init was passed an existing UPnP
+        return;          // so let the caller delete it cleanly
 
     if (m_UPnP)
     {

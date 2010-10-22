@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <mythlocale>
   <!-- Global Settings -->
+    <!-- EIT, Subtitle, Audio Stream Language Preferences -->
+    <setting name="ISO639Language0" global="true">eng</setting>
+    <setting name="ISO639Language1" global="true">eng</setting>
+
     <!-- Recording -->
     <setting name="TVFormat" global="true">PAL</setting>
     <setting name="VbiFormat" global="true">PAL Teletext</setting>
@@ -15,11 +19,14 @@
   <!-- Per-host Settings -->
     <!-- Languages - Self Explanatory -->
     <setting name="Language">en_GB</setting>
-    <setting name="ISO639Language0">eng</setting>
-    <setting name="ISO639Language1">eng</setting>
+
+    <!-- Country -->
+    <setting name="Country">GB</setting>
 
     <!-- Date/Time format -->
-
+    <setting name="DateFormat">ddd d MMM</setting>
+    <setting name="TimeFormat">hh:mm</setting>
+    <setting name="ShortDateFormat">dd/MM</setting>
 
     <!-- Playback -->
     <setting name="EnableMHEG">1</setting> <!-- Red button, interactive services -->

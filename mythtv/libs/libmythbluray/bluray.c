@@ -31,6 +31,7 @@
 #include "bdnav/navigation.h"
 #include "bdnav/index_parse.h"
 #include "hdmv/hdmv_vm.h"
+#include "decoders/graphics_controller.h"
 #include "file/file.h"
 #ifdef DLOPEN_CRYPTO_LIBS
 #include "file/dl.h"
@@ -58,7 +59,7 @@ typedef void*   (*fptr_p_void)();
 typedef struct bd_event_queue_s {
     unsigned in;  /* next free slot */
     unsigned out; /* next event */
-    BD_EVENT ev[MAX_EVENTS];
+    BD_EVENT ev[MAX_EVENTS+1];
 } BD_EVENT_QUEUE;
 
 typedef enum {
@@ -80,6 +81,12 @@ typedef struct {
 
 } BD_STREAM;
 
+typedef struct {
+    NAV_CLIP *clip;
+    uint64_t  clip_size;
+    uint8_t  *buf;
+} BD_PRELOAD;
+
 struct bluray {
 
     /* current disc */
@@ -94,6 +101,7 @@ struct bluray {
 
     /* streams */
     BD_STREAM      st0; /* main path */
+    BD_PRELOAD     st_ig; /* preloaded IG stream sub path */
 
     /* buffer for bd_read(): current aligned unit of main stream (st0) */
     uint8_t        int_buf[6144];
@@ -131,6 +139,9 @@ struct bluray {
     uint8_t        hdmv_suspended;
 
     void           *bdjava;
+
+    /* graphics */
+    GRAPHICS_CONTROLLER *graphics_controller;
 };
 
 #ifdef DLOPEN_CRYPTO_LIBS
@@ -268,7 +279,7 @@ static int _read_block(BLURAY *bd, BD_STREAM *st, uint8_t *buf)
     const int len = 6144;
 
     if (st->fp) {
-        DEBUG(DBG_BLURAY, "Reading unit [%d bytes] at %"PRIu64"... (%p)\n",
+        DEBUG(DBG_STREAM, "Reading unit [%d bytes] at %"PRIu64"... (%p)\n",
               len, st->clip_block_pos, bd);
 
         if (len + st->clip_block_pos <= st->clip_size) {
@@ -276,11 +287,11 @@ static int _read_block(BLURAY *bd, BD_STREAM *st, uint8_t *buf)
 
             if ((read_len = file_read(st->fp, buf, len))) {
                 if (read_len != len)
-                    DEBUG(DBG_BLURAY | DBG_CRIT, "Read %d bytes at %"PRIu64" ; requested %d ! (%p)\n", read_len, st->clip_block_pos, len, bd);
+                    DEBUG(DBG_STREAM | DBG_CRIT, "Read %d bytes at %"PRIu64" ; requested %d ! (%p)\n", read_len, st->clip_block_pos, len, bd);
 
                 if (bd->libaacs_decrypt_unit) {
                     if (!bd->libaacs_decrypt_unit(bd->aacs, buf)) {
-                        DEBUG(DBG_BLURAY, "Unable decrypt unit! (%p)\n", bd);
+                        DEBUG(DBG_AACS | DBG_CRIT, "Unable decrypt unit! (%p)\n", bd);
 
                         return 0;
                     } // decrypt
@@ -301,17 +312,17 @@ static int _read_block(BLURAY *bd, BD_STREAM *st, uint8_t *buf)
 
                 }
 
-                DEBUG(DBG_BLURAY, "Read unit OK! (%p)\n", bd);
+                DEBUG(DBG_STREAM, "Read unit OK! (%p)\n", bd);
 
                 return 1;
             }
 
-            DEBUG(DBG_BLURAY | DBG_CRIT, "Read %d bytes at %"PRIu64" failed ! (%p)\n", len, st->clip_block_pos, bd);
+            DEBUG(DBG_STREAM | DBG_CRIT, "Read %d bytes at %"PRIu64" failed ! (%p)\n", len, st->clip_block_pos, bd);
 
             return 0;
         }
 
-        DEBUG(DBG_BLURAY | DBG_CRIT, "Read past EOF ! (%p)\n", bd);
+        DEBUG(DBG_STREAM | DBG_CRIT, "Read past EOF ! (%p)\n", bd);
 
         return 0;
     }
@@ -319,6 +330,58 @@ static int _read_block(BLURAY *bd, BD_STREAM *st, uint8_t *buf)
     DEBUG(DBG_BLURAY, "No valid title selected! (%p)\n", bd);
 
     return 0;
+}
+
+/*
+ * clip preload (BD_PRELOAD)
+ */
+
+static void _close_preload(BD_PRELOAD *p)
+{
+    X_FREE(p->buf);
+    memset(p, 0, sizeof(*p));
+}
+
+static int _preload_m2ts(BLURAY *bd, BD_PRELOAD *p)
+{
+    /* setup and open BD_STREAM */
+
+    BD_STREAM st;
+
+    memset(&st, 0, sizeof(st));
+    st.clip = p->clip;
+
+    if (!_open_m2ts(bd, &st)) {
+        return 0;
+    }
+
+    /* allocate buffer */
+    p->clip_size = st.clip_size;
+    p->buf       = realloc(p->buf, p->clip_size);
+
+    /* read clip to buffer */
+
+    uint8_t *buf = p->buf;
+    uint8_t *end = p->buf + p->clip_size;
+
+    for (; buf < end; buf += 6144) {
+        if (!_read_block(bd, &st, buf)) {
+            DEBUG(DBG_BLURAY|DBG_CRIT, "_preload_m2ts(): error loading %s at %"PRIu64"\n",
+                  st.clip->name, (uint64_t)(buf - p->buf));
+            _close_m2ts(&st);
+            _close_preload(p);
+            return 0;
+        }
+    }
+
+    /* */
+
+    DEBUG(DBG_BLURAY, "_preload_m2ts(): loaded %"PRIu64" bytes from %s\n",
+          st.clip_size, st.clip->name);
+
+    _close_m2ts(&st);
+
+    return 1;
 }
 
 static int64_t _seek_stream(BLURAY *bd, BD_STREAM *st,
@@ -524,6 +587,7 @@ void bd_close(BLURAY *bd)
     _libbdplus_close(bd);
 
     _close_m2ts(&bd->st0);
+    _close_preload(&bd->st_ig);
 
     if (bd->title_list != NULL) {
         nav_free_title_list(bd->title_list);
@@ -532,10 +596,10 @@ void bd_close(BLURAY *bd)
         nav_title_close(bd->title);
     }
 
-    if (bd->hdmv_vm)
-        hdmv_vm_free(bd->hdmv_vm);
+    hdmv_vm_free(&bd->hdmv_vm);
 
-    indx_free(bd->index);
+    gc_free(&bd->graphics_controller);
+    indx_free(&bd->index);
     bd_registers_free(bd->regs);
 
     X_FREE(bd->event_queue);
@@ -730,7 +794,7 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
 
     if (st->fp) {
         out_len = 0;
-        DEBUG(DBG_BLURAY, "Reading [%d bytes] at %"PRIu64"... (%p)\n", len, bd->s_pos, bd);
+        DEBUG(DBG_STREAM, "Reading [%d bytes] at %"PRIu64"... (%p)\n", len, bd->s_pos, bd);
 
         while (len > 0) {
             uint32_t clip_pkt;
@@ -772,7 +836,7 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
                 if (clip_pkt >= st->clip->end_pkt) {
                     st->clip = nav_next_clip(bd->title, st->clip);
                     if (st->clip == NULL) {
-                        DEBUG(DBG_BLURAY, "End of title (%p)\n", bd);
+                        DEBUG(DBG_BLURAY|DBG_STREAM, "End of title (%p)\n", bd);
                         return out_len;
                     }
                     if (!_open_m2ts(bd, st)) {
@@ -806,14 +870,75 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
             bd_psr_write(bd->regs, PSR_CHAPTER, current_chapter + 1);
         }
 
-        DEBUG(DBG_BLURAY, "%d bytes read OK! (%p)\n", out_len, bd);
+        DEBUG(DBG_STREAM, "%d bytes read OK! (%p)\n", out_len, bd);
 
         return out_len;
     }
 
-    DEBUG(DBG_BLURAY, "No valid title selected! (%p)\n", bd);
+    DEBUG(DBG_STREAM | DBG_CRIT, "bd_read(): no valid title selected! (%p)\n", bd);
 
     return -1;
+}
+
+/*
+ * preloader for asynchronous sub paths
+ */
+
+static int _find_ig_stream(BLURAY *bd, uint16_t *pid, int *sub_path_idx)
+{
+    MPLS_PI  *pi        = &bd->title->pl->play_item[0];
+    unsigned  ig_stream = bd_psr_read(bd->regs, PSR_IG_STREAM_ID);
+    unsigned  ii;
+
+    for (ii = 0; ii < pi->stn.num_ig; ii++) {
+        if (ii + 1 == ig_stream) {
+            if (pi->stn.ig[ii].stream_type == 2) {
+                *sub_path_idx = pi->stn.ig[ii].subpath_id;
+            }
+            *pid = pi->stn.ig[ii].pid;
+
+            DEBUG(DBG_BLURAY, "_find_ig_stream(): current IG stream pid 0x%04x sub-path %d\n",
+                  *pid, *sub_path_idx);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int _preload_ig_subpath(BLURAY *bd)
+{
+    int      ig_subpath = -1;
+    uint16_t ig_pid     = 0;
+
+    _find_ig_stream(bd, &ig_pid, &ig_subpath);
+
+    if (!bd->graphics_controller) {
+        return 0;
+    }
+
+    if (ig_subpath < 0) {
+        return 0;
+    }
+
+    bd->st_ig.clip = &bd->title->sub_path[ig_subpath].clip_list.clip[0];
+
+    if (!_preload_m2ts(bd, &bd->st_ig)) {
+        return 0;
+    }
+
+    gc_decode_ts(bd->graphics_controller, ig_pid, bd->st_ig.buf, bd->st_ig.clip_size / 6144, -1);
+
+    return 1;
+}
+
+static int _preload_subpaths(BLURAY *bd)
+{
+    if (bd->title->pl->sub_count <= 0) {
+        return 0;
+    }
+
+    return _preload_ig_subpath(bd);
 }
 
 /*
@@ -823,6 +948,7 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
 static void _close_playlist(BLURAY *bd)
 {
     _close_m2ts(&bd->st0);
+    _close_preload(&bd->st_ig);
 
     if (bd->title) {
         nav_title_close(bd->title);
@@ -854,6 +980,9 @@ static int _open_playlist(BLURAY *bd, const char *f_name)
     bd->st0.clip = nav_next_clip(bd->title, NULL);
     if (_open_m2ts(bd, &bd->st0)) {
         DEBUG(DBG_BLURAY, "Title %s selected! (%p)\n", f_name, bd);
+
+        _preload_subpaths(bd);
+
         return 1;
     }
     return 0;
@@ -1131,7 +1260,7 @@ int bd_set_player_setting(BLURAY *bd, uint32_t idx, uint32_t value)
 
     for (i = 0; i < sizeof(map) / sizeof(map[0]); i++) {
         if (idx == map[i].idx) {
-            return bd_psr_setting_write(bd->regs, idx, value);
+            return !bd_psr_setting_write(bd->regs, idx, value);
         }
     }
 
@@ -1160,7 +1289,7 @@ int bd_set_player_setting_str(BLURAY *bd, uint32_t idx, const char *s)
             return bd_set_player_setting(bd, idx, s ? _string_to_uint(s, 3) : 0xffffff);
 
         case BLURAY_PLAYER_SETTING_COUNTRY_CODE:
-            return bd_set_player_setting(bd, idx, s ? _string_to_uint(s, 3) : 0xffff  );
+            return bd_set_player_setting(bd, idx, s ? _string_to_uint(s, 2) : 0xffff  );
 
         default:
             return 0;
@@ -1374,8 +1503,7 @@ int bd_play(BLURAY *bd)
     bd->title_type = title_undef;
 
     if (bd->hdmv_vm) {
-        hdmv_vm_free(bd->hdmv_vm);
-        bd->hdmv_vm = NULL;
+        hdmv_vm_free(&bd->hdmv_vm);
         bd->hdmv_suspended = 1;
     }
 
@@ -1394,6 +1522,19 @@ int bd_menu_call(BLURAY *bd)
     }
 
     return bd_play_title(bd, TITLE_TOP_MENU);
+}
+
+static void _run_gc(BLURAY *bd, gc_ctrl_e msg, uint32_t param)
+{
+    if (bd && bd->graphics_controller && bd->hdmv_vm) {
+        GC_NAV_CMDS cmds;
+
+        gc_run(bd->graphics_controller, msg, param, &cmds);
+
+        if (cmds.num_nav_cmds > 0) {
+            hdmv_vm_set_object(bd->hdmv_vm, cmds.num_nav_cmds, cmds.nav_cmds);
+        }
+    }
 }
 
 static void _process_hdmv_vm_event(BLURAY *bd, HDMV_EVENT *hev)
@@ -1434,14 +1575,21 @@ static void _process_hdmv_vm_event(BLURAY *bd, HDMV_EVENT *hev)
 
         case HDMV_EVENT_ENABLE_BUTTON:
             _queue_event(bd, (BD_EVENT){BD_EVENT_ENABLE_BUTTON, hev->param});
+            _run_gc(bd, GC_CTRL_ENABLE_BUTTON, hev->param);
             break;
 
         case HDMV_EVENT_DISABLE_BUTTON:
             _queue_event(bd, (BD_EVENT){BD_EVENT_DISABLE_BUTTON, hev->param});
+            _run_gc(bd, GC_CTRL_DISABLE_BUTTON, hev->param);
+            break;
+
+        case HDMV_EVENT_SET_BUTTON_PAGE:
+            _run_gc(bd, GC_CTRL_SET_BUTTON_PAGE, hev->param);
             break;
 
         case HDMV_EVENT_POPUP_OFF:
             _queue_event(bd, (BD_EVENT){BD_EVENT_POPUP_OFF, 0});
+            _run_gc(bd, GC_CTRL_POPUP, 0);
             break;
         case HDMV_EVENT_END:
         case HDMV_EVENT_NONE:
@@ -1519,4 +1667,30 @@ int bd_get_event(BLURAY *bd, BD_EVENT *event)
     }
 
     return _get_event(bd, event);
+}
+
+/*
+ * user interaction
+ */
+
+void bd_user_input(BLURAY *bd, int64_t pts, uint32_t key)
+{
+    if (pts >= 0) {
+        bd_psr_write(bd->regs, PSR_TIME, (uint32_t)(((uint64_t)pts) >> 1));
+    }
+
+    _run_gc(bd, GC_CTRL_VK_KEY, key);
+}
+
+void bd_register_overlay_proc(BLURAY *bd, void *handle, bd_overlay_proc_f func)
+{
+    if (!bd) {
+        return;
+    }
+
+    gc_free(&bd->graphics_controller);
+
+    if (func) {
+        bd->graphics_controller = gc_init(bd->regs, handle, func);
+    }
 }

@@ -36,6 +36,7 @@ class MythSqlDatabase;
 struct SwsContext;
 
 extern "C" void HandleStreamChange(void*);
+extern "C" void HandleDVDStreamChange(void*);
 
 class AudioInfo
 {
@@ -84,6 +85,7 @@ class AudioInfo
 class AvFormatDecoder : public DecoderBase
 {
     friend void HandleStreamChange(void*);
+    friend void HandleDVDStreamChange(void*);
   public:
     static void GetDecoders(render_opts &opts);
     AvFormatDecoder(MythPlayer *parent, const ProgramInfo &pginfo,
@@ -185,8 +187,6 @@ class AvFormatDecoder : public DecoderBase
     friend void render_slice_xvmc(struct AVCodecContext *c, const AVFrame *src,
                                   int offset[4], int y, int type, int height);
 
-    friend void decode_cc_dvd(struct AVCodecContext *c, const uint8_t *buf, int buf_size);
-
     friend int open_avf(URLContext *h, const char *filename, int flags);
     friend int read_avf(URLContext *h, uint8_t *buf, int buf_size);
     friend int write_avf(URLContext *h, uint8_t *buf, int buf_size);
@@ -232,6 +232,7 @@ class AvFormatDecoder : public DecoderBase
 
     bool GenerateDummyVideoFrame(void);
     bool HasVideo(const AVFormatContext *ic);
+    float normalized_fps(AVStream *stream, AVCodecContext *enc);
 
   private:
     PrivateDecoder *private_dec;
@@ -281,6 +282,7 @@ class AvFormatDecoder : public DecoderBase
     int64_t last_pts_for_fault_detection;
     int64_t last_dts_for_fault_detection;
     bool pts_detected;
+    bool reordered_pts_detected;
 
     bool using_null_videoout;
     MythCodecID video_codec_id;
@@ -329,12 +331,10 @@ class AvFormatDecoder : public DecoderBase
     AudioInfo         audioOut;
 
     // DVD
-    int  lastdvdtitle;
-    bool decodeStillFrame;
     bool dvd_xvmc_enabled;
     bool dvd_video_codec_changed;
-    bool dvdTitleChanged;
-    bool mpeg_seq_end_seen;
+
+    float m_fps;
 };
 
 #endif

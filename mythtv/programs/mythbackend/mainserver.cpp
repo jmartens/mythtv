@@ -182,8 +182,6 @@ MainServer::MainServer(bool master, int port,
     m_sched(sched), m_expirer(expirer), deferredDeleteTimer(NULL),
     autoexpireUpdateTimer(NULL), m_exitCode(BACKEND_EXIT_OK)
 {
-    AutoExpire::Update(true);
-
     PreviewGeneratorQueue::CreatePreviewGeneratorQueue(
         PreviewGenerator::kLocalAndRemote, ~0, 0);
     PreviewGeneratorQueue::AddListener(this);
@@ -228,15 +226,17 @@ MainServer::MainServer(bool master, int port,
             SLOT(deferredDeleteSlot()));
     deferredDeleteTimer->start(30 * 1000);
 
+    if (sched)
+        sched->SetMainServer(this);
+    if (expirer)
+        expirer->SetMainServer(this);
+
     autoexpireUpdateTimer = new QTimer(this);
     connect(autoexpireUpdateTimer, SIGNAL(timeout()), this,
             SLOT(autoexpireUpdate()));
     autoexpireUpdateTimer->setSingleShot(true);
 
-    if (sched)
-        sched->SetMainServer(this);
-    if (expirer)
-        expirer->SetMainServer(this);
+    AutoExpire::Update(true);
 }
 
 MainServer::~MainServer()
@@ -4199,6 +4199,8 @@ void MainServer::BackendQueryDiskSpace(QStringList &strlist, bool consolidated,
         QMap <QString, bool> backendsCounted;
         QString pbsHost;
 
+        list<PlaybackSock *> localPlaybackList;
+
         sockListLock.lockForRead();
 
         vector<PlaybackSock *>::iterator pbsit = playbackList.begin();
@@ -4213,11 +4215,18 @@ void MainServer::BackendQueryDiskSpace(QStringList &strlist, bool consolidated,
                 continue;
 
             backendsCounted[pbs->getHostname()] = true;
-            pbs->GetDiskSpace(strlist);
+            pbs->UpRef();
+            localPlaybackList.push_back(pbs);
             allHostList += "," + pbs->getHostname();
         }
 
         sockListLock.unlock();
+
+        for (list<PlaybackSock *>::iterator p = localPlaybackList.begin() ;
+             p != localPlaybackList.end() ; ++p) {
+            (*p)->GetDiskSpace(strlist);
+            (*p)->DownRef();
+        }
     }
 
     if (!consolidated)
@@ -5443,6 +5452,9 @@ void MainServer::connectionClosed(MythSocket *socket)
         }
         else if (sock == socket)
         {
+            list<uint> disconnectedSlaves;
+            bool needsReschedule = false;
+    
             if (ismaster && pbs->isSlaveBackend())
             {
                 VERBOSE(VB_IMPORTANT,QString("Slave backend: %1 no longer connected")
@@ -5459,12 +5471,11 @@ void MainServer::connectionClosed(MythSocket *socket)
                             isFallingAsleep = false;
 
                         elink->SetSocket(NULL);
-                        if (m_sched)
-                            m_sched->SlaveDisconnected(elink->GetCardID());
+                        if (m_sched) disconnectedSlaves.push_back(elink->GetCardID());
                     }
                 }
                 if (m_sched && !isFallingAsleep)
-                    m_sched->Reschedule(0);
+                    needsReschedule = true;
 
                 QString message = QString("LOCAL_SLAVE_BACKEND_OFFLINE %1")
                                           .arg(pbs->getHostname());
@@ -5518,6 +5529,13 @@ void MainServer::connectionClosed(MythSocket *socket)
                 VERBOSE(VB_IMPORTANT, "Playback sock still exists?");
 
             sockListLock.unlock();
+            for (list<uint>::iterator p = disconnectedSlaves.begin() ;
+                p != disconnectedSlaves.end() ; p++) {
+              if (m_sched) m_sched->SlaveDisconnected(*p);
+            }
+
+            if (m_sched && needsReschedule)
+                m_sched->Reschedule(0);
 
             pbs->DownRef();
             return;

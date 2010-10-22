@@ -7,7 +7,6 @@
 #include <QEvent>
 
 // MythTV
-#include "oldsettings.h"
 #include "mythdb.h"
 #include "mythdbcon.h"
 #include "mythdirs.h"
@@ -404,7 +403,7 @@ void ProgFinder::showGuide()
         if (startchannel.isEmpty())
             startchannel = '3';
         uint startchanid = 0;
-        GuideGrid::RunProgramGuide(startchanid, startchannel, m_player, m_embedVideo, false);
+        GuideGrid::RunProgramGuide(startchanid, startchannel, m_player, m_embedVideo, false, -2);
     }
 }
 

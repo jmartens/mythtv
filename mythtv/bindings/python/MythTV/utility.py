@@ -4,7 +4,7 @@
 from __future__ import with_statement
 
 from logging import MythLog
-from exceptions import MythDBError
+from exceptions import MythDBError, MythError
 
 from cStringIO import StringIO
 from select import select
@@ -12,6 +12,8 @@ from time import time, mktime
 from datetime import datetime as _pydatetime
 from datetime import tzinfo as _pytzinfo
 from datetime import timedelta
+from itertools import imap
+import weakref
 import socket
 import re
 
@@ -35,6 +37,9 @@ class SchemaUpdate( object ):
     def run(self):
         if self._schema_name is None:
             raise MythDBError('Schema update failed, variable name not set')
+        if self.db.settings.NULL[self._schema_name] is None:
+            self.db.settings.NULL[self._schema_name] = self.create()
+
         origschema = int(self.db.settings.NULL[self._schema_name])
         schema = origschema
         try:
@@ -45,18 +50,24 @@ class SchemaUpdate( object ):
                                 (schema, newschema))
                 schema = newschema
                 self.db.settings.NULL[self._schema_name] = schema
+
         except AttributeError, e:
             self.log(MythLog.DATABASE|MythLog.IMPORTANT,
                      'failed at %d' % schema, 'no handler method')
             raise MythDBError('Schema update failed, ' 
                     "SchemaUpdate has no function 'up%s'" % schema)
+
         except StopIteration:
             if schema != origschema:
                 self.log(MythLog.DATABASE,
                          '%s update complete' % self._schema_name)
             pass
+
         except Exception, e:
             raise MythDBError(MythError.DB_SCHEMAUPDATE, e.args)
+
+    def create(self):
+        raise MythDBError('Schema creation failed, method not defined.')
 
 class databaseSearch( object ):
     # decorator class for database searches
@@ -104,6 +115,30 @@ class databaseSearch( object ):
                 4-field  -- Special response consisting of:
                     (see example in methodheap.py:MythDB.searchRecorded)
     """
+    class Join( object ):
+        def __init__(self, table=None, tableto=None, fields=None, \
+                           fieldsto=None, fieldsfrom=None):
+            if (table is None) or (tableto is None) or \
+                    ((fields is None) and \
+                        ((fieldsto is None) or (fieldsfrom is None))):
+                raise MythDBError('Invalid input to databaseSearch.Join.')
+            self.table = table
+            self.tableto = tableto
+            if fields:
+                self.fieldsfrom = fields
+                self.fieldsto = fields
+            else:
+                self.fieldsfrom = fieldsfrom
+                self.fieldsto = fieldsto
+
+        def buildWhere(self):
+            s = '%s.%%s=%s.%%s' % (self.table, self.tableto)
+            return ' AND '.join([s % (f,t) \
+                        for f,t in zip(self.fieldsfrom,self.fieldsto)])
+
+        def buildJoin(self):
+            return 'JOIN %s ON %s' % (self.table, self.buildWhere())
+
     def __init__(self, func):
         # set function and update strings
         self.func = func
@@ -111,15 +146,18 @@ class databaseSearch( object ):
         self.__name__ = self.func.__name__
         self.__module__ = self.func.__module__
 
-        # process joins
-        res = list(self.func(self, True))
-        self.table = res[0]
-        self.dbclass = res[1]
-        self.require = res[2]
-        if len(res) > 3:
-            self.joins = res[3:]
-        else:
-            self.joins = ()
+        # set defaults
+        self.table = None
+        self.handler = None
+        self.require = ()
+        self.joins = ()
+
+        # pull in properties
+        self.func(self, self)
+
+        # sanity check
+        if (self.table is None) or (self.handler is None):
+            raise MythError('Improperly configured databaseSearch class')
 
     def __get__(self, inst, own):
         # set instance and return self
@@ -138,7 +176,7 @@ class databaseSearch( object ):
                 cursor.execute(query)
 
         for row in cursor:
-            yield self.dbclass.fromRaw(row, self.inst)
+            yield self.handler.fromRaw(row, db=self.inst)
 
     def parseInp(self, kwargs):
         where = []
@@ -178,10 +216,10 @@ class databaseSearch( object ):
                 joinbit = joinbit|res[2]
             elif len(res) == 4:
                 # special format for crossreferenced data
-                lval = val.split(',')
+                lval = [f.strip() for f in val.split(',')]
                 where.append('(%s)=%d' %\
                     (self.buildQuery(
-                        (   self.buildJoinOn(res[3]),
+                        (   self.joins[res[3]].buildWhere(),
                             '(%s)' % \
                                  ' OR '.join(['%s=%%s' % res[0] \
                                                     for f in lval])),
@@ -219,14 +257,12 @@ class databaseSearch( object ):
                                     self.joins[i][3])])
         return on
 
-    def buildJoin(self, joinbit):
-        join = ''
-        if joinbit:
-            for i,v in enumerate(self.joins):
-                if (2**i)&joinbit:
-                    join += ' JOIN %s ON %s' % \
-                            (v[0], self.buildJoinOn(i))
-        return join
+    def buildJoin(self, joinbit=0):
+        join = []
+        for i,v in enumerate(self.joins):
+            if (2**i)&joinbit:
+                join.append(v.buildJoin())
+        return ' '.join(join)
 
     def buildQuery(self, where, select=None, tfrom=None, joinbit=0):
         sql = 'SELECT '
@@ -243,7 +279,7 @@ class databaseSearch( object ):
         else:
             sql += self.table
 
-        sql += self.buildJoin(joinbit)
+        sql += ' '+self.buildJoin(joinbit)
 
         if len(where):
             sql += ' WHERE '
@@ -280,7 +316,7 @@ class CMPRecord( CMPVideo ):
         with 'chanid' and 'starttime', falling back to 'title' and 'subtitle'.
     """
     def __cmp__(self, other):
-        if ('starttime' not in other) or ('video' not in other):
+        if ('starttime' not in other) or ('chanid' not in other):
             return CMPVideo.__cmd__(self, other)
         res = cmp(self.starttime, other.starttime)
         if res:
@@ -299,6 +335,7 @@ class deadlinesocket( socket.socket ):
         self.setdeadline(10.0)
 
     def connect(self, *args, **kwargs):
+        self.settimeout(self.getdeadline())
         socket.socket.connect(self, *args, **kwargs)
         self.setblocking(0)
 
@@ -323,7 +360,14 @@ class deadlinesocket( socket.socket ):
                 return u''
 
             # append response to buffer
-            buff.write(self.recv(bufsize-buff.tell(), flags))
+            p = buff.tell()
+            try:
+                buff.write(self.recv(bufsize-buff.tell(), flags))
+            except socket.error, e:
+                raise MythError(MythError.SOCKET, e.args)
+            if buff.tell() == p:
+               # no data read from a 'ready' socket, connection terminated
+                raise MythError(MythError.SOCKET, (54, 'Connection reset by peer'))
 
             if timeout == 0:
                 break
@@ -348,7 +392,14 @@ class deadlinesocket( socket.socket ):
                 return ''
 
             # append response to buffer
-            buff.write(self.recv(100, flags))
+            p = buff.tell()
+            try:
+                buff.write(self.recv(100, flags))
+            except socket.error, e:
+                raise MythError(MythError.SOCKET, e.args)
+            if buff.tell() == p:
+                # no data read from a 'ready' socket, connection terminated
+                raise MythError(MythError.CLOSEDSOCKET)
 
             if timeout == 0:
                 break
@@ -359,10 +410,7 @@ class deadlinesocket( socket.socket ):
         Loop recv listening for an amount of data provided
             in the first 8 bytes.
         """
-        try:
-            size = int(self.dlrecv(8, flags, deadline))
-        except:
-            return ''
+        size = int(self.dlrecv(8, flags, deadline))
         data = self.dlrecv(size, flags, deadline)
         self.log(MythLog.SOCKET|MythLog.NETWORK, \
                             'read <-- %d' % size, data)
@@ -370,10 +418,13 @@ class deadlinesocket( socket.socket ):
 
     def sendheader(self, data, flags=0):
         """Send data, prepending the length in the first 8 bytes."""
-        self.log(MythLog.SOCKET|MythLog.NETWORK, \
-                            'write --> %d' % len(data), data)
-        data = '%-8d%s' % (len(data), data)
-        self.send(data, flags)
+        try:
+            self.log(MythLog.SOCKET|MythLog.NETWORK, \
+                                'write --> %d' % len(data), data)
+            data = '%-8d%s' % (len(data), data)
+            self.send(data, flags)
+        except socket.error, e:
+            raise MythError(MythError.SOCKET, e.args)
 
 class MARKUPLIST( object ):
     """
@@ -512,3 +563,103 @@ class datetime( _pydatetime ):
     def rfcformat(self):
         return self.strftime('%a, %d %b %Y %H:%M:%S %Z')
 
+class ParseEnum( object ):
+    _static = None
+    def __str__(self): 
+        return str([k for k,v in self.iteritems() if v==True])
+    def __repr__(self): return str(self)
+    def __init__(self, parent, field_name, enum, editable=True):
+        self._parent = weakref.proxy(parent)
+        self._field = field_name
+        self._enum = enum
+        self._static = not editable
+
+    def __getattr__(self, name):
+        if name in self.__dict__:
+            return self.__dict__[name]
+        return bool(self._parent[self._field]&getattr(self._enum, name))
+
+    def __setattr__(self, name, value):
+        if self._static is None:
+            object.__setattr__(self, name, value)
+            return
+        if self._static:
+            raise AttributeError("'%s' cannot be edited." % name)
+        self.__setitem__(name, value)
+
+    def __getitem__(self, key):
+        return bool(self._parent[self._field]&getattr(self._enum, key))
+
+    def __setitem__(self, key, value):
+        if self._static:
+            raise KeyError("'%s' cannot be edited." % name)
+        val = getattr(self._enum, key)
+        if value:
+            self._parent[self._field] |= val
+        else:
+            self._parent[self._field] -= self._parent[self._field]&val
+
+    def keys(self):
+        return [key for key in self._enum.__dict__ if key[0] != '_']
+
+    def values(self):
+        return list(self.itervalues())
+
+    def items(self):
+        return list(self.iteritems())
+
+    def __iter__(self):
+        return self.itervalues()
+
+    def iterkeys(self):
+        return iter(self.keys())
+
+    def itervalues(self):
+        return imap(self.__getitem__, self.keys())
+
+    def iteritems(self):
+        for key in self.keys():
+            yield (key, self[key])
+
+class ParseSet( ParseEnum ):
+    def __init__(self, parent, field_name, editable=True):
+        self._parent = weakref.proxy(parent)
+        self._field = field_name
+        field = parent._db.tablefields[parent._table][self._field].type
+        if field[:4] != 'set(':
+            raise MythDBError("ParseSet error. "+\
+                        "Field '%s' not of type 'set()'" % self._field)
+        self._enum = dict([(t,2**i) for i,t in enumerate([type.strip("'")\
+                                for type in field[4:-1].split(',')])])
+        self._static = not editable
+
+    def __getattr__(self, name):
+        if name in self.__dict__:
+            return self.__dict__[name]
+        return self.__getitem__(name)
+
+    def __setattr__(self, name, value):
+        if self._static is None:
+            object.__setattr__(self, name, value)
+            return
+        if self._static:
+            raise AttributeError("'%s' cannot be edited." % name)
+        self.__setitem__(name, value)
+
+    def __getitem__(self, key):
+        return key in self._parent[self._field].split(',')
+
+    def __setitem__(self, key, value):
+        if self._static:
+            raise KeyError("'%s' cannot be edited." % name)
+        if self[key] == value:
+            return
+        tmp = self._parent[self._field].split(',')
+        if value:
+            tmp.append(key)
+        else:
+            tmp.remove(key)
+        self._parent[self._field] = ','.join(tmp)
+
+    def keys(self):
+        return self._enum.keys()

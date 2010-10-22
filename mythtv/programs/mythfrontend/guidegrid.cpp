@@ -20,7 +20,6 @@ using namespace std;
 #include "dbchannelinfo.h"
 #include "programinfo.h"
 #include "recordingrule.h"
-#include "oldsettings.h"
 #include "tv_play.h"
 #include "tv_rec.h"
 #include "customedit.h"
@@ -168,6 +167,10 @@ bool JumpToChannel::Update(void)
 void GuideGrid::RunProgramGuide(uint chanid, const QString &channum,
                     TV *player, bool embedVideo, bool allowFinder, int changrpid)
 {
+    // which channel group should we default to
+    if (changrpid == -2)
+        changrpid = gCoreContext->GetNumSetting("ChannelGroupDefault", -1);
+
     // check there are some channels setup
     DBChanList channels = ChannelUtil::GetChannels(0, true, "", changrpid);
     if (!channels.size())
@@ -400,6 +403,9 @@ GuideGrid::~GuideGrid()
     // tell the player to update its channel list just in case
     if (m_player)
         m_player->UpdateChannelList(m_changrpid);
+
+    if (gCoreContext->GetNumSetting("ChannelGroupRememberLast", 0))
+        gCoreContext->SaveSetting("ChannelGroupDefault", m_changrpid);
 }
 
 bool GuideGrid::keyPressEvent(QKeyEvent *event)
@@ -1344,7 +1350,6 @@ void GuideGrid::customEvent(QEvent *event)
                     VERBOSE(VB_IMPORTANT, "Failed to delete recording rule");
                 delete record;
             }
-            EmbedTVWindow();
         }
         else if (resultid == "menu")
         {

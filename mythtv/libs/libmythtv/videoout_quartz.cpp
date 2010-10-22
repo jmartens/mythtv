@@ -44,7 +44,6 @@ using namespace std;
 
 #include "DisplayRes.h"
 #include "yuv2rgb.h"
-#include "uitypes.h"
 #include "mythcorecontext.h"
 #include "filtermanager.h"
 #define AVCODEC_AVCODEC_H   // prevent clash with QuickTime CodecType
@@ -1194,10 +1193,10 @@ bool VideoOutputQuartz::InputChanged(const QSize &input_size,
 
     if (!res_changed && !cid_changed)
     {
+        aspect_only = true;
         // TODO we should clear our buffers to black here..
         if (asp_changed)
         {
-            aspect_only = true;
             MoveResize();
         }
         return true;

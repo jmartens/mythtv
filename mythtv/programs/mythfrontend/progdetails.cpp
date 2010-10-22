@@ -6,10 +6,10 @@
 // myth
 #include "mythcorecontext.h"
 #include "mythdialogbox.h"
-#include "uitypes.h"
 #include "recordingrule.h"
 #include "mythdb.h"
 #include "mythuihelper.h"
+#include "mythmainwindow.h"
 
 #include "progdetails.h"
 
@@ -467,7 +467,7 @@ void ProgDetails::loadPage(void)
                     rstr = role;
                     plist.clear();
                 }
-                
+
                 plist.append(pname);
             }
             if (rstr == "actor")

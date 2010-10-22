@@ -13,7 +13,7 @@ from logging import MythLog
 from altdict import DictData
 from connections import BEConnection
 from database import DBCache
-from utility import SplitInt, CMPRecord, datetime
+from utility import SplitInt, CMPRecord, datetime, ParseEnum
 
 from datetime import date
 from time import sleep
@@ -158,16 +158,14 @@ def findfile(filename, sgroup, db=None):
     db = DBCache(db)
     for sg in db.getStorageGroup(groupname=sgroup):
         # search given group
-        if not sg.local:
-            continue
-        if os.access(sg.dirname+filename, os.F_OK):
-            return sg
+        if sg.local:
+            if os.access(sg.dirname+filename, os.F_OK):
+                return sg
     for sg in db.getStorageGroup():
         # not found, search all other groups
-        if not sg.local:
-            continue
-        if os.access(sg.dirname+filename, os.F_OK):
-            return sg
+        if sg.local:
+            if os.access(sg.dirname+filename, os.F_OK):
+                return sg
     return None
 
 def ftopen(file, mode, forceremote=False, nooverwrite=False, db=None, \
@@ -239,7 +237,7 @@ def ftopen(file, mode, forceremote=False, nooverwrite=False, db=None, \
     if mode == 'w':
         # check for pre-existing file
         path = FileOps(host, db=db).fileExists(filename, sgroup)
-        sgs = db.getStorageGroup(groupname=sgroup)
+        sgs = list(db.getStorageGroup(groupname=sgroup))
         if path is not None:
             if nooverwrite:
                 raise MythFileError(MythError.FILE_FAILED_WRITE, file,
@@ -252,7 +250,7 @@ def ftopen(file, mode, forceremote=False, nooverwrite=False, db=None, \
                         return protoopen(host, filename, sgroup)
 
         # prefer local storage for new files
-        for i,v in reversed(enumerate(sgs)):
+        for i,v in reversed(list(enumerate(sgs))):
             if not v.local:
                 sgs.pop(i)
             else:
@@ -310,7 +308,7 @@ class FileTransfer( BEEvent ):
             res = self.backendCommand('ANN FileTransfer %s %d %d %s' \
                       % (self.localname, write, False,
                          BACKEND_SEP.join(
-                                ['-1', self.filename, self.sgroup])))
+                                ['2000', self.filename, self.sgroup])))
             if res.split(BACKEND_SEP)[0] != 'OK':
                 raise MythBEError(MythError.PROTO_ANNOUNCE,
                                   self.host, self.port, res)
@@ -780,6 +778,9 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
     def __init__(self, raw, db=None):
         DictData.__init__(self, raw)
         self._db = db
+        self.AudioProps = ParseEnum(self, 'audio_props', AUDIO_PROPS, False)
+        self.VideoProps = ParseEnum(self, 'video_props', VIDEO_PROPS, False)
+        self.SubtitleType = ParseEnum(self, 'subtitle_type', SUBTITLE_TYPES, False)
 
     @classmethod
     def fromEtree(cls, etree, db=None):
@@ -845,7 +846,7 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
                                                  self.hostname, \
                                                  self.filename)
         return ftopen(self.filename, 'r', db=self._db, chanid=self.chanid, \
-                      starttime=self.starttime)
+                      starttime=self.recstartts)
 
     def _openXML(self):
         xml = XMLConnection(self.hostname, 6544)
@@ -877,6 +878,7 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
                             ('c','chanid') ):
             tmp = unicode(self[data]).replace('/','-')
             path = path.replace('%'+tag, tmp)
+
         for (data, pre) in (   ('recstartts','%'), ('recendts','%e'),
                                ('starttime','%p'),('endtime','%pe') ):
             for (tag, format) in (('y','%y'),('Y','%Y'),('n','%m'),('m','%m'),
@@ -884,10 +886,14 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
                                   ('h','%I'),('H','%H'),('i','%M'),('s','%S'),
                                   ('a','%p'),('A','%p') ):
                 path = path.replace(pre+tag, self[data].strftime(format))
-        airdate = date(*[int(a) for a in self.airdate.split('-')])
+
+        airdate = self.airdate
+        if airdate is None:
+            airdate = date(1900,1,1)
         for (tag, format) in (('y','%y'),('Y','%Y'),('n','%m'),('m','%m'),
                               ('j','%d'),('d','%d')):
             path = path.replace('%o'+tag, airdate.strftime(format))
+
         path = path.replace('%-','-')
         path = path.replace('%%','%')
         path += '.'+self.filename.split('.')[-1]
@@ -909,12 +915,11 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
             cmd = cmd.replace('%%%s%%' % tag.upper(), str(self[tag]))
         for (tag, data) in (('STARTTIME','recstartts'),('ENDTIME','recendts'),
                             ('PROGSTART','starttime'),('PROGEND','endtime')):
-            cmd = cmd.replace('%%%s%%' % tag, \
-                        self[data].strftime.mythformat())
-            cmd = cmd.replace('%%%sISO%%' % tag, \
-                        self[data].isoformat())
+            t = self[data]
+            cmd = cmd.replace('%%%s%%' % tag, t.mythformat())
+            cmd = cmd.replace('%%%sISO%%' % tag, t.isoformat())
             cmd = cmd.replace('%%%sISOUTC%%' % tag, \
-                        (self[data]+timedelta(0,altzone)).isoformat())
+                        (t+timedelta(0,altzone)).isoformat())
         cmd = cmd.replace('%VERBOSELEVEL%', MythLog._parselevel())
         cmd = cmd.replace('%RECID%', str(self.recordid))
 

@@ -145,6 +145,8 @@ namespace
         delete exitPopup;
         exitPopup = NULL;
 
+        AudioOutput::Cleanup();
+
         if (g_pUPnp)
         {
             // This takes a few seconds, so inform the user:
@@ -210,7 +212,7 @@ static void startGuide(void)
     uint chanid = 0;
     QString channum = gCoreContext->GetSetting("DefaultTVChannel");
     channum = (channum.isEmpty()) ? "3" : channum;
-    GuideGrid::RunProgramGuide(chanid, channum);
+    GuideGrid::RunProgramGuide(chanid, channum, NULL, false, true, -2);
 }
 
 static void startFinder(void)
@@ -1318,17 +1320,14 @@ int main(int argc, char **argv)
         AppearanceSettings as;
         as.Save();
 
-        MSqlQuery query(MSqlQuery::InitCon());
-        query.prepare("update settings set data='en_US' "
-                      "WHERE hostname = :HOSTNAME and value='Language' ;");
-        query.bindValue(":HOSTNAME", gCoreContext->GetHostName());
-        if (!query.exec())
-            MythDB::DBError("Updating language", query);
+        gCoreContext->SaveSetting("Theme", DEFAULT_UI_THEME);
+        gCoreContext->SaveSetting("Language", "");
+        gCoreContext->SaveSetting("Country", "");
 
         return FRONTEND_EXIT_OK;
     }
 
-    // Create priveleged thread, then drop privs
+    // Create privileged thread, then drop privs
     pthread_t priv_thread;
     bool priv_thread_created = true;
 
