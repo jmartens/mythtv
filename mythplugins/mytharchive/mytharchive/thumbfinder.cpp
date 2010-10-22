@@ -57,7 +57,7 @@ extern "C" {
 #include <swscale.h>
 }
 
-#ifndef INT64_C    // Used in ffmpeg headers to define some constants
+#ifndef INT64_C    // Used in FFmpeg headers to define some constants
 #define INT64_C(v)   (v ## LL)
 #endif
 
@@ -165,6 +165,8 @@ bool ThumbFinder::Create(void)
     connect(m_frameButton, SIGNAL(Clicked()), this, SLOT(updateThumb()));
 
     BuildFocusList();
+
+    SetFocusWidget(m_imageGrid);
 
     return true;
 }
@@ -831,7 +833,7 @@ bool ThumbFinder::getFrameImage(bool needKeyFrame, int64_t requiredPTS)
             if (m_firstIFramePTS == -1)
                 m_firstIFramePTS = pkt.dts;
 
-            avcodec_decode_video(m_codecCtx, m_frame, &frameFinished, pkt.data, pkt.size);
+            avcodec_decode_video2(m_codecCtx, m_frame, &frameFinished, &pkt);
 
             if (requiredPTS != -1 && pkt.dts != (int64_t)AV_NOPTS_VALUE && pkt.dts < requiredPTS)
                 frameFinished = false;

@@ -12,6 +12,7 @@
 #include <mythdialogs.h>
 #include <util.h>
 #include <mythdb.h>
+#include <mythuihelper.h>
 
 #define LOC_ERR QString("MythGame:GAMEHANDLER Error: ")
 #define LOC QString("MythGame:GAMEHANDLER: ")
@@ -902,6 +903,7 @@ void GameHandler::Launchgame(RomInfo *romdata, QString systemname)
            .arg(handler->SystemName())
            .arg(exec));
 
+    GetMythUI()->AddCurrentLocation(QString("MythGame %1 ( %2 )").arg(handler->SystemName()).arg(exec));
 
     QStringList cmdlist = exec.split(";");
     if (cmdlist.count() > 0)
@@ -910,16 +912,18 @@ void GameHandler::Launchgame(RomInfo *romdata, QString systemname)
              ++cmd )
         {
             VERBOSE(VB_GENERAL, LOC + QString("Executing : %1").arg(*cmd));
-            myth_system(*cmd);
+            myth_system(*cmd, kMSProcessEvents);
         }
     }
     else
     {
         VERBOSE(VB_GENERAL, LOC + QString("Executing : %1").arg(exec));
-        myth_system(exec);
+        myth_system(exec, kMSProcessEvents);
     }
 
-    (void)d.cd(savedir);      
+    GetMythUI()->RemoveCurrentLocation();
+
+    (void)d.cd(savedir);
 }
 
 RomInfo *GameHandler::CreateRomInfo(RomInfo *parent)

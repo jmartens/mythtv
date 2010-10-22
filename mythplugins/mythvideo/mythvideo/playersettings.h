@@ -1,12 +1,6 @@
 #ifndef PLAYERSETTINGS_H
 #define PLAYERSETTINGS_H
 
-#include <uitypes.h>
-#include <xmlparse.h>
-#include <oldsettings.h>
-#include <mythwidgets.h>
-#include <mythdialogs.h>
-
 // libmythui
 #include <mythuibutton.h>
 #include <mythuicheckbox.h>
@@ -33,8 +27,6 @@ class PlayerSettings : public MythScreenType
     MythUITextEdit   *m_vcdDriveEdit;
     MythUITextEdit   *m_altPlayerEdit;
 
-    MythUIText       *m_helpText;
-
     MythUICheckBox   *m_altCheck;
 
     MythUIButton     *m_okButton;
@@ -42,7 +34,6 @@ class PlayerSettings : public MythScreenType
 
   private slots:
     void slotSave(void);
-    void slotFocusChanged(void);
     void toggleAlt(void);
 };
 

@@ -38,6 +38,7 @@ void strings_null() {
     ThemeUI::tr("title goes here");
     ThemeUI::tr("PL:");
     ThemeUI::tr("1");
+    ThemeUI::tr("Ok");
     ThemeUI::tr("Video Category");
     ThemeUI::tr("x.xx Gb");
     ThemeUI::tr("Change Encoding Profile");
@@ -71,8 +72,6 @@ void strings_null() {
     ThemeUI::tr("xxxxx MB");
     ThemeUI::tr("0 MB");
     ThemeUI::tr("Prev");
-    ThemeUI::tr("sep 13, 2004 11:00 pm (1h 15m)");
-    ThemeUI::tr("x.xx GB");
     ThemeUI::tr("File Finder To Import");
     ThemeUI::tr("Start Time:");
     ThemeUI::tr("Select Associated Channel");
