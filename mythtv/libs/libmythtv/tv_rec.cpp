@@ -1757,7 +1757,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
     }
 
     // Check if this is an MPEG channel
-    if (progNum >= 0)
+    if (progNum > 0)
     {
         if (!sd)
         {
@@ -1792,9 +1792,29 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
         return true;
     }
 
-    QString msg = "No valid DTV info, ATSC maj(%1) min(%2), MPEG pn(%3)";
-    VERBOSE(VB_IMPORTANT, LOC_ERR + msg.arg(major).arg(minor).arg(progNum));
-    return false;
+    // If this is not an ATSC, DVB or MPEG channel then check to make sure
+    // that we have permanent pidcache entries.
+    bool ok = false;
+    if (GetDTVChannel())
+    {
+        pid_cache_t pid_cache;
+        GetDTVChannel()->GetCachedPids(pid_cache);
+        pid_cache_t::const_iterator it = pid_cache.begin();
+        for (; !ok && it != pid_cache.end(); ++it)
+            ok |= it->IsPermanent();
+    }
+
+    if (!ok)
+    {
+        QString msg = "No valid DTV info, ATSC maj(%1) min(%2), MPEG pn(%3)";
+        VERBOSE(VB_IMPORTANT, LOC_ERR + msg.arg(major).arg(minor).arg(progNum));
+    }
+    else
+    {
+        VERBOSE(VB_RECORD, LOC + "Successfully set up raw pid monitoring.");
+    }
+
+    return ok;
 }
 
 /** \fn TVRec::SetupSignalMonitor(bool,bool)
