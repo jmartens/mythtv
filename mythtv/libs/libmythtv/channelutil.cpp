@@ -1882,7 +1882,7 @@ bool ChannelUtil::GetChannelData(
     mplexid       = query.value(5).toUInt();
     atsc_major    = query.value(6).toUInt();
     atsc_minor    = query.value(7).toUInt();
-    mpeg_prog_num = query.value(8).toUInt();
+    mpeg_prog_num = (query.value(8).isNull()) ? -1 : query.value(8).toInt();
 
     if (!mplexid || (mplexid == 32767)) /* 32767 deals with old lineups */
         return true;

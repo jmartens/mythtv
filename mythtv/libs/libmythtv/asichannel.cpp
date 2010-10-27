@@ -83,7 +83,7 @@ bool ASIChannel::SetChannelByString(const QString &channum)
         return false;
     }
 
-    // Get the input data
+    // Get the current channel data
     QString tvformat, modulation, freqtable, freqid, si_std;
     int finetune;
     uint64_t frequency;
@@ -114,61 +114,74 @@ bool ASIChannel::SetChannelByString(const QString &channum)
 
     bool ok = (!(*it)->externalChanger.isEmpty()) ?
         ChangeExternalChannel(freqid) : true;
-
     if (!ok)
     {
         VERBOSE(VB_IMPORTANT, loc_err + "External channel changer failed");
         return false;
     }
 
-    // We do need to pull the pid_cache since there are not tuning tables.
-
-    pid_cache_t pid_cache;
-    int chanid = ChannelUtil::GetChanID((*it)->sourceid, channum);
-    ChannelUtil::GetCachedPids(chanid, pid_cache);
-    if (pid_cache.empty())
-    {
-        VERBOSE(VB_IMPORTANT, loc_err + "PID cache is empty");
-        return false;
-    }
-
-    // Now we construct the PAT & PMT
+    // Clear out any old PAT or PMT & save version info
     uint version = 0;
     if (m_pat)
     {
+        VERBOSE(VB_IMPORTANT, loc + "Deleting m_pat");
         version = (m_pat->Version()+1) & 0x1f;
-        delete m_pat;
-        delete m_pmt;
+        delete m_pat; m_pat = NULL;
+        delete m_pmt; m_pmt = NULL;
     }
 
-    vector<uint> pnum; pnum.push_back(1);
-    vector<uint> pid;  pid.push_back(9999);
-    m_pat = ProgramAssociationTable::Create(0,version,pnum,pid);
-
-    int pcrpid = -1;
-    vector<uint> pids;
-    vector<uint> types;
-    pid_cache_t::iterator pit = pid_cache.begin(); 
-    for (; pit != pid_cache.end(); pit++)
+    if (atsc_minor || (mpeg_prog_num>=0))
     {
-        if (!pit->GetStreamID())
-            continue;
-        pids.push_back(pit->GetPID());
-        types.push_back(pit->GetStreamID());
-        if (pit->IsPCRPID())
-            pcrpid = pit->GetPID();
-        if ((pcrpid < 0) && StreamID::IsVideo(pit->GetStreamID()))
-            pcrpid = pit->GetPID();
+        VERBOSE(VB_IMPORTANT, loc + "atsc_minor or mpeg_prog_num are set");
+        SetSIStandard(si_std);
+        SetDTVInfo(atsc_major, atsc_minor, netid, tsid, mpeg_prog_num);
     }
-    if (pcrpid < 0)
-        pcrpid = pid_cache[0].GetPID();
+    else
+    {
+        // We need to pull the pid_cache since there are no tuning tables
+        pid_cache_t pid_cache;
+        int chanid = ChannelUtil::GetChanID((*it)->sourceid, channum);
+        ChannelUtil::GetCachedPids(chanid, pid_cache);
+        if (pid_cache.empty())
+        {
+            VERBOSE(VB_IMPORTANT, loc_err + "PID cache is empty");
+            return false;
+        }
 
-    m_pmt = ProgramMapTable::Create(
-        pnum.back(), pid.back(), pcrpid, version, pids, types);
+        VERBOSE(VB_IMPORTANT, loc + "Creating m_pat");
+
+        // Now we construct the PAT & PMT
+        vector<uint> pnum; pnum.push_back(1);
+        vector<uint> pid;  pid.push_back(9999);
+        m_pat = ProgramAssociationTable::Create(0,version,pnum,pid);
+
+        int pcrpid = -1;
+        vector<uint> pids;
+        vector<uint> types;
+        pid_cache_t::iterator pit = pid_cache.begin(); 
+        for (; pit != pid_cache.end(); pit++)
+        {
+            if (!pit->GetStreamID())
+                continue;
+            pids.push_back(pit->GetPID());
+            types.push_back(pit->GetStreamID());
+            if (pit->IsPCRPID())
+                pcrpid = pit->GetPID();
+            if ((pcrpid < 0) && StreamID::IsVideo(pit->GetStreamID()))
+                pcrpid = pit->GetPID();
+        }
+        if (pcrpid < 0)
+            pcrpid = pid_cache[0].GetPID();
+
+        m_pmt = ProgramMapTable::Create(
+            pnum.back(), pid.back(), pcrpid, version, pids, types);
+
+        SetSIStandard("mpeg");
+        SetDTVInfo(0,0,0,0,-1);
+    }
 
     m_curchannelname = channum;
-    SetSIStandard("mpeg");
-    SetDTVInfo(0,0,0,0,1);
+    m_inputs[m_currentInputID]->startChanNum = channum;
 
     return true;
 }

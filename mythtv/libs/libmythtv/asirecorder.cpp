@@ -38,6 +38,8 @@ ASIRecorder::ASIRecorder(TVRec *rec, ASIChannel *channel) :
     DTVRecorder(rec), m_channel(channel), m_stream_handler(NULL)
 {
     SetStreamData(new MPEGStreamData(-1,false));
+    if (channel->GetProgramNumber() < 0 || !channel->GetMinorChannel())
+        _stream_data->SetListeningDisabled(true);
 }
 
 void ASIRecorder::SetOptionsFromProfile(RecordingProfile *profile,
@@ -86,10 +88,14 @@ void ASIRecorder::StartRecording(void)
         recordingWait.wakeAll();
     }
 
-    _stream_data->Reset(m_channel->m_pat->ProgramNumber(0));
-    _stream_data->HandleTables(MPEG_PAT_PID, *m_channel->m_pat);
-    _stream_data->HandleTables(m_channel->m_pat->ProgramPID(0),
-                               *m_channel->m_pmt);
+    if (((m_channel->GetProgramNumber() < 0 || !m_channel->GetMinorChannel())) &&
+        (m_channel->m_pat != NULL))
+    {
+        _stream_data->Reset(m_channel->m_pat->ProgramNumber(0));
+        _stream_data->HandleTables(MPEG_PAT_PID, *m_channel->m_pat);
+        _stream_data->HandleTables(m_channel->m_pat->ProgramPID(0),
+                                   *m_channel->m_pmt);
+    }
 
     // Listen for time table on DVB standard streams
     if (m_channel && (m_channel->GetSIStandard() == "dvb"))

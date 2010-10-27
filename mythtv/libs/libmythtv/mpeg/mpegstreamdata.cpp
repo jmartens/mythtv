@@ -66,6 +66,7 @@ MPEGStreamData::MPEGStreamData(int desiredProgram, bool cacheTables)
       _local_utc_offset(0), _si_time_offset_cnt(0),
       _si_time_offset_indx(0),
       _eit_helper(NULL), _eit_rate(0.0f),
+      _listening_disabled(false),
       _encryption_lock(QMutex::Recursive), _listener_lock(QMutex::Recursive),
       _cache_tables(cacheTables), _cache_lock(QMutex::Recursive),
       // Single program stuff
@@ -1036,6 +1037,8 @@ int MPEGStreamData::ResyncStream(const unsigned char *buffer, int curr_pos,
 
 bool MPEGStreamData::IsListeningPID(uint pid) const
 {
+    if (_listening_disabled || IsNotListeningPID(pid))
+        return false;
     pid_map_t::const_iterator it = _pids_listening.find(pid);
     return it != _pids_listening.end();
 }
