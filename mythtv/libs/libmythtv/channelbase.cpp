@@ -84,10 +84,12 @@ void ChannelBase::TeardownAll(void)
 
 void ChannelBase::SelectChannel(const QString & chan, bool use_sm)
 {
-    VERBOSE(VB_CHANNEL, LOC + "SelectChannel " + chan);
+    VERBOSE(VB_CHANNEL, LOC + QString("SelectChannel(%1,%2)")
+            .arg(chan).arg(use_sm));
 
     TeardownAll();
 
+#if 0 /* this code is breaking multi-rec.. disable for now. 2010-10-28 dtk */
     if (use_sm)
     {
         m_thread_lock.lock();
@@ -99,7 +101,15 @@ void ChannelBase::SelectChannel(const QString & chan, bool use_sm)
         m_tuneThread.start();
     }
     else
+#endif
+    {
         SetChannelByString(chan);
+
+        m_thread_lock.lock();
+        m_abort_change = false;
+        m_tuneStatus = changeSuccess;
+        m_thread_lock.unlock();
+    }
 }
 
 /*
@@ -441,6 +451,8 @@ bool ChannelBase::SwitchToInput(const QString &inputname)
 bool ChannelBase::SelectInput(const QString &inputname, const QString &chan,
                               bool use_sm)
 {
+    VERBOSE(VB_CHANNEL, LOC + QString("SelectInput(%1,%2,%3)")
+            .arg(inputname).arg(chan).arg(use_sm));
     int input = GetInputByName(inputname);
 
     if (input >= 0)
