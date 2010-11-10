@@ -99,7 +99,12 @@ bool DeviceReadBuffer::Setup(const QString &streamName, int streamfd,
 
     // Initialize buffer, if it exists
     if (!buffer)
+    {
+        VERBOSE(VB_IMPORTANT, LOC +
+                QString("Failed to allocate buffer of size %1 = %2 + %3")
+                .arg(size+dev_read_size).arg(size).arg(dev_read_size));
         return false;
+    }
     memset(buffer, 0xFF, size + read_quanta);
 
     // Initialize statistics
@@ -357,7 +362,7 @@ void DeviceReadBuffer::fill_ringbuffer(void)
             errcnt = 0;
             // if we wrote past the official end of the buffer, copy to start
             if (writePtr + len > endPtr)
-                memcpy(endPtr, buffer, writePtr + len - endPtr);
+                memcpy(buffer, endPtr, writePtr + len - endPtr);
             IncrWritePointer(len);
         }
     }
