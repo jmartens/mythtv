@@ -199,7 +199,8 @@ bool HDHRStreamHandler::UpdateFilters(void)
 
     if (_tune_mode != hdhrTuneModeFrequencyPid)
     {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "UpdateFilters called in wrong tune mode");
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "UpdateFilters called in wrong tune mode");
         return false;
     }
 
@@ -213,19 +214,15 @@ bool HDHRStreamHandler::UpdateFilters(void)
     vector<uint> range_min;
     vector<uint> range_max;
 
-    for (uint i = 0; i < (uint)_pid_info.size(); i++)
+    PIDInfoMap::const_iterator it = _pid_info.begin();
+    for (; it != _pid_info.end(); ++it)
     {
-        uint pid_min = _pid_info[i]->_pid;
-        uint pid_max  = pid_min;
-        for (uint j = i + 1; j < (uint) _pid_info.size(); j++)
-        {
-            if (pid_max + 1 != _pid_info[j]->_pid)
-                break;
-            pid_max++;
-            i++;
-        }
-        range_min.push_back(pid_min);
-        range_max.push_back(pid_max);
+        range_min.push_back(it.key());
+        PIDInfoMap::const_iterator eit = it;
+        for (++eit;
+             (eit != _pid_info.end()) && (it.key() + 1 == eit.key());
+             ++it, ++eit);
+        range_max.push_back(it.key());
     }
     if (range_min.size() > 16)
     {
