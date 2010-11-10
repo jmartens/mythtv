@@ -39,6 +39,9 @@ class PIDInfo
     uint        streamType;        ///< StreamID
     int         pesType;           ///< PESStreamID
 };
+// Please do not change this to hash or other unordered container.
+// HDHRStreamHandler::UpdateFilters() relies on the forward
+// iterator returning these in order of ascending pid number.
 typedef QMap<uint,PIDInfo*> PIDInfoMap;
 
 // locking order
@@ -80,7 +83,7 @@ class StreamHandler : protected QThread, public DeviceReaderCB
     virtual void ReaderPaused(int fd) { (void) fd; }
     virtual void PriorityEvent(int fd) { (void) fd; }
 
-    PIDInfo *CreatePIDInfo(uint pid, uint stream_type, int pes_type)
+    virtual PIDInfo *CreatePIDInfo(uint pid, uint stream_type, int pes_type)
         { return new PIDInfo(pid, stream_type, pes_type); }
 
   protected:
