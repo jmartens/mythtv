@@ -42,8 +42,6 @@
 #include "mythverbose.h"
 #include "exitcodes.h"
 
-#include <cassert>
-
 #ifndef USING_MINGW
 typedef struct {
     QMutex  mutex;
@@ -92,7 +90,6 @@ void MythSystemReaper::run(void)
             bool done = false;
             if ((*it)->timeout != 0 && (*it)->timeout <= now)
             {
-                assert(it.key() > 0);
                 // Timed out
                 (*it)->result = GENERIC_EXIT_TIMEOUT;
                 VERBOSE(VB_GENERAL,
@@ -228,7 +225,6 @@ uint MythSystemReaper::waitPid( pid_t pid, time_t timeout, bool background,
 
     pidData->mutex.lock();
     m_mapLock.lock();
-    assert(pid > 0);
     m_pidMap.insert( pid, pidData );
     m_mapLock.unlock();
 
