@@ -42,7 +42,7 @@ class SignalMonitor
     // // // // // // // // // // // // // // // // // // // // // // // //
     // Control  // // // // // // // // // // // // // // // // // // // //
 
-    virtual void Start(bool waitfor_tune);
+    virtual void Start();
     virtual void Stop();
     virtual void Kick();
     virtual bool WaitForLock(int timeout = -1);
@@ -66,13 +66,12 @@ class SignalMonitor
     int GetUpdateRate() const { return update_rate; }
     virtual QStringList GetStatusList(bool kick = true);
 
-    bool IsTuned(void) const { return is_tuned; }
-
-    /// \brief Returns true iff signalLock.IsGood() returns true
+    /// \brief Returns true iff scriptStatus.IsGood() and signalLock.IsGood()
+    ///        return true
     bool HasSignalLock(void) const
     {
         QMutexLocker locker(&statusLock);
-        return signalLock.IsGood();
+        return scriptStatus.IsGood() && signalLock.IsGood();
     }
 
     virtual bool IsAllGood(void) const { return HasSignalLock(); }
@@ -120,10 +119,8 @@ class SignalMonitor
     static void* SpawnMonitorLoop(void*);
     virtual void MonitorLoop();
 
-    bool IsChannelTuned(void);
-
     /// \brief This should be overridden to actually do signal monitoring.
-    virtual void UpdateValues() { ; }
+    virtual void UpdateValues(void);
 
   public:
     /// We've seen a PAT,
@@ -152,8 +149,6 @@ class SignalMonitor
     static const uint64_t kFWSigMon_PowerSeen   = 0x0000000100ULL;
     /// We've seen something indicating whether the data stream is encrypted
     static const uint64_t kDTVSigMon_CryptSeen  = 0x0000000200ULL;
-
-    static const uint64_t kSigMon_Tuned         = 0x0000000400ULL;
 
     /// We've seen a PAT matching our requirements
     static const uint64_t kDTVSigMon_PATMatch   = 0x0000001000ULL;
@@ -202,14 +197,13 @@ class SignalMonitor
     ChannelBase *channel;
     TVRec       *pParent;
     int          capturecardnum;
-    uint64_t     flags;
+    volatile uint64_t flags;
     int          update_rate;
     uint         minimum_update_rate;
     bool         running;
     bool         exit;
     bool         update_done;
     bool         notify_frontend;
-    bool         is_tuned;
     bool         tablemon;
     bool         eit_scan;
     QString      error;
@@ -219,7 +213,7 @@ class SignalMonitor
 
     SignalMonitorValue signalLock;
     SignalMonitorValue signalStrength;
-    SignalMonitorValue channelTuned;
+    SignalMonitorValue scriptStatus;
 
     vector<SignalMonitorListener*> listeners;
 
@@ -309,19 +303,12 @@ inline QString sm_flags_to_string(uint64_t flags)
 
 inline bool SignalMonitor::IsRequired(const QString &cardtype)
 {
-    return (CardUtil::IsDVBCardType(cardtype) ||
-            (cardtype.toUpper() == "HDTV")      ||
-            (cardtype.toUpper() == "HDHOMERUN") ||
-            (cardtype.toUpper() == "HDPVR") ||
-            (cardtype.toUpper() == "FIREWIRE")  ||
-            (cardtype.toUpper() == "FREEBOX"));
+    return (cardtype != "IMPORT" && cardtype != "DEMO");
 }
 
 inline bool SignalMonitor::IsSupported(const QString &cardtype)
 {
-    return (IsRequired(cardtype)        ||
-            (cardtype.toUpper() == "V4L") ||
-            (cardtype.toUpper() == "MPEG"));
+    return IsRequired(cardtype);
 }
 
 

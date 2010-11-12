@@ -74,6 +74,7 @@ DTVRecorder::DTVRecorder(TVRec *rec) :
     _input_pmt(NULL),
     _has_no_av(false),
     // statistics
+    _packet_count(0),
     _continuity_error_count(0),
     _frames_seen_count(0),          _frames_written_count(0)
 {
@@ -183,6 +184,7 @@ void DTVRecorder::ResetForNewFile(void)
     memset(_pid_status, 0, sizeof(_pid_status));
     memset(_continuity_counter, 0xff, sizeof(_continuity_counter));
 
+    _packet_count               = 0;
     _continuity_error_count     = 0;
     _frames_seen_count          = 0;
     _frames_written_count       = 0;
@@ -1003,12 +1005,20 @@ bool DTVRecorder::ProcessTSPacket(const TSPacket &tspacket)
 {
     const uint pid = tspacket.PID();
 
+    if (pid != 0x1fff)
+        _packet_count++;
+
     // Check continuity counter
+    uint old_cnt = _continuity_counter[pid];
     if ((pid != 0x1fff) && !CheckCC(pid, tspacket.ContinuityCounter()))
     {
-        VERBOSE(VB_RECORD, LOC +
-                QString("PID 0x%1 discontinuity detected").arg(pid,0,16));
         _continuity_error_count++;
+        double erate = _continuity_error_count * 100.0 / _packet_count;
+        VERBOSE(VB_RECORD, LOC_WARN +
+                QString("PID 0x%1 discontinuity detected ((%2+1)%16!=%3) %4\%")
+                .arg(pid,0,16).arg(old_cnt,2)
+                .arg(tspacket.ContinuityCounter(),2)
+                .arg(erate));
     }
 
     // Only create fake keyframe[s] if there are no audio/video streams
@@ -1067,12 +1077,20 @@ bool DTVRecorder::ProcessAVTSPacket(const TSPacket &tspacket)
 {
     const uint pid = tspacket.PID();
 
+    if (pid != 0x1fff)
+        _packet_count++;
+
     // Check continuity counter
+    uint old_cnt = _continuity_counter[pid];
     if ((pid != 0x1fff) && !CheckCC(pid, tspacket.ContinuityCounter()))
     {
-        VERBOSE(VB_RECORD, LOC +
-                QString("PID 0x%1 discontinuity detected").arg(pid,0,16));
         _continuity_error_count++;
+        double erate = _continuity_error_count * 100.0 / _packet_count;
+        VERBOSE(VB_RECORD, LOC_WARN +
+                QString("A/V PID 0x%1 discontinuity detected "
+                        "((%2+1)%16!=%3) %4\%")
+                .arg(pid,0,16).arg(old_cnt).arg(tspacket.ContinuityCounter())
+                .arg(erate,5,'f',2));
     }
 
     // Sync recording start to first keyframe

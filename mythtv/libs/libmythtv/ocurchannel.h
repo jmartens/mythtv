@@ -26,23 +26,17 @@ class OCURChannel : public DTVChannel, SOAPClient
     OCURChannel(TVRec *parent, const QString &device);
     ~OCURChannel(void);
 
+    // Commands
     bool Open(void);
     void Close(void);
-
-    // Sets
-    bool SetChannelByString(const QString &chan);
+    bool Tune(const DTVMultiplex &tuning, QString inputname);
+    bool Tune(const QString &freqid, int finetune);
 
     // Gets
     bool IsOpen(void) const { return !m_upnp_usn.isEmpty(); }
     QString GetDevice(void) const { return m_device; }
     virtual vector<DTVTunerType> GetTunerTypes(void) const
     { return m_tuner_types; }
-
-    bool TuneMultiplex(uint, QString) { return true; }
-    bool Tune(const DTVMultiplex&, QString) { return true; }
-
-  protected:
-    bool SetChannelByVirtualChannel(uint32_t vchan);
 
   protected:
     vector<DTVTunerType>  m_tuner_types;

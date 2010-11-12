@@ -114,82 +114,19 @@ void OCURChannel::Close(void)
     m_upnp_usn.clear();
 }
 
-bool OCURChannel::SetChannelByString(const QString &channum)
+bool OCURChannel::Tune(const DTVMultiplex&, QString)
 {
-    QString loc = LOC + QString("SetChannelByString(%1)").arg(channum);
-    VERBOSE(VB_CHANNEL, loc);
-
-    InputMap::const_iterator it = m_inputs.find(m_currentInputID);
-    if (it == m_inputs.end())
-        return false;
-
-    uint mplexid_restriction;
-    if (!IsInputAvailable(m_currentInputID, mplexid_restriction))
-    {
-        VERBOSE(VB_IMPORTANT, loc + " " + QString(
-                    "Requested channel '%1' is on input '%2' "
-                    "which is in a busy input group")
-                .arg(channum).arg(m_currentInputID));
-
-        return false;
-    }
-
-    // Fetch tuning data from the database.
-    QString tvformat, modulation, freqtable, freqid, dtv_si_std;
-    int finetune;
-    uint64_t frequency;
-    int mpeg_prog_num;
-    uint atsc_major, atsc_minor, mplexid, tsid, netid;
-
-    if (!ChannelUtil::GetChannelData(
-        (*it)->sourceid, channum,
-        tvformat, modulation, freqtable, freqid,
-        finetune, frequency,
-        dtv_si_std, mpeg_prog_num, atsc_major, atsc_minor, tsid, netid,
-        mplexid, m_commfree))
-    {
-        VERBOSE(VB_IMPORTANT, loc + " " + QString(
-                    "Requested channel '%1' is on input '%2' "
-                    "which is in a busy input group")
-                .arg(channum).arg(m_currentInputID));
-
-        return false;
-    }
-
-    if (mplexid_restriction && (mplexid != mplexid_restriction))
-    {
-        VERBOSE(VB_IMPORTANT, loc + " " + QString(
-                    "Requested channel '%1' is not available because "
-                    "the tuner is currently in use on another transport.")
-                .arg(channum));
-
-        return false;
-    }
-
-    bool ok = false;
-    if (m_upnp_nt.contains("CAS"))
-    {
-        uint32_t virtual_channel = freqid.toUInt();
-        ok = SetChannelByVirtualChannel(virtual_channel);
-    }
-    else
-    {
-        // TODO handle Tuner service (full DTV tuning)
-    }
-
-    if (ok)
-    {
-        m_curchannelname = channum;
-        (*it)->startChanNum = channum;
-    }
-
-    VERBOSE(VB_CHANNEL, loc + " " + ((ok) ? "success" : "failure"));
-
-    return ok;
+    // TODO
+    return true;
 }
 
-bool OCURChannel::SetChannelByVirtualChannel(uint32_t vchan)
+bool OCURChannel::Tune(const QString &freqid, int /*finetune*/)
 {
+    bool ok;
+    uint32_t vchan = freqid.toUInt(&ok);
+    if (!m_upnp_nt.contains("CAS") || !ok)
+        return false;
+
     DeviceLocation *loc = UPnp::Find(m_upnp_nt, m_upnp_usn);
     if (!loc)
         return false;
@@ -202,7 +139,7 @@ bool OCURChannel::SetChannelByVirtualChannel(uint32_t vchan)
     args["NewCaptureMode"]   = "Live";
     int        err_code;
     QString    err_desc;
-    bool ok = SendSOAPRequest(
+    ok = SendSOAPRequest(
         method, args, err_code, err_desc, true /*inQtThread*/);
 
     if (!ok)

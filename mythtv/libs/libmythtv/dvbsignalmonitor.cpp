@@ -232,9 +232,6 @@ void DVBSignalMonitor::UpdateValues(void)
         return;
     }
 
-    if (!IsChannelTuned())
-        return;
-
     AddFlags(kSigMon_WaitForSig);
 
     DVBChannel *dvbchannel = GetDVBChannel();
@@ -312,6 +309,7 @@ void DVBSignalMonitor::UpdateValues(void)
                    kDTVSigMon_WaitForMGT | kDTVSigMon_WaitForVCT |
                    kDTVSigMon_WaitForNIT | kDTVSigMon_WaitForSDT))
     {
+        GetStreamData()->AddListeningPID(MPEG_PAT_PID);
         streamHandler->AddListener(GetStreamData(), true, false);
         streamHandlerStarted = true;
     }

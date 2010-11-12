@@ -45,11 +45,6 @@ ASISignalMonitor::ASISignalMonitor(
     streamHandlerStarted(false), streamHandler(NULL)
 {
     VERBOSE(VB_CHANNEL, LOC + "ctor");
-
-    signalStrength.SetThreshold(45);
-
-    AddFlags(kSigMon_WaitForSig);
-
     streamHandler = ASIStreamHandler::Get(_channel->GetDevice());
 }
 
@@ -104,9 +99,6 @@ void ASISignalMonitor::UpdateValues(void)
         update_done = true;
         return;
     }
-
-    if (!IsChannelTuned())
-        return;
 
     // Set SignalMonitorValues from info from card.
     bool isLocked = true;

@@ -386,6 +386,7 @@ using_backend {
     # Channel stuff
     HEADERS += channelbase.h               dtvchannel.h
     HEADERS += signalmonitor.h             dtvsignalmonitor.h
+    HEADERS += scriptsignalmonitor.h
     HEADERS += inputinfo.h                 inputgroupmap.h
     SOURCES += channelbase.cpp             dtvchannel.cpp
     SOURCES += signalmonitor.cpp           dtvsignalmonitor.cpp
@@ -466,9 +467,6 @@ using_backend {
         SOURCES += audioinputoss.cpp
         DEFINES += USING_OSS
     }
-
-    HEADERS += channelchangemonitor.h
-    SOURCES += channelchangemonitor.cpp
 
     # Support for Video4Linux devices
     using_v4l {

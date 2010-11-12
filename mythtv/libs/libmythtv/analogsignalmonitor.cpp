@@ -118,14 +118,19 @@ bool AnalogSignalMonitor::handleHDPVR(int videofd)
 
 void AnalogSignalMonitor::UpdateValues(void)
 {
+    SignalMonitor::UpdateValues();
+
+    {
+        QMutexLocker locker(&statusLock);
+        if (!scriptStatus.IsGood())
+            return;
+    }
+
     if (!running || exit)
         return;
 
     int videofd = channel->GetFd();
     if (videofd < 0)
-        return;
-
-    if (!IsChannelTuned())
         return;
 
     bool isLocked = false;

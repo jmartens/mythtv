@@ -42,6 +42,8 @@
 #include "mythverbose.h"
 #include "exitcodes.h"
 
+#include <cassert>
+
 #ifndef USING_MINGW
 typedef struct {
     QMutex  mutex;
@@ -58,7 +60,6 @@ class MythSystemReaper : public QThread
         void run(void);
         uint waitPid( pid_t pid, time_t timeout, bool background = false,
                       bool processEvents = true );
-        uint abortPid( pid_t pid );
     private:
         PidMap_t    m_pidMap;
         QMutex      m_mapLock;
@@ -70,99 +71,145 @@ void MythSystemReaper::run(void)
 {
     VERBOSE(VB_GENERAL, "Starting reaper thread");
 
-    // gCoreContext is set to NULL during shutdown, and we need this thread to
-    // exit during shutdown.
-    while( gCoreContext ) {
-        usleep(100000);
+    while (gCoreContext)
+    {
+        usleep(10000);
+        if (!gCoreContext)
+            break;
 
-        time_t              now = time(NULL);
-        PidMap_t::iterator  i, next;
-        PidData_t          *pidData;
-        pid_t               pid;
-        int                 count;
-
+        // kill timed out pids
         m_mapLock.lock();
-        count = m_pidMap.size();
-        if( !count )
+        if (m_pidMap.empty())
         {
             m_mapLock.unlock();
             continue;
         }
 
-        for( i = m_pidMap.begin(); i != m_pidMap.end(); i = next )
+        PidMap_t::iterator it = m_pidMap.begin();
+        time_t now = time(NULL);
+        while (it != m_pidMap.end())
         {
-            next    = i + 1;
-            pidData = i.value();
-            if( pidData->timeout == 0 || pidData->timeout > now )
+            bool done = false;
+            if ((*it)->timeout != 0 && (*it)->timeout <= now)
+            {
+                assert(it.key() > 0);
+                // Timed out
+                (*it)->result = GENERIC_EXIT_TIMEOUT;
+                VERBOSE(VB_GENERAL,
+                        QString("Child PID %1 timed out, killing")
+                        .arg(it.key()));
+                kill(it.key(), SIGTERM);
+                usleep(2500);
+                done = true;
+                int status;
+                if (waitpid(it.key(), &status, WNOHANG) != it.key())
+                {
+                    kill(it.key(), SIGKILL);
+                    done = waitpid(it.key(), &status, WNOHANG) == it.key();
+                }
+                (*it)->timeout = 0;
+            }
+
+            if (done)
+            {
+                if ((*it)->background)
+                    delete *it;
+                else
+                    (*it)->mutex.unlock();
+                it = m_pidMap.erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+        vector<pid_t> pids;
+        pids.reserve(m_pidMap.size());
+        for (it = m_pidMap.begin(); it != m_pidMap.end(); ++it)
+        {
+            if (it.key() > 0)
+                pids.push_back(it.key());
+        }
+        m_mapLock.unlock();
+
+        // reap our pids
+        for (uint i = 0; i < pids.size(); i++)
+        {
+            int status;
+            pid_t pid = waitpid(pids[i], &status, WNOHANG);
+            if (pid < 0)
+            {
+                // The pid may have been removed from m_pidMap
+                // while we were waiting on it, so make sure it
+                // is there before we report an error.
+                m_mapLock.lock();
+                it = m_pidMap.find(pid);
+                if (it != m_pidMap.end())
+                {
+                    VERBOSE(VB_GENERAL,
+                            QString("waitpid(%1) failed").arg(pids[i]) + ENO);
+                }
+                m_mapLock.unlock();
+            }
+            if (pid <= 0)
                 continue;
 
-            // Timed out
-            pid = i.key();
+            if (pid != pids[i])
+            {
+                VERBOSE(VB_IMPORTANT,
+                        QString("waitpid(%1) -> %2 "
+                                "Returned PID does not match requested PID")
+                        .arg(pids[i]).arg(pid));
+                continue;
+            }
 
-            next = m_pidMap.erase(i);
-            pidData->result = GENERIC_EXIT_TIMEOUT;
-            VERBOSE(VB_GENERAL, QString("Child PID %1 timed out, killing")
-                .arg(pid));
-            kill(pid, SIGTERM);
-            usleep(500);
-            kill(pid, SIGKILL);
-            pidData->mutex.unlock();
+            if (WIFEXITED(status) || WIFSIGNALED(status))
+            {
+                m_mapLock.lock();
+                it = m_pidMap.find(pid);
+                if (it == m_pidMap.end())
+                {
+                    VERBOSE(VB_GENERAL,
+                            QString("PID %1: not found in map").arg(pid));
+                    m_mapLock.unlock();
+                    continue;
+                }
+                PidData_t *pidData = *it;
+                it = m_pidMap.erase(it);
+                m_mapLock.unlock();
+
+                if (WIFEXITED(status))
+                {
+                    pidData->result = WEXITSTATUS(status);
+                    VERBOSE(VB_GENERAL,
+                            QString("PID %1: exited: status=%2, result=%3")
+                            .arg(pid).arg(status).arg(pidData->result));
+                }
+                else if (WIFSIGNALED(status))
+                {
+                    pidData->result = GENERIC_EXIT_SIGNALLED;
+                    VERBOSE(VB_GENERAL, QString("PID %1: signal: status=%2, "
+                                                "result=%3, signal=%4")
+                            .arg(pid).arg(status).arg(pidData->result) 
+                            .arg(WTERMSIG(status)));
+                }
+
+                if (pidData->background)
+                    delete pidData;
+                else
+                    pidData->mutex.unlock();
+            }
+            else if (WIFSTOPPED(status))
+            {
+                VERBOSE(VB_GENERAL, QString("PID %1: Got a stop signal %2")
+                        .arg(pid).arg(WSTOPSIG(status)));
+            }
+            else if (WIFCONTINUED(status))
+            {
+                VERBOSE(VB_GENERAL, QString("PID %1: Got a continue signal")
+                        .arg(pid));
+            }
         }
-        count = m_pidMap.size();
-        m_mapLock.unlock();
-
-        if (!count)
-            continue;
-
-        /* There's at least one child to wait on */
-        int         status;
-
-        pid = waitpid(-1, &status, WNOHANG);
-        if (pid <= 0)
-        {
-            if (pid < 0)
-                VERBOSE(VB_GENERAL, QString("waitpid() failed because %1")
-                    .arg(strerror(errno)));
-            continue;
-        }
-
-        m_mapLock.lock();
-        if (!m_pidMap.contains(pid))
-        {
-            VERBOSE(VB_GENERAL, QString("Child PID %1 not found in map!")
-                .arg(pid));
-            m_mapLock.unlock();
-            continue;
-        }
-
-        pidData = m_pidMap.value(pid);
-        m_pidMap.remove(pid);
-        m_mapLock.unlock();
-
-        if( WIFEXITED(status) )
-        {
-            pidData->result = WEXITSTATUS(status);
-            VERBOSE(VB_GENERAL, QString("PID %1: exited: status=%2, result=%3")
-                .arg(pid) .arg(status) .arg(pidData->result));
-        }
-        else if( WIFSIGNALED(status) )
-        {
-            pidData->result = GENERIC_EXIT_SIGNALLED;
-            VERBOSE(VB_GENERAL, QString("PID %1: signal: status=%2, result=%3, signal=%4")
-                .arg(pid) .arg(status) .arg(pidData->result) 
-                .arg(WTERMSIG(status)));
-        }
-        else
-        {
-            pidData->result = GENERIC_EXIT_NOT_OK;
-            VERBOSE(VB_GENERAL, QString("PID %1: other: status=%2, result=%3")
-                .arg(pid) .arg(status) .arg(pidData->result));
-        }
-
-        if( pidData->background )
-            delete pidData;
-        else
-            pidData->mutex.unlock();
     }
 }
 
@@ -181,6 +228,7 @@ uint MythSystemReaper::waitPid( pid_t pid, time_t timeout, bool background,
 
     pidData->mutex.lock();
     m_mapLock.lock();
+    assert(pid > 0);
     m_pidMap.insert( pid, pidData );
     m_mapLock.unlock();
 
@@ -199,34 +247,6 @@ uint MythSystemReaper::waitPid( pid_t pid, time_t timeout, bool background,
     /* We are running in the background, the reaper will still catch the 
        child */
     return( GENERIC_EXIT_OK );
-}
-
-uint MythSystemReaper::abortPid( pid_t pid )
-{
-    PidData_t  *pidData;
-    uint        result;
-
-    m_mapLock.lock();
-    if (!m_pidMap.contains(pid))
-    {
-        VERBOSE(VB_GENERAL, QString("Child PID %1 not found in map!")
-            .arg(pid));
-        m_mapLock.unlock();
-        return GENERIC_EXIT_NOT_OK;
-    }
-
-    pidData = m_pidMap.value(pid);
-    m_pidMap.remove(pid);
-    m_mapLock.unlock();
-
-    delete pidData;
-
-    VERBOSE(VB_GENERAL, QString("Child PID %1 aborted, killing") .arg(pid));
-    kill(pid, SIGTERM);
-    usleep(500);
-    kill(pid, SIGKILL);
-    result = GENERIC_EXIT_ABORTED;
-    return( result );
 }
 #endif
 
@@ -437,17 +457,6 @@ uint myth_system_wait(pid_t pid, uint timeout, bool background,
     VERBOSE(VB_GENERAL, QString("PID %1: launched%2") .arg(pid)
         .arg(background ? " in the background, not waiting" : ""));
     return reaper->waitPid(pid, timeout, background, processEvents);
-}
-
-uint myth_system_abort(pid_t pid)
-{
-    if( reaper == NULL )
-    {
-        reaper = new MythSystemReaper;
-        reaper->start();
-    }
-    VERBOSE(VB_GENERAL, QString("PID %1: aborted") .arg(pid));
-    return reaper->abortPid(pid);
 }
 #endif
 

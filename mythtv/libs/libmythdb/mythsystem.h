@@ -25,7 +25,6 @@ MPUBLIC void myth_system_post_flags(uint &flags);
 MPUBLIC pid_t myth_system_fork(const QString &command, uint &result);
 MPUBLIC uint myth_system_wait(pid_t pid, uint timeout, bool background = false,
                               bool processEvents = true);
-MPUBLIC uint myth_system_abort(pid_t pid);
 #endif
 
 #endif

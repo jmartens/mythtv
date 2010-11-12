@@ -12,42 +12,33 @@ using namespace std;
 // MythTV headers
 #include "dtvchannel.h"
 
-class ProgramAssociationTable;
 class ASIStreamHandler;
-class ProgramMapTable;
 class ASIChannel;
 
 class ASIChannel : public DTVChannel
 {
-    friend class ASISignalMonitor;
-    friend class ASIRecorder;
-
   public:
     ASIChannel(TVRec *parent, const QString &device);
     ~ASIChannel(void);
 
-    bool Open(void);
-    void Close(void);
-
-    // Sets
-    bool SetChannelByString(const QString &chan);
+    // Commands
+    virtual bool Open(void);
+    virtual void Close(void);
+    virtual bool Tune(const DTVMultiplex&, QString) { return true; }
+    virtual bool Tune(const QString&, int)          { return true; }
+    virtual bool Tune(uint64_t, QString)            { return true; }
 
     // Gets
-    bool IsOpen(void) const { return m_isopen; }
-    QString GetDevice(void) const { return m_device; }
+    virtual bool IsOpen(void) const { return m_isopen; }
+    virtual QString GetDevice(void) const { return m_device; }
     virtual vector<DTVTunerType> GetTunerTypes(void) const
         { return m_tuner_types; }
-
-    // Channel scanning stuff
-    bool TuneMultiplex(uint, QString) { return true; }
-    bool Tune(const DTVMultiplex&, QString) { return true; }
+    virtual bool IsPIDTuningSupported(void) const { return true; }
 
   private:
     vector<DTVTunerType>     m_tuner_types;
     QString                  m_device;
     bool                     m_isopen;
-    ProgramAssociationTable *m_pat;
-    ProgramMapTable         *m_pmt;
 };
 
 #endif // _ASI_CHANNEL_H_

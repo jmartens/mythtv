@@ -1653,7 +1653,7 @@ void ChannelScanSM::ScanTransport(const transport_scan_items_it_t transport)
     }
 
     // Start signal monitor for this channel
-    signalMonitor->Start(false);
+    signalMonitor->Start();
 
     timer.start();
     waitingForTables = (item.tuning.sistandard != "analog");

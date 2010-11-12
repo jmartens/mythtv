@@ -169,7 +169,8 @@ class DTVRecorder :
     vector<TSPacket> _scratch;
 
     // Statistics
-    mutable uint       _continuity_error_count;
+    mutable unsigned long long _packet_count;
+    mutable unsigned long long _continuity_error_count;
     unsigned long long _frames_seen_count;
     unsigned long long _frames_written_count;
 
@@ -184,6 +185,7 @@ class DTVRecorder :
 inline bool DTVRecorder::CheckCC(uint pid, uint new_cnt)
 {
     bool ok = ((((_continuity_counter[pid] + 1) & 0xf) == new_cnt) ||
+               (_continuity_counter[pid] == new_cnt) ||
                (_continuity_counter[pid] == 0xFF));
 
     _continuity_counter[pid] = new_cnt & 0xf;

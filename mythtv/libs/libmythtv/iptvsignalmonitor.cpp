@@ -119,9 +119,6 @@ void IPTVSignalMonitor::UpdateValues(void)
     if (!running || exit)
         return;
 
-    if (!IsChannelTuned())
-        return;
-
     if (dtvMonitorRunning)
     {
         EmitStatus();

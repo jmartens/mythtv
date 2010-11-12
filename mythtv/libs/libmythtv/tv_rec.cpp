@@ -1648,7 +1648,7 @@ static bool ApplyCachedPids(DTVSignalMonitor *dtvMon, const DTVChannel* channel)
     return vctpid_cached;
 }
 
-/** \fn bool TVRec::SetupDTVSignalMonitor(void)
+/**
  *  \brief Tells DTVSignalMonitor what channel to look for.
  *
  *   If the major and minor channels are set we tell the signal
@@ -1659,6 +1659,9 @@ static bool ApplyCachedPids(DTVSignalMonitor *dtvMon, const DTVChannel* channel)
  *
  *   This method also grabs the ATSCStreamData() from the recorder
  *   if possible, or creates one if needed.
+ *
+ *  \param EITscan if set we never look for video streams and we
+ *         lock on encrypted streams even if we can't decode them.
  */
 bool TVRec::SetupDTVSignalMonitor(bool EITscan)
 {
@@ -1757,7 +1760,7 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
     }
 
     // Check if this is an MPEG channel
-    if (progNum > 0)
+    if (progNum >= 0)
     {
         if (!sd)
         {
@@ -1821,8 +1824,9 @@ bool TVRec::SetupDTVSignalMonitor(bool EITscan)
  *  \brief This creates a SignalMonitor instance and
  *         begins signal monitoring.
  *
- *   If the channel exists a SignalMonitor instance is created and
- *   SignalMonitor::Start() is called to start the signal monitoring thread.
+ *   If the channel exists and there is something to monitor a 
+ *   SignalMonitor instance is created and SignalMonitor::Start()
+ *   is called to start the signal monitoring thread.
  *
  *  \param tablemon If set we enable table monitoring
  *  \param notify   If set we notify the frontend of the signal values
@@ -1848,22 +1852,28 @@ bool TVRec::SetupSignalMonitor(bool tablemon, bool EITscan, bool notify)
     // make sure statics are initialized
     SignalMonitorValue::Init();
 
-    if (channel->Open())
-        signalMonitor = SignalMonitor::Init(genOpt.cardtype, cardid,
-                                            channel);
+    if (SignalMonitor::IsSupported(genOpt.cardtype) && channel->Open())
+        signalMonitor = SignalMonitor::Init(genOpt.cardtype, cardid, channel);
 
     if (signalMonitor)
     {
         VERBOSE(VB_RECORD, LOC + "Signal monitor successfully created");
+        // If this is a monitor for Digital TV, initialize table monitors
+        if (GetDTVSignalMonitor() && tablemon &&
+            !SetupDTVSignalMonitor(EITscan))
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    "Failed to setup digital signal monitoring");
 
-        signalMonitor->SetMonitoring(this, EITscan,
-                                     GetDTVSignalMonitor() && tablemon);
+            return false;
+        }
+
         signalMonitor->AddListener(this);
         signalMonitor->SetUpdateRate(kSignalMonitoringRate);
         signalMonitor->SetNotifyFrontend(notify);
 
         // Start the monitoring thread
-        signalMonitor->Start(true);
+        signalMonitor->Start();
     }
 
     return true;
@@ -3453,19 +3463,7 @@ void TVRec::TuningShutdowns(const TuningRequest &request)
  */
 void TVRec::TuningFrequency(const TuningRequest &request)
 {
-    if (!channel)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR +
-                "TuningFrequency called without a valid channel object");
-        return;
-    }
-
     DTVChannel *dtvchan = GetDTVChannel();
-    bool livetv = request.flags & kFlagLiveTV;
-    bool antadj = request.flags & kFlagAntennaAdjust;
-    bool has_dummy = false;
-    bool ok = true;
-
     if (dtvchan)
     {
         MPEGStreamData *mpeg = NULL;
@@ -3474,22 +3472,24 @@ void TVRec::TuningFrequency(const TuningRequest &request)
             mpeg = GetDTVRecorder()->GetStreamData();
 
         const QString tuningmode = (HasFlags(kFlagEITScannerRunning)) ?
-                                   dtvchan->GetSIStandard() :
-                                   dtvchan->GetSuggestedTuningMode
-                                   (kState_WatchingLiveTV == internalState);
+            dtvchan->GetSIStandard() :
+            dtvchan->GetSuggestedTuningMode(
+                kState_WatchingLiveTV == internalState);
 
         dtvchan->SetTuningMode(tuningmode);
 
         if (request.minorChan && (tuningmode == "atsc"))
         {
-            channel->SelectChannel(request.channel, false);
+            channel->SetChannelByString(request.channel);
+
             ATSCStreamData *atsc = dynamic_cast<ATSCStreamData*>(mpeg);
             if (atsc)
                 atsc->SetDesiredChannel(request.majorChan, request.minorChan);
         }
         else if (request.progNum >= 0)
         {
-            channel->SelectChannel(request.channel, false);
+            channel->SetChannelByString(request.channel);
+
             if (mpeg)
                 mpeg->SetDesiredProgram(request.progNum);
         }
@@ -3509,11 +3509,54 @@ void TVRec::TuningFrequency(const TuningRequest &request)
     QString input   = request.input;
     QString channum = request.channel;
 
-    channel->Open();
+    bool ok = false;
+    if (channel)
+        channel->Open();
+    else
+        ok = true;
 
-    if (livetv || antadj)
+    if (channel && !channum.isEmpty())
+    {
+        if (!input.isEmpty())
+            ok = channel->SwitchToInput(input, channum);
+        else
+            ok = channel->SetChannelByString(channum);
+    }
+
+    if (!ok)
+    {
+        if (!(request.flags & kFlagLiveTV) || !(request.flags & kFlagEITScan))
+        {
+            if (curRecording)
+                curRecording->SetRecordingStatus(rsFailed);
+
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    QString("Failed to set channel to %1. "
+                            "Reverting to kState_None")
+                    .arg(channum));
+            if (kState_None != internalState)
+                ChangeState(kState_None);
+            else
+                tuningRequests.enqueue(TuningRequest(kFlagKillRec));
+            return;
+        }
+        else
+        {
+            VERBOSE(VB_IMPORTANT, LOC_ERR +
+                    QString("Failed to set channel to %1.").arg(channum));
+        }
+    }
+
+    bool livetv = request.flags & kFlagLiveTV;
+    bool antadj = request.flags & kFlagAntennaAdjust;
+    bool use_sm = SignalMonitor::IsRequired(genOpt.cardtype);
+    bool use_dr = use_sm && (livetv || antadj);
+    bool has_dummy = false;
+
+    if (use_dr)
     {
         // We need there to be a ringbuffer for these modes
+        bool ok;
         ProgramInfo *tmp = pseudoLiveTVRecording;
         pseudoLiveTVRecording = NULL;
 
@@ -3536,57 +3579,60 @@ void TVRec::TuningFrequency(const TuningRequest &request)
         has_dummy = true;
     }
 
-    if (!channum.isEmpty())
+    // Start signal monitoring for devices capable of monitoring
+    if (use_sm)
     {
-        if (!input.isEmpty())
-            channel->SelectInput(input, channum, true);
-        else
-            channel->SelectChannel(channum, true);
-    }
-
-    // Start signal (or channel change) monitoring
-    VERBOSE(VB_RECORD, LOC + "Starting Signal Monitor");
-    bool error = false;
-    if (!SetupSignalMonitor(!antadj, request.flags & kFlagEITScan,
-                            livetv | antadj))
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to setup signal monitor");
-        if (signalMonitor)
+        VERBOSE(VB_RECORD, LOC + "Starting Signal Monitor");
+        bool error = false;
+        if (!SetupSignalMonitor(
+                !antadj, request.flags & kFlagEITScan, livetv | antadj))
         {
-            delete signalMonitor;
-            signalMonitor = NULL;
+            VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to setup signal monitor");
+            if (signalMonitor)
+            {
+                delete signalMonitor;
+                signalMonitor = NULL;
+            }
+
+            // pretend the signal monitor is running to prevent segfault
+            SetFlags(kFlagSignalMonitorRunning);
+            ClearFlags(kFlagWaitingForSignal);
+            error = true;
         }
 
-        // pretend the signal monitor is running to prevent segfault
-        SetFlags(kFlagSignalMonitorRunning);
-        ClearFlags(kFlagWaitingForSignal);
-        error = true;
-    }
-    else if (signalMonitor)
-    {
-        SetFlags(kFlagSignalMonitorRunning);
-        ClearFlags(kFlagWaitingForSignal);
-        if (!antadj)
-            SetFlags(kFlagWaitingForSignal);
-    }
+        if (signalMonitor)
+        {
+            if (request.flags & kFlagEITScan)
+            {
+                GetDTVSignalMonitor()->GetStreamData()->
+                    SetVideoStreamsRequired(0);
+                GetDTVSignalMonitor()->IgnoreEncrypted(true);
+            }
 
-    if (has_dummy && ringBuffer)
-    {
-        // Make sure recorder doesn't point to bogus ringbuffer before
-        // it is potentially restarted without a new ringbuffer, if
-        // the next channel won't tune and the user exits LiveTV.
-        if (recorder)
-            recorder->SetRingBuffer(NULL);
+            SetFlags(kFlagSignalMonitorRunning);
+            ClearFlags(kFlagWaitingForSignal);
+            if (!antadj)
+                SetFlags(kFlagWaitingForSignal);
+        }
 
-        SetFlags(kFlagDummyRecorderRunning);
-        VERBOSE(VB_RECORD, "DummyDTVRecorder -- started");
-        SetFlags(kFlagRingBufferReady);
+        if (has_dummy && ringBuffer)
+        {
+            // Make sure recorder doesn't point to bogus ringbuffer before
+            // it is potentially restarted without a new ringbuffer, if
+            // the next channel won't tune and the user exits LiveTV.
+            if (recorder)
+                recorder->SetRingBuffer(NULL);
+
+            SetFlags(kFlagDummyRecorderRunning);
+            VERBOSE(VB_RECORD, "DummyDTVRecorder -- started");
+            SetFlags(kFlagRingBufferReady);
+        }
+
+        // if we had problems starting the signal monitor,
+        // we don't want to start the recorder...
+        if (error)
+            return;
     }
-
-    // if we had problems starting the signal monitor,
-    // we don't want to start the recorder...
-    if (error)
-        return;
 
     // Request a recorder, if the command is a recording command
     ClearFlags(kFlagNeedToStartRecorder);

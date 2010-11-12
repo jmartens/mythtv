@@ -190,9 +190,6 @@ void FirewireSignalMonitor::UpdateValues(void)
     if (!running || exit)
         return;
 
-    if (!IsChannelTuned())
-        return;
-
     if (dtvMonitorRunning)
     {
         EmitStatus();
@@ -256,6 +253,14 @@ void FirewireSignalMonitor::UpdateValues(void)
     {
         fwchan->Retune();
         isLocked = stb_needs_retune = false;
+    }
+
+    SignalMonitor::UpdateValues();
+
+    {
+        QMutexLocker locker(&statusLock);
+        if (!scriptStatus.IsGood())
+            return;
     }
 
     // Set SignalMonitorValues from info from card.

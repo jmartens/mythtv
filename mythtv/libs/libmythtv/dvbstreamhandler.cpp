@@ -166,7 +166,7 @@ void DVBStreamHandler::RunTS(void)
     if (_needs_buffering)
     {
         drb = new DeviceReadBuffer(this);
-        if (!drb->Setup(_device, dvr_fd));
+        if (!drb->Setup(_device, dvr_fd))
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate DRB buffer");
             delete drb;

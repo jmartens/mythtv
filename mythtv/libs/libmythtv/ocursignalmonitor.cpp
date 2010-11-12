@@ -105,9 +105,6 @@ void OCURSignalMonitor::UpdateValues(void)
         return;
     }
 
-    if (!IsChannelTuned())
-        return;
-
     // Set SignalMonitorValues from info from card.
     bool isLocked = true;
     {

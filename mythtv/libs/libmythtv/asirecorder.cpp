@@ -88,13 +88,13 @@ void ASIRecorder::StartRecording(void)
         recordingWait.wakeAll();
     }
 
-    if (((m_channel->GetProgramNumber() < 0 || !m_channel->GetMinorChannel())) &&
-        (m_channel->m_pat != NULL))
+    if (m_channel->HasGeneratedPAT())
     {
-        _stream_data->Reset(m_channel->m_pat->ProgramNumber(0));
-        _stream_data->HandleTables(MPEG_PAT_PID, *m_channel->m_pat);
-        _stream_data->HandleTables(m_channel->m_pat->ProgramPID(0),
-                                   *m_channel->m_pmt);
+        const ProgramAssociationTable *pat = m_channel->GetGeneratedPAT();
+        const ProgramMapTable         *pmt = m_channel->GetGeneratedPMT();
+        _stream_data->Reset(pat->ProgramNumber(0));
+        _stream_data->HandleTables(MPEG_PAT_PID, *pat);
+        _stream_data->HandleTables(pat->ProgramPID(0), *pmt);
     }
 
     // Listen for time table on DVB standard streams

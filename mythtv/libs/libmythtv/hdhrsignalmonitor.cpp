@@ -105,9 +105,6 @@ void HDHRSignalMonitor::UpdateValues(void)
         return;
     }
 
-    if (!IsChannelTuned())
-        return;
-
     struct hdhomerun_tuner_status_t status;
     streamHandler->GetTunerStatus(&status);
 

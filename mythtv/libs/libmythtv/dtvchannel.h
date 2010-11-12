@@ -23,6 +23,8 @@ using namespace std;
 #include "channelbase.h"
 #include "channelutil.h" // for pid_cache_t
 
+class ProgramAssociationTable;
+class ProgramMapTable;
 class TVRec;
 
 /** \class DTVChannel
@@ -35,13 +37,39 @@ class DTVChannel : public ChannelBase
     virtual ~DTVChannel();
 
     // Commands
+    virtual bool SetChannelByString(const QString &chan);
 
     /// \brief To be used by the channel scanner and possibly the EIT scanner.
-    virtual bool TuneMultiplex(uint mplexid, QString inputname) = 0;
-    /// \brief To be used by the channel scanner and possibly the EIT scanner.
+    virtual bool TuneMultiplex(uint mplexid, QString inputname);
+    /// \brief This performs the actual frequency tuning and in some cases
+    ///        input switching.
+    ///
+    /// In rare cases such as ASI this does nothing since all the channels
+    /// are in the same MPTS stream on the same input. But generally you
+    /// will need to implement this when adding support for new hardware.
     virtual bool Tune(const DTVMultiplex &tuning, QString inputname) = 0;
     /// \brief Enters power saving mode if the card supports it
-    virtual bool EnterPowerSavingMode(void) { return true; }
+    virtual bool EnterPowerSavingMode(void)
+    {
+        return true;
+    }
+    /// \brief This tunes on the frequency Identification parameter for
+    ///        hardware that supports it.
+    ///
+    /// This is only called when there is no frequency set. This is used
+    /// to implement "Channel Numbers" in analog tuning scenarios and to
+    /// implement "Virtual Channels" in the OCUR and Firewire tuners.
+    virtual bool Tune(const QString &freqid, int finetune)
+    {
+        (void) freqid; (void) finetune;
+        return false;
+    }
+
+    virtual bool Tune(uint64_t frequency, QString inputname)
+    {
+        (void) frequency; (void) inputname;
+        return false;
+    }
 
     // Gets
 
@@ -85,6 +113,13 @@ class DTVChannel : public ChannelBase
     /// \brief Returns true if this is the first of a number of multi-rec devs
     virtual bool IsMaster(void) const { return false; }
 
+    virtual bool IsPIDTuningSupported(void) const { return false; }
+
+    bool HasGeneratedPAT(void) const { return genPAT != NULL; }
+    bool HasGeneratedPMT(void) const { return genPMT != NULL; }
+    const ProgramAssociationTable *GetGeneratedPAT(void) const {return genPAT;}
+    const ProgramMapTable         *GetGeneratedPMT(void) const {return genPMT;}
+
     // Sets
 
     /// \brief Sets tuning mode: "mpeg", "dvb", "atsc", etc.
@@ -99,6 +134,9 @@ class DTVChannel : public ChannelBase
                     uint dvb_orig_netid,
                     uint mpeg_tsid, int mpeg_pnum);
     void ClearDTVInfo(void) { SetDTVInfo(0, 0, 0, 0, -1); }
+    /// \brief Checks tuning for problems, and tries to fix them.
+    virtual void CheckOptions(DTVMultiplex &tuning) const {}
+    virtual void HandleScriptEnd(bool ok);
 
   protected:
     mutable QMutex dtvinfo_lock;
@@ -111,6 +149,11 @@ class DTVChannel : public ChannelBase
     uint    currentATSCMinorChannel;
     uint    currentTransportID;
     uint    currentOriginalNetworkID;
+
+    /// This is a generated PAT for RAW pid tuning
+    ProgramAssociationTable *genPAT;
+    /// This is a generated PMT for RAW pid tuning
+    ProgramMapTable         *genPMT;
 
     static QMutex                    master_map_lock;
     static QMap<QString,DTVChannel*> master_map;

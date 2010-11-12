@@ -23,6 +23,7 @@
 
 // locking order
 // stateChangeLock -> triggerEventLoopLock
+//                 -> pendingRecLock
 
 class NuppelVideoRecorder;
 class RingBuffer;
@@ -138,7 +139,6 @@ typedef QMap<uint,PendingInfo> PendingMap;
 class MPUBLIC TVRec : public SignalMonitorListener
 {
     friend class TuningRequest;
-    friend class SignalMonitor;
 
   public:
     TVRec(int capturecardnum);
@@ -243,7 +243,6 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool WaitForEventThreadSleep(bool wake = true, ulong time = ULONG_MAX);
     static void *EventThread(void *param);
     static void *RecorderThread(void *param);
-    bool SetupDTVSignalMonitor(bool EITscan);
 
   private:
     void SetRingBuffer(RingBuffer *);
@@ -260,15 +259,16 @@ class MPUBLIC TVRec : public SignalMonitorListener
 
     void TeardownRecorder(bool killFile = false);
     DTVRecorder  *GetDTVRecorder(void);
-    
+
     bool CreateChannel(const QString &startChanNum,
                        bool enter_power_save_mode);
     void CloseChannel(void);
     DTVChannel *GetDTVChannel(void);
     V4LChannel *GetV4LChannel(void);
 
-    bool SetupSignalMonitor(bool enable_table_monitoring,
-                            bool EITscan, bool notify);
+    bool SetupSignalMonitor(
+        bool enable_table_monitoring, bool EITscan, bool notify);
+    bool SetupDTVSignalMonitor(bool EITscan);
     void TeardownSignalMonitor(void);
     DTVSignalMonitor *GetDTVSignalMonitor(void);
 
@@ -301,10 +301,10 @@ class MPUBLIC TVRec : public SignalMonitorListener
 
     bool WaitForNextLiveTVDir(void);
     bool GetProgramRingBufferForLiveTV(RecordingInfo **pginfo, RingBuffer **rb,
-				       const QString & channum, int inputID);
+                                       const QString &channum, int inputID);
     bool CreateLiveTVRingBuffer(const QString & channum);
     bool SwitchLiveTVRingBuffer(const QString & channum,
-				bool discont, bool set_rec);
+                                bool discont, bool set_rec);
 
     void StartedRecording(RecordingInfo*);
     void FinishedRecording(RecordingInfo*);
