@@ -87,7 +87,6 @@ MpegRecorder::MpegRecorder(TVRec *rec) :
     card(QString::null),          driver(QString::null),
     version(0),
     supports_sliced_vbi(false),
-    use_encoding_pause_hack(false),
     // State
     start_stop_encoding_lock(QMutex::Recursive),
     // Pausing state
@@ -388,8 +387,7 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
         return false;
     }
 
-    bufferSize             = 4096;
-    use_encoding_pause_hack = false;
+    bufferSize = 4096;
 
     struct v4l2_capability cap;
     memset(&cap, 0, sizeof(cap));
@@ -408,15 +406,9 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
         /// Determine hacks needed for specific drivers & driver versions
         if (CardUtil::GetV4LInfo(chanfd, card, driver, version))
         {
-            if (driver == "ivtv")
-            {
-                use_encoding_pause_hack =
-                    (version >= IVTV_KERNEL_VERSION(0, 10, 0));
-            }
-            else if (driver == "hdpvr")
+            if (driver == "hdpvr")
             {
                 bufferSize = 1500 * TSPacket::kSize;
-                use_encoding_pause_hack = true;
                 m_h264_parser.use_I_forKeyframes(false);
             }
         }
@@ -988,7 +980,7 @@ void MpegRecorder::StartRecording(void)
     {
         VERBOSE(VB_RECORD, LOC + "Initial startup of recorder");
 
-        if (use_encoding_pause_hack && !StartEncoding(readfd))
+        if (!StartEncoding(readfd))
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to start recording");
             _error = true;
@@ -1165,8 +1157,8 @@ void MpegRecorder::StartRecording(void)
         delete _device_read_buffer;
         _device_read_buffer = NULL;
     }
-    if (use_encoding_pause_hack)
-        StopEncoding(readfd);
+
+    StopEncoding(readfd);
 
     FinishRecording();
 
@@ -1260,8 +1252,7 @@ bool MpegRecorder::PauseAndWait(int timeout)
                 _device_read_buffer->WaitForPaused(4000);
             }
 
-            if (use_encoding_pause_hack)
-                StopEncoding(readfd);
+            StopEncoding(readfd);
 
             paused = true;
             pauseWait.wakeAll();
@@ -1284,8 +1275,7 @@ bool MpegRecorder::PauseAndWait(int timeout)
             _seen_sps = false;
         }
 
-        if (use_encoding_pause_hack)
-            StartEncoding(readfd);
+        StartEncoding(readfd);
 
         if (_device_read_buffer)
             _device_read_buffer->SetRequestPause(false);
@@ -1306,8 +1296,7 @@ void MpegRecorder::RestartEncoding(void)
 
     QMutexLocker locker(&start_stop_encoding_lock);
 
-    if (use_encoding_pause_hack)
-        StopEncoding(readfd);
+    StopEncoding(readfd);
 
     // Make sure the next things in the file are a PAT & PMT
     if (_stream_data &&
@@ -1319,7 +1308,7 @@ void MpegRecorder::RestartEncoding(void)
         HandleSingleProgramPMT(_stream_data->PMTSingleProgram());
     }
 
-    if (use_encoding_pause_hack && !StartEncoding(readfd))
+    if (!StartEncoding(readfd))
     {
         if (0 != close(readfd))
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Close error" + ENO);

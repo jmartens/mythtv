@@ -85,9 +85,6 @@ class MpegRecorder : public V4LRecorder,
     QString  driver;
     uint32_t version;
     bool     supports_sliced_vbi;
-    /// Some drivers require streaming to be disabled before
-    /// an input switch and other channel format setting...
-    bool     use_encoding_pause_hack;
 
     // State
     mutable QMutex start_stop_encoding_lock;
