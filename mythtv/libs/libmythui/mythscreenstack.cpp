@@ -16,11 +16,10 @@ MythScreenStack::MythScreenStack(MythMainWindow *parent, const QString &name,
                                  bool mainstack)
                : QObject(parent)
 {
-    assert(parent);
-
     setObjectName(name);
 
-    parent->AddScreenStack(this, mainstack);
+    if (parent)
+        parent->AddScreenStack(this, mainstack);
 
     m_newTop = NULL;
     m_topScreen = NULL;
@@ -38,8 +37,8 @@ MythScreenStack::~MythScreenStack()
 
 void MythScreenStack::EnableEffects(void)
 {
-    m_DoTransitions = (GetMythPainter()->SupportsAlpha() &&
-                       GetMythPainter()->SupportsAnimation());
+    m_DoTransitions = (GetPainter()->SupportsAlpha() &&
+                       GetPainter()->SupportsAnimation());
 }
 
 int MythScreenStack::TotalScreens(void) const
@@ -67,7 +66,8 @@ void MythScreenStack::AddScreen(MythScreenType *screen, bool allowFade)
     }
     else
     {
-        reinterpret_cast<MythMainWindow *>(parent())->update();
+        if (parent())
+            reinterpret_cast<MythMainWindow *>(parent())->update();
         RecalculateDrawOrder();
         if (!screen->IsInitialized())
             m_DoInit = true;
@@ -364,4 +364,9 @@ QString MythScreenStack::GetLocation(bool fullPath) const
     }
 
     return QString();
+}
+
+MythPainter* MythScreenStack::GetPainter(void)
+{
+    return GetMythPainter();
 }

@@ -269,10 +269,10 @@ bool MythCoreContext::ConnectToMasterServer(bool blockingClient)
     if (!d->m_serverSock)
         return false;
 
-    if (!d->m_eventSock)
+    if (!IsBackend() && !d->m_eventSock)
         d->m_eventSock = ConnectEventSocket(server, port);
 
-    if (!d->m_eventSock)
+    if (!IsBackend() && !d->m_eventSock)
     {
         d->m_serverSock->DownRef();
         d->m_serverSock = NULL;
@@ -793,8 +793,11 @@ bool MythCoreContext::SendReceiveStringList(QStringList &strlist,
             d->m_serverSock->DownRef();
             d->m_serverSock = NULL;
 
-            d->m_eventSock->DownRef();
-            d->m_eventSock = NULL;
+            if (d->m_eventSock)
+            {
+                d->m_eventSock->DownRef();
+                d->m_eventSock = NULL;
+            }
 
             bool blockingClient = GetNumSetting("idleTimeoutSecs",0);
             ConnectToMasterServer(blockingClient);
@@ -942,7 +945,7 @@ bool MythCoreContext::CheckProtoVersion(MythSocket *socket, uint timeout_ms,
     {
         VERBOSE(VB_GENERAL, QString("Protocol version or token mismatch "
                                     "(frontend=%1/%2,"
-                                    "backend=%3/??)\n")
+                                    "backend=%3/\?\?)\n")
                                     .arg(MYTH_PROTO_VERSION)
                                     .arg(MYTH_PROTO_TOKEN)
                                     .arg(strlist[1]));

@@ -248,18 +248,6 @@ void MythImage::ToGreyscale()
     }
 }
 
-MythImage *MythImage::FromQImage(QImage **img)
-{
-    if (!img || !*img)
-        return NULL;
-
-    MythImage *ret = GetMythPainter()->GetFormatImage();
-    ret->Assign(**img);
-    delete *img;
-    *img = NULL;
-    return ret;
-}
-
 bool MythImage::Load(MythImageReader &reader)
 {
     if (!reader.canRead())
@@ -373,7 +361,8 @@ void MythImage::MakeGradient(QImage &image, const QColor &begin,
     painter.end();
 }
 
-MythImage *MythImage::Gradient(const QSize & size, const QColor &begin,
+MythImage *MythImage::Gradient(MythPainter *painter,
+                               const QSize & size, const QColor &begin,
                                const QColor &end, uint alpha,
                                FillDirection direction)
 {
@@ -381,7 +370,7 @@ MythImage *MythImage::Gradient(const QSize & size, const QColor &begin,
 
     MakeGradient(img, begin, end, alpha, true, direction);
 
-    MythImage *ret = GetMythPainter()->GetFormatImage();
+    MythImage *ret = painter->GetFormatImage();
     ret->Assign(img);
     ret->m_isGradient = true;
     ret->m_gradBegin = begin;

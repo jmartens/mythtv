@@ -149,7 +149,9 @@ bool TVRec::Init(void)
     if (!GetDevices(cardid, genOpt, dvbOpt, fwOpt))
         return false;
 
+    pendingRecLock.lock();
     m_recStatus = rsUnknown;
+    pendingRecLock.unlock();
 
     // configure the Channel instance
     QString startchannel = GetStartChannel(cardid, genOpt.defaultinput);
@@ -403,7 +405,9 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
     QMutexLocker lock(&stateChangeLock);
     QString msg("");
 
+    pendingRecLock.lock();
     m_recStatus = rsAborted;
+    pendingRecLock.unlock();
 
     // Flush out any pending state changes
     WaitForEventThreadSleep();
@@ -432,8 +436,9 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
 
         ClearFlags(kFlagCancelNextRecording);
 
+        QMutexLocker locker(&pendingRecLock);
         m_recStatus = rsRecording;
-        return m_recStatus;
+        return rsRecording;
     }
 
     bool cancelNext = false;
@@ -575,14 +580,18 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         // Make sure scheduler is allowed to end this recording
         ClearFlags(kFlagCancelNextRecording);
 
+        pendingRecLock.lock();
         m_recStatus = rsTuning;
+        pendingRecLock.unlock();
         ChangeState(kState_RecordingOnly);
     }
     else if (!cancelNext && (GetState() == kState_WatchingLiveTV))
     {
         SetPseudoLiveTVRecording(new ProgramInfo(*rcinfo));
         recordEndTime = GetRecordEndTime(rcinfo);
+        pendingRecLock.lock();
         m_recStatus = rsRecording;
+        pendingRecLock.unlock();
 
         // We want the frontend to change channel for recording
         // and disable the UI for channel change, PiP, etc.
@@ -603,13 +612,17 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         if (cancelNext)
         {
             msg += "But a user has canceled this recording";
+            pendingRecLock.lock();
             m_recStatus = rsCancelled;
+            pendingRecLock.unlock();
         }
         else
         {
             msg += QString("But the current state is: %1")
                 .arg(StateToString(internalState));
+            pendingRecLock.lock();
             m_recStatus = rsTunerBusy;
+            pendingRecLock.unlock();
         }
 
         if (curRecording && internalState == kState_RecordingOnly)
@@ -627,6 +640,7 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
 
     WaitForEventThreadSleep();
 
+    QMutexLocker locker(&pendingRecLock);
     if ((curRecording) && (curRecording->GetRecordingStatus() == rsFailed) &&
         (m_recStatus == rsRecording || m_recStatus == rsTuning))
         m_recStatus = rsFailed;

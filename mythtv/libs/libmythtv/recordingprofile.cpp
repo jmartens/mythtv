@@ -1187,6 +1187,7 @@ class RecordingProfilePopup
     }
 };
 
+// id and name will be deleted by ConfigurationGroup's destructor
 RecordingProfile::RecordingProfile(QString profName)
     : id(new ID()),        name(new Name(*this)),
       imageSize(NULL),     videoSettings(NULL),
@@ -1236,13 +1237,6 @@ RecordingProfile::RecordingProfile(QString profName)
 
     addChild(profile);
 };
-
-RecordingProfile::~RecordingProfile()
-{
-    id->deleteLater();
-    delete name;
-    name = NULL;
-}
 
 void RecordingProfile::ResizeTranscode(bool resize)
 {

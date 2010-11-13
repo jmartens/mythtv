@@ -4,8 +4,6 @@
 Provides connection cache and data handlers for accessing the backend.
 """
 
-from __future__ import with_statement
-
 from static import PROTO_VERSION, BACKEND_SEP, RECSTATUS, AUDIO_PROPS, \
                    VIDEO_PROPS, SUBTITLE_TYPES
 from exceptions import MythError, MythDBError, MythBEError, MythFileError
@@ -88,7 +86,7 @@ class BECache( SplitInt ):
             with self.db.cursor(self.log) as cursor:
                 if cursor.execute("""SELECT hostname FROM settings
                                      WHERE value='BackendServerIP'
-                                     AND data=%s""", self.host) == 0:
+                                     AND data=?""", [self.host]) == 0:
                     # no match found
                     raise MythDBError(MythError.DB_SETTING, 'BackendServerIP',
                                             self.host)
@@ -186,7 +184,7 @@ def ftopen(file, mode, forceremote=False, nooverwrite=False, db=None, \
     db = DBCache(db)
     log = MythLog('Python File Transfer', db=db)
     reuri = re.compile(\
-        'myth://((?P<group>.*)@)?(?P<host>[a-zA-Z0-9_\.]*)(:[0-9]*)?/(?P<file>.*)')
+        'myth://((?P<group>.*)@)?(?P<host>[a-zA-Z0-9_\-\.]*)(:[0-9]*)?/(?P<file>.*)')
     reip = re.compile('(?:\d{1,3}\.){3}\d{1,3}')
 
     if mode not in ('r','w'):
@@ -301,14 +299,14 @@ class FileTransfer( BEEvent ):
 
         def announce(self):
             if self.mode == 'r':
-                write = False
+                cmd = 'ANN FileTransfer %s 0 0 2000'
             elif self.mode == 'w':
-                write = True
+                cmd = 'ANN FileTransfer %s 1'
 
-            res = self.backendCommand('ANN FileTransfer %s %d %d %s' \
-                      % (self.localname, write, False,
-                         BACKEND_SEP.join(
-                                ['2000', self.filename, self.sgroup])))
+            res = self.backendCommand(
+                    BACKEND_SEP.join([cmd % self.localname,
+                                      self.filename,
+                                      self.sgroup]))
             if res.split(BACKEND_SEP)[0] != 'OK':
                 raise MythBEError(MythError.PROTO_ANNOUNCE,
                                   self.host, self.port, res)
@@ -913,6 +911,7 @@ class Program( DictData, RECSTATUS, AUDIO_PROPS, VIDEO_PROPS, \
                     'category','recgroup','playgroup','parentid','findid',
                     'recstatus','rectype'):
             cmd = cmd.replace('%%%s%%' % tag.upper(), str(self[tag]))
+        cmd = cmd.replace('%ORIGINALAIRDATE%', self.airdate.isoformat())
         for (tag, data) in (('STARTTIME','recstartts'),('ENDTIME','recendts'),
                             ('PROGSTART','starttime'),('PROGEND','endtime')):
             t = self[data]

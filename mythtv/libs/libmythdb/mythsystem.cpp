@@ -67,7 +67,7 @@ static class MythSystemReaper *reaper = NULL;
 
 void MythSystemReaper::run(void)
 {
-    VERBOSE(VB_GENERAL, "Starting reaper thread");
+    VERBOSE(VB_GENERAL | VB_EXTRA, "Starting reaper thread");
 
     while (gCoreContext)
     {
@@ -260,7 +260,7 @@ uint myth_system(const QString &command, uint flags, uint timeout)
 
     if( !(flags & kMSRunBackground) && command.endsWith("&") )
     {
-        VERBOSE(VB_GENERAL, "Adding background flag");
+        VERBOSE(VB_GENERAL | VB_EXTRA, "Adding background flag");
         flags |= kMSRunBackground;
     }
 
@@ -286,20 +286,21 @@ uint myth_system(const QString &command, uint flags, uint timeout)
     if (!::CreateProcessA(NULL, cmd.toUtf8().data(), NULL, NULL,
                           FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi))
     {
-        VERBOSE(VB_GENERAL, (LOC_ERR + "CreateProcess() failed because %1")
+        VERBOSE(VB_GENERAL | VB_EXTRA, 
+                (LOC_ERR + "CreateProcess() failed because %1")
                 .arg(::GetLastError()));
         result = MYTHSYSTEM__EXIT__EXECL_ERROR;
     }
     else
     {
         if (::WaitForSingleObject(pi.hProcess, INFINITE) == WAIT_FAILED)
-            VERBOSE(VB_GENERAL,
+            VERBOSE(VB_GENERAL | VB_EXTRA,
                     (LOC_ERR + "WaitForSingleObject() failed because %1")
                     .arg(::GetLastError()));
         DWORD exitcode = GENERIC_EXIT_OK;
         if (!GetExitCodeProcess(pi.hProcess, &exitcode))
-            VERBOSE(VB_GENERAL, (LOC_ERR + 
-                    "GetExitCodeProcess() failed because %1")
+            VERBOSE(VB_GENERAL | VB_EXTRA, 
+                    (LOC_ERR + "GetExitCodeProcess() failed because %1")
                     .arg(::GetLastError()));
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
@@ -375,17 +376,27 @@ void myth_system_post_flags(uint &flags)
 
 
 #ifndef USING_MINGW
+#define MAX_BUFLEN 1024
 pid_t myth_system_fork(const QString &command, uint &result)
 {
-    QString LOC_ERR = QString("myth_system('%1'): Error: ").arg(command);
-    VERBOSE(VB_GENERAL, QString("Launching: %1") .arg(command));
+    char cmdargs[MAX_BUFLEN];
+    strncpy(cmdargs, command.toUtf8().constData(), MAX_BUFLEN);
+    cmdargs[MAX_BUFLEN-1] = '\0';
+
+    QString LOC_ERR = QString("myth_system('%1'): Error: ").arg(cmdargs);
+
+    char locerr[MAX_BUFLEN];
+    strncpy(locerr, (const char *)LOC_ERR.constData(), MAX_BUFLEN);
+    locerr[MAX_BUFLEN-1] = '\0';
+
+    VERBOSE(VB_GENERAL | VB_EXTRA, QString("Launching: %1") .arg(cmdargs));
 
     pid_t child = fork();
 
     if (child < 0)
     {
         /* Fork failed, still in parent */
-        VERBOSE(VB_GENERAL, (LOC_ERR + "fork() failed because %1")
+        VERBOSE(VB_GENERAL | VB_EXTRA, (LOC_ERR + "fork() failed because %1")
                 .arg(strerror(errno)));
         result = GENERIC_EXIT_NOT_OK;
         return -1;
@@ -408,29 +419,27 @@ pid_t myth_system_fork(const QString &command, uint &result)
             if (dup2(fd, 0) < 0)
             {
                 // Can't use VERBOSE due to locking fun.
-		        QString message = LOC_ERR + 
-                        "Cannot redirect /dev/null to standard input,"
-                        "\n\t\t\tfailed to duplicate file descriptor." + ENO;
-                cerr << message.constData() << endl;
+                cerr << locerr 
+                     << "Cannot redirect /dev/null to standard input,"
+                        "\n\t\t\tfailed to duplicate file descriptor: "
+                     << strerror(errno) << endl;
             }
             close(fd);
         }
         else
         {
             // Can't use VERBOSE due to locking fun.
-            QString message = LOC_ERR + "Cannot redirect /dev/null "
-                    "to standard input, failed to open." + ENO;
-            cerr << message.constData() << endl;
+            cerr << locerr 
+                 << "Cannot redirect /dev/null to standard input, failed to "
+                    "open: " << strerror(errno) << endl;
         }
 
         /* Run command */
-        execl("/bin/sh", "sh", "-c", command.toUtf8().constData(), (char *)0);
+        execl("/bin/sh", "sh", "-c", cmdargs, (char *)0);
         if (errno)
         {
             // Can't use VERBOSE due to locking fun.
-            QString message = LOC_ERR + QString("execl() failed because %1")
-                    .arg(strerror(errno));
-            cerr << message.constData() << endl;
+            cerr << locerr << "execl() failed: " << strerror(errno) << endl;
         }
 
         /* Failed to exec */
@@ -450,7 +459,7 @@ uint myth_system_wait(pid_t pid, uint timeout, bool background,
         reaper = new MythSystemReaper;
         reaper->start();
     }
-    VERBOSE(VB_GENERAL, QString("PID %1: launched%2") .arg(pid)
+    VERBOSE(VB_GENERAL | VB_EXTRA, QString("PID %1: launched%2") .arg(pid)
         .arg(background ? " in the background, not waiting" : ""));
     return reaper->waitPid(pid, timeout, background, processEvents);
 }

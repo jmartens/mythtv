@@ -30,7 +30,7 @@ The source of all cover art and screen shots are from those downloaded and maint
 Miro v2.0.3 or later must already be installed and configured and capable of downloading videos.
 '''
 
-__version__=u"v0.6.3"
+__version__=u"v0.6.6"
 # 0.1.0 Initial development
 # 0.2.0 Initial Alpha release for internal testing only
 # 0.2.1 Fixes from initial alpha test
@@ -187,6 +187,11 @@ __version__=u"v0.6.3"
 # 0.6.1 Modifications to support MythTV python bindings changes
 # 0.6.2 Trapped possible unicode errors which would hang the MiroBridge process
 # 0.6.3 Pull hostname from python bindings instead of socket libraries
+# 0.6.4 MythTV python bindings changes
+# 0.6.5 Added support for Miro v3.5.x
+#       Small internal document changes
+# 0.6.6 Fixed screenshot code due to changes in ffmpeg. First
+#       noticed in Ubuntu 10.10 (ffmepg v 0.6-4:0.6-2ubuntu6)
 
 examples_txt=u'''
 For examples, please see the Mirobridge's wiki page at http://www.mythtv.org/wiki/MiroBridge
@@ -375,9 +380,12 @@ try:
     elif config.get(prefs.APP_VERSION) < u"3.0":
         logger.info("Using mirobridge_interpreter_2_5_2")
         from mirobridge.mirobridge_interpreter_2_5_2 import MiroInterpreter
-    else:
+    elif config.get(prefs.APP_VERSION) < u"3.5":
         logger.info("Using mirobridge_interpreter_3_0_0")
         from mirobridge.mirobridge_interpreter_3_0_0 import MiroInterpreter
+    else:
+        logger.info("Using mirobridge_interpreter_3_5_0")
+        from mirobridge.mirobridge_interpreter_3_5_0 import MiroInterpreter
 except Exception, e:
     logger.critical(u"Importing mirobridge functions has failed. The following mirobridge files must be in the subdirectory 'mirobridge'.\n'mirobridge_interpreter_2_0_3.py' and 'mirobridge_interpreter_2_5_2.py', error(%s)" % e)
     sys.exit(1)
@@ -852,7 +860,8 @@ def getVideoDetails(videofilename, screenshot=False):
     video = re.compile(u' Video: ')
     video_HDTV_small = re.compile(u' 1280x', re.UNICODE)
     video_HDTV_large = re.compile(u' 1920x', re.UNICODE)
-    width_height = re.compile(u'''^(.+?)[ ]\[?([0-9]+)x([0-9]+)[^\\/]*$''', re.UNICODE)
+    width_height = re.compile(u'''^(.+?)\[?([0-9]+)x([0-9]+)\\,[^\\/]''', re.UNICODE)
+
     audio = re.compile(u' Audio: ', re.UNICODE)
     audio_stereo = re.compile(u' stereo,', re.UNICODE)
     audio_mono = re.compile(u' mono,', re.UNICODE)
@@ -959,7 +968,7 @@ def takeScreenShot(videofile, screenshot_filename, size_limit=False, just_demens
         else:
             delay = 60 # For a large videos take screenshot at the 1 minute mark
 
-    cmd = u'ffmpeg -i "%s" -y -f image2 -ss %d -sameq -t 0.001 -s %d*%d "%s"'
+    cmd = u'ffmpeg -i "%s" -y -f image2 -ss %d -sameq -vframes 1 -s %d*%d "%s"'
 
     width = int(ffmpeg_details[u'width'])
     height = int(ffmpeg_details[u'height'])
@@ -972,7 +981,6 @@ def takeScreenShot(videofile, screenshot_filename, size_limit=False, just_demens
         return u"%dx%d" % (width, height)
 
     cmd2 = cmd % (videofile, delay, width, height, screenshot_filename)
-
     return subprocess.call(u'%s > /dev/null' % cmd2, shell=True)
 # end takeScreenShot()
 
@@ -1951,10 +1959,11 @@ def updateMythVideo(items):
             logger.info(u"Simulation: Create videometadata record for (%s - %s)" % (item[u'channelTitle'], item[u'title']))
         else:  # Check for duplicates
             if not local_only and videometadata[u'filename'][0] != u'/':
-                intid = mythvideo.getVideo(exactfile=videometadata[u'filename'], host=localhostname.lower())
+                intid = list(mythvideo.searchVideos(exactfile=videometadata[u'filename'], host=localhostname.lower()))
             else:
-                intid = mythvideo.getVideo(exactfile=videometadata[u'filename'])
-            if intid == None:
+                intid = list(mythvideo.searchVideos(exactfile=videometadata[u'filename']))
+
+            if intid == []: # Check for an empty array
                 try:
                     intid = Video(db=mythvideo).create(videometadata).intid
                 except MythError, e:
@@ -2004,7 +2013,7 @@ def main():
     parser = OptionParser(usage=u"%prog usage: mirobridge -huevstdociVHSCWM [parameters]\n")
 
     parser.add_option(  "-e", "--examples", action="store_true", default=False, dest="examples",
-                        help=u"Display examples for executing the jamu script")
+                        help=u"Display examples for executing the mirobridge script")
     parser.add_option(  "-v", "--version", action="store_true", default=False, dest="version",
                         help=u"Display version and author information")
     parser.add_option(  "-s", "--simulation", action="store_true", default=False, dest="simulation",
@@ -2259,7 +2268,6 @@ def main():
         app.renderer = app.cli_interpreter
     else:
         app.movie_data_program_info = app.cli_interpreter.movie_data_program_info
-
 
     #
     # Attempt to import an opml file

@@ -4,8 +4,6 @@
 Provides data access classes for accessing and managing MythTV data
 """
 
-from __future__ import with_statement
-
 from static import *
 from exceptions import *
 from altdict import DictData, DictInvertCI
@@ -41,7 +39,7 @@ class Record( DBDataWrite, RECTYPE, CMPRecord ):
 
     def create(self, data=None, wait=False):
         """Record.create(data=None) -> Record object"""
-        DBDataWrite.create(self, data)
+        DBDataWrite._create_autoincrement(self, data)
         FileOps(db=self._db).reschedule(self.recordid, wait)
         return self
 
@@ -452,6 +450,44 @@ class Job( DBDataWrite, JOBTYPE, JOBCMD, JOBFLAG, JOBSTATUS ):
         self.status = status
         self.update()
 
+    @classmethod
+    def fromRecorded(cls, rec, type, status=None, schedruntime=None,
+                               hostname=None, args=None, flags=None):
+        job = cls(db=rec._db)
+        job.chanid = rec.chanid
+        job.starttime = rec.starttime
+        if status:
+            job.status = status
+        if schedruntime:
+            job.schedruntime = schedruntime
+        if hostname:
+            job.hostname = hostname
+        if args:
+            job.args = args
+        if flags:
+            job.flags = flags
+        job.create()
+
+    @classmethod
+    def fromProgram(cls, prog, type, status=None, schedruntime=None,
+                                hostname=None, args=None, flags=None):
+        if prog.rectype != prog.rsRecorded:
+            raise MythError('Invalid recording type for Job.')
+        job = cls(db=prog._db)
+        job.chanid = prog.chanid
+        job.starttime = prog.recstartts
+        if status:
+            job.status = status
+        if schedruntime:
+            job.schedruntime = schedruntime
+        if hostname:
+            job.hostname = hostname
+        if args:
+            job.args = args
+        if flags:
+            job.flags = flags
+        job.create()
+
 class Channel( DBDataWrite ):
     """Channel(chanid=None, db=None) -> Channel object"""
     _defaults = {'icon':'none',          'videofilters':'',  'callsign':u'',
@@ -570,6 +606,12 @@ class Video( VideoSchema, DBDataWrite, CMPVideo ):
                                     mode, False, nooverwrite, self.inst._db)
 
     @classmethod
+    def _setClassDefs(cls, db=None):
+        db = DBCache(db)
+        super(Video, cls)._setClassDefs(db)
+        cls._fill_cm(db)
+
+    @classmethod
     def _getGroup(cls, host, groupname=None, db=None):
         db = DBCache(db)
         metadata = ['coverart','fanart','banner','screenshot']
@@ -593,19 +635,27 @@ class Video( VideoSchema, DBDataWrite, CMPVideo ):
         else:
             raise MythError('Invalid Video StorageGroup name.')
 
-    def _fill_cm(self):
-        if len(self._cm_toid) > 1:
-            return
-        with self._db.cursor(self._log) as cursor:
+    @classmethod
+    def _fill_cm(cls, db=None):
+        db = DBCache(db)
+        with db.cursor() as cursor:
             cursor.execute("""SELECT * FROM videocategory""")
             for row in cursor:
-                self._cm_toname[row[0]] = row[1]
+                cls._cm_toname[row[0]] = row[1]
 
     def _cat_toname(self):
         if self.category is not None:
             try:
                 self.category = self._cm_toname[int(self.category)]
-            except: pass
+            except ValueError:
+                # already a named category
+                pass
+            except KeyError:
+                self._fill_cm(self._db)
+                if int(self.category) in self._cm_toname:
+                    self.category = self._cm_toname[int(self.category)]
+                else:
+                    raise MythDBError('Video defined with unknown category id')
         else:
             self.category = 'none'
 
@@ -613,13 +663,16 @@ class Video( VideoSchema, DBDataWrite, CMPVideo ):
         if self.category is not None:
             try:
                 if self.category.lower() not in self._cm_toid:
+                    self._fill_cm(self._db)
+                if self.category.lower() not in self._cm_toid:
                     with self._db.cursor(self._log) as cursor:
                         cursor.execute("""INSERT INTO videocategory
                                           SET category=%s""",
                                       self.category)
-                    self._cm_toid[self.category] = cursor.lastrowid
+                        self._cm_toid[self.category] = cursor.lastrowid
                 self.category = self._cm_toid[self.category]
-            except:
+            except AttributeError:
+                # already an integer category
                 pass
         else:
             self.category = 0
@@ -668,14 +721,14 @@ class Video( VideoSchema, DBDataWrite, CMPVideo ):
                 if cursor.execute("""SELECT intid FROM videometadata
                                      WHERE hash=%s""", self.hash) > 0:
                     id = cursor.fetchone()[0]
-                    self._setwheredat([id])
+                    self._evalwheredat([id])
                     self._pull()
                     return self
 
         # create new entry
         self._import(data)
         self._cat_toid()
-        return DBDataWrite.create(self)
+        return DBDataWrite._create_autoincrement(self)
 
     class _Cast( DBDataCRef ):
         _table = ['videometadatacast','videocast']
@@ -872,13 +925,13 @@ class VideoGrabber( Grabber ):
     cls = VideoMetadata
 
     def __init__(self, mode, lang='en', db=None):
-        dbvalue = {'TV':'TelevisionGrabber', 'Movie':'MovieGrabber'}
-        path = {'TV':'Television/ttvdb.py', 'Movie':'Movie/tmdb.py'}
-        self.mode = mode
+        dbvalue = {'tv':'TelevisionGrabber', 'movie':'MovieGrabber'}
+        path = {'tv':'Television/ttvdb.py', 'movie':'Movie/tmdb.py'}
+        self.mode = mode.lower()
         try:
-            Grabber.__init__(self, setting=dbvalue[mode], db=db,
+            Grabber.__init__(self, setting=dbvalue[self.mode], db=db,
                 path=os.path.join(INSTALL_PREFIX, 'share/mythtv/metadata', 
-                                  path[mode]))
+                                  path[self.mode]))
         except KeyError:
             raise MythError('Invalid MythVideo grabber')
         self._check_schema('mythvideo.DBSchemaVer',

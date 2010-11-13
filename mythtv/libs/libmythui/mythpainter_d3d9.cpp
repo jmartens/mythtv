@@ -241,12 +241,7 @@ void MythD3D9Painter::DrawRoundRect(const QRect &area, int radius,
     DrawImage(area, im, QRect(0, 0, area.width(), area.height()), 255);
 }
 
-MythImage *MythD3D9Painter::GetFormatImage()
-{
-    return new MythImage(this);
-}
-
-void MythD3D9Painter::DeleteFormatImage(MythImage *im)
+void MythD3D9Painter::DeleteFormatImagePriv(MythImage *im)
 {
     if (m_ImageBitmapMap.contains(im))
     {
@@ -269,7 +264,7 @@ D3D9Image* MythD3D9Painter::GetImageFromCache(MythImage *im)
         }
         else
         {
-            DeleteFormatImage(im);
+            DeleteFormatImagePriv(im);
         }
     }
 
@@ -280,6 +275,7 @@ D3D9Image* MythD3D9Painter::GetImageFromCache(MythImage *im)
 
     if (newimage && newimage->IsValid())
     {
+        CheckFormatImage(im);
         IncreaseCacheSize(newimage->GetSize());
         newimage->UpdateImage(im);
         m_ImageBitmapMap[im] = newimage;
@@ -289,7 +285,7 @@ D3D9Image* MythD3D9Painter::GetImageFromCache(MythImage *im)
         {
             MythImage *expiredIm = m_ImageExpireList.front();
             m_ImageExpireList.pop_front();
-            DeleteFormatImage(expiredIm);
+            DeleteFormatImagePriv(expiredIm);
             DeleteBitmaps();
         }
     }

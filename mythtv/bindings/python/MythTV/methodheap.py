@@ -4,8 +4,6 @@
 Provides base classes for accessing MythTV
 """
 
-from __future__ import with_statement
-
 from static import *
 from exceptions import *
 from logging import MythLog
@@ -18,6 +16,7 @@ from dataheap import *
 
 from datetime import timedelta
 from weakref import proxy
+from urllib import urlopen
 import re
 
 class MythBE( FileOps ):
@@ -343,6 +342,13 @@ class MythBE( FileOps ):
         except ValueError:
             return None
 
+    def clearSettings(self):
+        """
+        Triggers an event to clear the settings cache on all active systems.
+        """
+        self.backendCommand('MESSAGE%sCLEAR_SETTINGS_CACHE' % BACKEND_SEP)
+        self.db.settings.clear()
+
 class BEEventMonitor( BEEvent ):
     def _listhandlers(self):
         return [self.eventMonitor]
@@ -433,6 +439,7 @@ class MythSystemEvent( BEEvent ):
         SystemEvent(event['event'], inst.db).command(event)
 
 class Frontend( FEConnection ):
+    _db = None
     class _Jump( object ):
         def __str__(self):  return str(self.list())
         def __repr__(self): return str(self)
@@ -570,6 +577,13 @@ class Frontend( FEConnection ):
         return dict(zip(('totalmem','freemem','totalswap','freeswap'),
                     [int(m) for m in self.sendQuery('memstats').split()]))
 
+    def getScreenShot(self):
+        """Returns PNG image of the frontend."""
+        fd = urlopen('http://%s:6547/MythFE/GetScreenShot' % self.host)
+        img = fd.read()
+        fd.close()
+        return img
+
 class MythDB( DBCache ):
     __doc__ = DBCache.__doc__+"""
         obj.searchRecorded()    - return a list of matching Recorded objects
@@ -635,7 +649,6 @@ class MythDB( DBCache ):
             return ('recorded.starttime>%s', datetime.duck(value), 0)
         if key == 'newerthan':
             return ('recorded.starttime<%s', datetime.duck(value), 0)
-
 
         # recordedprogram matches
         if key in ('category_type','airdate','stereo','subtitled','hdtv',
@@ -1088,7 +1101,7 @@ class MythVideo( VideoSchema, DBCache ):
         obj.searchVideos(**kwargs) -> list of Video objects
 
         Supports the following keywords:
-            title, subtitle, season, episode, host, directory, year, cast,
+            title, subtitle, season, episode, host, director, year, cast,
             genre, country, category, insertedbefore, insertedafter, custom
         """
 

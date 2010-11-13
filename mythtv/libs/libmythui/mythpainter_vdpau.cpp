@@ -238,12 +238,7 @@ void MythVDPAUPainter::DrawRoundRect(const QRect &area, int radius,
     DrawImage(area, im, QRect(0, 0, area.width(), area.height()), 255);
 }
 
-MythImage *MythVDPAUPainter::GetFormatImage()
-{
-    return new MythImage(this);
-}
-
-void MythVDPAUPainter::DeleteFormatImage(MythImage *im)
+void MythVDPAUPainter::DeleteFormatImagePriv(MythImage *im)
 {
     if (m_ImageBitmapMap.contains(im))
     {
@@ -266,7 +261,7 @@ uint MythVDPAUPainter::GetTextureFromCache(MythImage *im)
         }
         else
         {
-            DeleteFormatImage(im);
+            DeleteFormatImagePriv(im);
         }
     }
 
@@ -277,6 +272,7 @@ uint MythVDPAUPainter::GetTextureFromCache(MythImage *im)
 
     if (newbitmap)
     {
+        CheckFormatImage(im);
         m_render->UploadMythImage(newbitmap, im);
         m_ImageBitmapMap[im] = newbitmap;
         m_ImageExpireList.push_back(im);
@@ -285,7 +281,7 @@ uint MythVDPAUPainter::GetTextureFromCache(MythImage *im)
         {
             MythImage *expiredIm = m_ImageExpireList.front();
             m_ImageExpireList.pop_front();
-            DeleteFormatImage(expiredIm);
+            DeleteFormatImagePriv(expiredIm);
             DeleteBitmaps();
         }
     }

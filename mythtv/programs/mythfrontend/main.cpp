@@ -74,6 +74,7 @@ static MythThemedMenu *menu;
 
 static QString         logfile;
 static MediaRenderer  *g_pUPnp   = NULL;
+static MythPluginManager *pmanager = NULL;
 
 static void handleExit(void);
 
@@ -153,6 +154,12 @@ namespace
             VERBOSE(VB_GENERAL, "Deleting UPnP client...");
             delete g_pUPnp;
             g_pUPnp = NULL;
+        }
+
+        if (pmanager)
+        {
+            delete pmanager;
+            pmanager = NULL;
         }
 
         delete gContext;
@@ -821,6 +828,16 @@ static bool resetTheme(QString themedir, const QString badtheme)
 
 static int reloadTheme(void)
 {
+    QString themename = gCoreContext->GetSetting("Theme", DEFAULT_UI_THEME);
+    QString themedir = GetMythUI()->FindThemeDir(themename);
+    if (themedir.isEmpty())
+    {
+        VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
+                .arg(themename));
+        cleanup();
+        return FRONTEND_BUGGY_EXIT_NO_THEME;
+    }
+
     MythTranslation::reload();
 
     GetMythMainWindow()->SetEffectsEnabled(false);
@@ -833,16 +850,6 @@ static int reloadTheme(void)
     GetMythMainWindow()->ReinitDone();
 
     GetMythMainWindow()->SetEffectsEnabled(true);
-
-    QString themename = gCoreContext->GetSetting("Theme", DEFAULT_UI_THEME);
-    QString themedir = GetMythUI()->FindThemeDir(themename);
-    if (themedir.isEmpty())
-    {
-        VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
-                .arg(themename));
-        cleanup();
-        return FRONTEND_BUGGY_EXIT_NO_THEME;
-    }
 
     if (!RunMenu(themedir, themename) && !resetTheme(themedir, themename))
         return FRONTEND_BUGGY_EXIT_NO_THEME;
@@ -1237,6 +1244,12 @@ int main(int argc, char **argv)
         return FRONTEND_EXIT_NO_MYTHCONTEXT;
     }
 
+    if (!GetMythDB()->HaveSchema())
+    {
+        if (!InitializeMythSchema())
+            return GENERIC_EXIT_DB_ERROR;
+    }
+
     gCoreContext->SetAppName(binname);
 
     for(int argpos = 1; argpos < a.argc(); ++argpos)
@@ -1365,6 +1378,15 @@ int main(int argc, char **argv)
 
     GetMythUI()->LoadQtConfig();
 
+    themename = gCoreContext->GetSetting("Theme", DEFAULT_UI_THEME);
+    themedir = GetMythUI()->FindThemeDir(themename);
+    if (themedir.isEmpty())
+    {
+        VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
+                .arg(themename));
+        return FRONTEND_EXIT_NO_THEME;
+    }
+
     MythMainWindow *mainWindow = GetMythMainWindow();
     mainWindow->Init();
     mainWindow->setWindowTitle(QObject::tr("MythTV Frontend"));
@@ -1394,7 +1416,7 @@ int main(int argc, char **argv)
 
     CleanupMyOldInUsePrograms();
 
-    MythPluginManager *pmanager = new MythPluginManager();
+    pmanager = new MythPluginManager();
     gContext->SetPluginManager(pmanager);
 
     if (pluginname.size())
@@ -1428,18 +1450,8 @@ int main(int argc, char **argv)
                     .arg(networkPort));
     }
 
-    themename = gCoreContext->GetSetting("Theme", DEFAULT_UI_THEME);
-    themedir = GetMythUI()->FindThemeDir(themename);
-    if (themedir.isEmpty())
-    {
-        VERBOSE(VB_IMPORTANT, QString("Couldn't find theme '%1'")
-                .arg(themename));
-        return FRONTEND_EXIT_NO_THEME;
-    }
-
     if (!RunMenu(themedir, themename) && !resetTheme(themedir, themename))
     {
-        delete networkControl;
         return FRONTEND_EXIT_NO_THEME;
     }
 

@@ -296,6 +296,10 @@ class MPUBLIC MythPlayer
     bool PosMapFromEnc(unsigned long long          start,
                        QMap<long long, long long> &posMap);
 
+    // OSD locking for TV class
+    void LockOSD(void)   { osdLock.lock();   }
+    void UnlockOSD(void) { osdLock.unlock(); }
+
   protected:
     // Initialization
     void OpenDummy(void);
@@ -402,6 +406,7 @@ class MPUBLIC MythPlayer
     uint64_t GetNearestMark(uint64_t frame, bool right);
     bool IsTemporaryMark(uint64_t frame);
     bool HasTemporaryMark(void);
+    bool IsCutListSaved(PlayerContext *ctx) { return deleteMap.IsSaved(ctx); }
 
     // Reinit
     void ReinitOSD(void);
@@ -437,16 +442,9 @@ class MPUBLIC MythPlayer
     void SetTeletextPage(uint page);
 
     // Time Code adjustment stuff
-    int64_t AdjustAudioTimecodeOffset(int64_t v)
-        { tc_wrap[TC_AUDIO] += v;  return tc_wrap[TC_AUDIO]; }
-    int64_t ResetAudioTimecodeOffset(void)
-        { tc_wrap[TC_AUDIO] = 0LL; return tc_wrap[TC_AUDIO]; }
-    int64_t ResyncAudioTimecodeOffset(void)
-        { tc_wrap[TC_AUDIO] = INT64_MIN; return 0L; }
+    int64_t AdjustAudioTimecodeOffset(int64_t v);
     int64_t GetAudioTimecodeOffset(void) const
         { return tc_wrap[TC_AUDIO]; }
-    void SaveAudioTimecodeOffset(int64_t v)
-        { savedAudioTimecodeOffset = v; }
 
     // Playback (output) zoom automation
     DetectLetterbox *detect_letter_box;
@@ -651,6 +649,7 @@ class MPUBLIC MythPlayer
     // OSD stuff
     OSD  *osd;
     bool  reinit_osd;
+    QMutex osdLock;
 
     // Audio stuff
     AudioPlayer audio;
@@ -676,6 +675,7 @@ class MPUBLIC MythPlayer
     DeleteMap  deleteMap;
     bool       pausedBeforeEdit;
     QTime      editUpdateTimer;
+    float      speedBeforeEdit;
 
     // Playback (output) speed control
     /// Lock for next_play_speed and next_normal_speed
@@ -706,7 +706,6 @@ class MPUBLIC MythPlayer
     int        prevrp;        ///< repeat_pict of last frame
     int64_t    tc_wrap[TCTYPESMAX];
     int64_t    tc_lastval[TCTYPESMAX];
-    int64_t    savedAudioTimecodeOffset;
 
     // LiveTV
     TV *m_tv;

@@ -4,6 +4,7 @@
 #include "bdnav/mpls_parse.h"
 #include "bdnav/navigation.h"
 #include "bdnav/bdparse.h"
+#include "decoders/overlay.h"
 
 #include "iso639.h"
 #include "BDRingBuffer.h"
@@ -15,10 +16,28 @@
 
 #define LOC     QString("BDRingBuffer: ")
 
+static void HandleOverlayCallback(void *data, const bd_overlay_s * const overlay)
+{
+    BDRingBufferPriv *bdpriv = (BDRingBufferPriv*) data;
+
+    if (!overlay || overlay->plane == 1)
+        bdpriv->m_inMenu = false;
+
+    if (!overlay->img)
+        return;
+
+    const BD_PG_RLE_ELEM *rlep = overlay->img;
+    unsigned pixels = overlay->w * overlay->h;
+    VERBOSE(VB_PLAYBACK|VB_EXTRA, LOC + QString("In Menu Callback, ready to draw "
+                        "an overlay of %1x%2 at %3,%4 (%5 pixels).")
+                        .arg(overlay->w).arg(overlay->h).arg(overlay->x)
+                        .arg(overlay->y).arg(pixels));
+}
+
 BDRingBufferPriv::BDRingBufferPriv()
-    : bdnav(NULL), m_overlay(NULL),
+    : bdnav(NULL),
       m_is_hdmv_navigation(false),
-      m_currentEvent(NULL), m_numTitles(0)
+      m_numTitles(0)
 {
 }
 
@@ -42,7 +61,8 @@ uint64_t BDRingBufferPriv::Seek(uint64_t pos)
 {
     VERBOSE(VB_PLAYBACK|VB_EXTRA, LOC + QString("Seeking to %1.")
                 .arg(pos));
-    bd_seek_time(bdnav, pos);
+    if (!m_is_hdmv_navigation)
+        bd_seek_time(bdnav, pos);
 
     return GetReadPosition();
 }
@@ -65,27 +85,59 @@ bool BDRingBufferPriv::OpenFile(const QString &filename)
 
     bdnav = bd_open(filename.toLatin1().data(), keyfilepath);
 
+    if (!bdnav)
+        return false;
+
+    // Check disc to see encryption status, menu and navigation types.
+    const BLURAY_DISC_INFO *discinfo = bd_get_disc_info(bdnav);
+    if (discinfo)
+        VERBOSE(VB_PLAYBACK, QString("*** Blu-ray Disc Information ***\n"
+                                  "First Play Supported: %1\n"
+                                  "Top Menu Supported: %2\n"
+                                  "Number of HDMV Titles: %3\n"
+                                  "Number of BD-J Titles: %4\n"
+                                  "Number of Unsupported Titles: %5\n"
+                                  "AACS present on disc: %6\n"
+                                  "libaacs used: %7\n"
+                                  "AACS handled: %8\n"
+                                  "BD+ present on disc: %9\n"
+                                  "libbdplus used: %10\n"
+                                  "BD+ handled: %11")
+                                  .arg(discinfo->first_play_supported ? "yes" : "no")
+                                  .arg(discinfo->top_menu_supported ? "yes" : "no")
+                                  .arg(discinfo->num_hdmv_titles)
+                                  .arg(discinfo->num_bdj_titles)
+                                  .arg(discinfo->num_unsupported_titles)
+                                  .arg(discinfo->aacs_detected ? "yes" : "no")
+                                  .arg(discinfo->libaacs_detected ? "yes" : "no")
+                                  .arg(discinfo->aacs_handled ? "yes" : "no")
+                                  .arg(discinfo->bdplus_detected ? "yes" : "no")
+                                  .arg(discinfo->libbdplus_detected ? "yes" : "no")
+                                  .arg(discinfo->bdplus_handled ? "yes" : "no"));
+
     // The following settings affect HDMV navigation (default audio track selection,
     // parental controls, menu language, etc.  They are not yet used.
 
     // Set parental level "age" to 99 for now.  TODO: Add support for FE level
     bd_set_player_setting(bdnav, BLURAY_PLAYER_SETTING_PARENTAL, 99);
+
     // Set preferred language to FE guide language
     const char *langpref = gCoreContext->GetSetting("ISO639Language0", "eng").toLatin1().data();
     QString QScountry  = gCoreContext->GetLocale()->GetCountryCode().toLower();
     const char *country = QScountry.toLatin1().data();
     bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_AUDIO_LANG, langpref);
+
     // Set preferred presentation graphics language to the FE guide language
     bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_PG_LANG, langpref);
+
     // Set preferred menu language to the FE guide language
     bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_MENU_LANG, langpref);
+
     // Set player country code via MythLocale. (not a region setting)
     bd_set_player_setting_str(bdnav, BLURAY_PLAYER_SETTING_COUNTRY_CODE, country);
 
     VERBOSE(VB_IMPORTANT, LOC + QString("Using %1 as keyfile...")
             .arg(QString(keyfilepath)));
-    if (!bdnav)
-        return false;
 
     // Return an index of relevant titles (excludes dupe clips + titles)
     m_numTitles = bd_get_titles(bdnav, TITLES_RELEVANT);
@@ -95,7 +147,29 @@ bool BDRingBufferPriv::OpenFile(const QString &filename)
     m_currentTime = 0;
     m_currentTitleInfo = NULL;
     m_currentTitleAngleCount = 0;
+
+    // Mostly event-driven values below
     m_currentAngle = 0;
+    m_currentTitle = 0;
+    m_currentPlaylist = 0;
+    m_currentPlayitem = 0;
+    m_currentChapter = 0;
+    m_currentMenuPage = 0;
+    m_currentButton = 0;
+    m_currentAudioStream = 0;
+    m_currentIGStream = 0;
+    m_currentPGTextSTStream = 0;
+    m_currentSecondaryAudioStream = 0;
+    m_currentSecondaryVideoStream = 0;
+    m_PGTextSTEnabled = false;
+    m_secondaryAudioEnabled = false;
+    m_secondaryVideoEnabled = false;
+    m_secondaryVideoIsFullscreen = false;
+    m_still = false;
+    m_inMenu = false;
+    m_enableButton = 0;
+    m_disableButton = 0;
+    m_popupOff = 0;
 
     VERBOSE(VB_IMPORTANT, LOC + QString("Found %1 relevant titles.")
             .arg(m_numTitles));
@@ -117,19 +191,24 @@ bool BDRingBufferPriv::OpenFile(const QString &filename)
 
     bd_free_title_info(titleInfo);
 
+    SwitchTitle(m_mainTitle);
+
+#if 0
     // First, attempt to initialize the disc in HDMV navigation mode.
     // If this fails, fall back to the traditional built-in title switching
     // mode.
-    //if (bd_play(bdnav) < 0)
-    SwitchTitle(m_mainTitle);
-    //else
-    //{
-    //    m_is_hdmv_navigation = true;
-    //
-    //    Register the Menu Overlay Callback
-    //    bd_register_overlay_proc(bdnav, handleevent, m_overlay);
-    //    TODO: Initialize the title info, start listening for BD_EVENTs
-    //}
+    if (bd_play(bdnav) < 0)
+          SwitchTitle(m_mainTitle);
+    else
+    {
+        m_is_hdmv_navigation = true;
+        // Initialize the HDMV event queue
+        HandleBDEvents();
+
+        // Register the Menu Overlay Callback
+        bd_register_overlay_proc(bdnav, this, HandleOverlayCallback);
+    }
+#endif
 
     return true;
 }
@@ -256,18 +335,23 @@ uint64_t BDRingBufferPriv::GetTotalReadPosition(void)
 int BDRingBufferPriv::safe_read(void *data, unsigned sz)
 {
     if (m_is_hdmv_navigation)
-        bd_read_ext(bdnav, (unsigned char *)data, sz, m_currentEvent);
+    {
+        BD_EVENT event;
+        bd_read_ext(bdnav, (unsigned char *)data, sz, &event);
+        HandleBDEvents();
+    }
     else
+    {
         bd_read(bdnav, (unsigned char *)data, sz);
+    }
 
     m_currentTime = bd_tell(bdnav);
-
     return sz;
 }
 
 double BDRingBufferPriv::GetFrameRate(void)
 {
-    if (bdnav)
+    if (bdnav && m_currentTitleInfo)
     {
         uint8_t rate = m_currentTitleInfo->clips->video_streams->rate;
         switch (rate)
@@ -353,7 +437,7 @@ void BDRingBufferPriv::PressButton(int32_t key, int64_t pts)
     bd_user_input(bdnav, pts, key);
 }
 
-/** \brief jump to a dvd root or chapter menu
+/** \brief jump to a Blu-ray root or popup menu
  */
 bool BDRingBufferPriv::GoToMenu(const QString str)
 {
@@ -374,11 +458,156 @@ bool BDRingBufferPriv::GoToMenu(const QString str)
         if (bd_menu_call(bdnav) < 0)
             return false;
         else
+        {
+            m_inMenu = !m_inMenu;
             return true;
+        }
     }
     else
         return false;
 
     return false;
+}
+
+bool BDRingBufferPriv::HandleBDEvents()
+{
+    BD_EVENT ev;
+    while (bd_get_event(bdnav, &ev))
+    {
+        HandleBDEvent(ev);
+        if (ev.event == BD_EVENT_NONE ||
+            ev.event == BD_EVENT_ERROR)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+void BDRingBufferPriv::HandleBDEvent(BD_EVENT &ev)
+{
+    switch (ev.event) {
+        case BD_EVENT_NONE:
+            break;
+        case BD_EVENT_ERROR:
+            VERBOSE(VB_PLAYBACK,
+                    QString("BDRingBuf: EVENT_ERROR %1").arg(ev.param));
+            break;
+
+        /* current playback position */
+
+        case BD_EVENT_ANGLE:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_ANGLE %1").arg(ev.param));
+            m_currentAngle = ev.param;
+            break;
+        case BD_EVENT_TITLE:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_TITLE %1").arg(ev.param));
+            m_currentTitle = ev.param;
+            break;
+        case BD_EVENT_PLAYLIST:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_PLAYLIST %1").arg(ev.param));
+            m_currentPlaylist = ev.param;
+            break;
+        case BD_EVENT_PLAYITEM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_PLAYITEM %1").arg(ev.param));
+            m_currentPlayitem = ev.param;
+            break;
+        case BD_EVENT_CHAPTER:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_CHAPTER %1").arg(ev.param));
+            m_currentChapter = ev.param;
+            break;
+
+        /* Interactive Graphics */
+
+        case BD_EVENT_MENU_PAGE_ID:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_MENU_PAGE_ID %1").arg(ev.param));
+            m_currentMenuPage = ev.param;
+            break;
+        case BD_EVENT_SELECTED_BUTTON_ID:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SELECTED_BUTTON_ID %1").arg(ev.param));
+            m_currentButton = ev.param;
+            break;
+        case BD_EVENT_STILL:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_STILL %1").arg(ev.param));
+            m_still = ev.param;
+            break;
+        case BD_EVENT_ENABLE_BUTTON:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_ENABLE_BUTTON %1").arg(ev.param));
+            m_enableButton = ev.param;
+            break;
+        case BD_EVENT_DISABLE_BUTTON:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_DISABLE_BUTTON %1").arg(ev.param));
+            m_disableButton = ev.param;
+            break;
+        case BD_EVENT_POPUP_OFF:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_POPUP_OFF %1").arg(ev.param));
+            m_popupOff = ev.param;
+            break;
+
+        /* stream selection */
+
+        case BD_EVENT_AUDIO_STREAM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_AUDIO_STREAM %1").arg(ev.param));
+            m_currentAudioStream = ev.param;
+            break;
+        case BD_EVENT_IG_STREAM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_IG_STREAM %1").arg(ev.param));
+            m_currentIGStream = ev.param;
+            break;
+        case BD_EVENT_PG_TEXTST_STREAM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_PG_TEXTST_STREAM %1").arg(ev.param));
+            m_currentPGTextSTStream = ev.param;
+            break;
+        case BD_EVENT_SECONDARY_AUDIO_STREAM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SECONDARY_AUDIO_STREAM %1").arg(ev.param));
+            m_currentSecondaryAudioStream = ev.param;
+            break;
+        case BD_EVENT_SECONDARY_VIDEO_STREAM:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SECONDARY_VIDEO_STREAM %1").arg(ev.param));
+            m_currentSecondaryVideoStream = ev.param;
+            break;
+
+        case BD_EVENT_PG_TEXTST:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_PG_TEXTST %1").arg(ev.param ? "enable" : "disable"));
+            m_PGTextSTEnabled = ev.param;
+            break;
+        case BD_EVENT_SECONDARY_AUDIO:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SECONDARY_AUDIO %1").arg(ev.param ? "enable" : "disable"));
+            m_secondaryAudioEnabled = ev.param;
+            break;
+        case BD_EVENT_SECONDARY_VIDEO:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SECONDARY_VIDEO %1").arg(ev.param ? "enable" : "disable"));
+            m_secondaryVideoEnabled = ev.param;
+            break;
+        case BD_EVENT_SECONDARY_VIDEO_SIZE:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: EVENT_SECONDARY_VIDEO_SIZE %1").arg(ev.param==0 ? "PIP" : "fullscreen"));
+            m_secondaryVideoIsFullscreen = ev.param;
+            break;
+
+        default:
+            VERBOSE(VB_PLAYBACK|VB_EXTRA,
+                    QString("BDRingBuf: Unknown Event! %1 %2").arg(ev.event).arg(ev.param));
+          break;
+      }
 }
 

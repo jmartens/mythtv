@@ -41,6 +41,7 @@ using namespace std;
 #include "livetvchain.h"
 #include "playgroup.h"
 #include "DVDRingBuffer.h"
+#include "BDRingBuffer.h"
 #include "datadirect.h"
 #include "sourceutil.h"
 #include "cardutil.h"
@@ -876,7 +877,7 @@ TV::TV(void)
       switchToInputId(0),
       wantsToQuit(true),
       stretchAdjustment(false),
-      audiosyncAdjustment(false), audiosyncBaseline(LLONG_MIN),
+      audiosyncAdjustment(false),
       editmode(false),     zoomMode(false),
       sigMonMode(false),
       endOfRecording(false),
@@ -3061,7 +3062,7 @@ bool TV::HandleLCDTimerEvent(void)
         if (actx->buffer && actx->buffer->isDVD())
         {
             ShowLCDDVDInfo(actx);
-            showProgress = !actx->buffer->InDVDMenuOrStillFrame();
+            showProgress = !actx->buffer->InDiscMenuOrStillFrame();
         }
 
         if (showProgress)
@@ -3631,7 +3632,15 @@ void TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
             }
             if (has_action("ESCAPE", actions))
             {
-                ShowOSDCutpoint(actx, "EXIT_EDIT_MODE");
+                if (!actx->player->IsCutListSaved(actx))
+                    ShowOSDCutpoint(actx, "EXIT_EDIT_MODE");
+                else
+                {
+                    actx->LockDeletePlayer(__FILE__, __LINE__);
+                    if (actx->player)
+                        actx->player->DisableEdit(false);
+                    actx->UnlockDeletePlayer(__FILE__, __LINE__);
+                }
                 handled = true;
             }
             else
@@ -3724,14 +3733,16 @@ void TV::ProcessKeypress(PlayerContext *actx, QKeyEvent *e)
     handled = false;
 
     bool isDVD = actx->buffer && actx->buffer->isDVD();
-    bool isDVDStill = isDVD && actx->buffer->InDVDMenuOrStillFrame();
+    bool isDVDStill = isDVD && actx->buffer->InDiscMenuOrStillFrame();
+    bool isBD = actx->buffer && actx->buffer->isBD();
+    bool isBDStill = isBD && actx->buffer->InDiscMenuOrStillFrame();
 
     handled = handled || BrowseHandleAction(actx, actions);
     handled = handled || ManualZoomHandleAction(actx, actions);
     handled = handled || PictureAttributeHandleAction(actx, actions);
     handled = handled || TimeStretchHandleAction(actx, actions);
     handled = handled || AudioSyncHandleAction(actx, actions);
-    handled = handled || DVDMenuHandleAction(actx, actions, isDVD, isDVDStill);
+    handled = handled || DiscMenuHandleAction(actx, actions, isDVD, isDVDStill, isBD);
     handled = handled || ActiveHandleAction(actx, actions, isDVD, isDVDStill);
     handled = handled || ToggleHandleAction(actx, actions, isDVD);
     handled = handled || PxPHandleAction(actx, actions);
@@ -3950,10 +3961,6 @@ bool TV::AudioSyncHandleAction(PlayerContext *ctx,
         ChangeAudioSync(ctx, -10);
     else if (has_action("DOWN", actions))
         ChangeAudioSync(ctx, 10);
-    else if (has_action("1", actions))
-        ChangeAudioSync(ctx, 1000000);
-    else if (has_action("0", actions))
-        ChangeAudioSync(ctx, -1000000);
     else if (has_action("TOGGLEAUDIOSYNC", actions))
         ClearOSD(ctx);
     else
@@ -3962,9 +3969,10 @@ bool TV::AudioSyncHandleAction(PlayerContext *ctx,
     return handled;
 }
 
-bool TV::DVDMenuHandleAction(PlayerContext *ctx,
+bool TV::DiscMenuHandleAction(PlayerContext *ctx,
                              const QStringList &actions,
-                             bool isDVD, bool isDVDStill)
+                             bool isDVD, bool isDVDStill,
+                             bool isBD)
 {
     bool handled = false;
 
@@ -4000,6 +4008,85 @@ bool TV::DVDMenuHandleAction(PlayerContext *ctx,
             ctx->LockDeletePlayer(__FILE__, __LINE__);
             ctx->buffer->DVD()->ActivateButton();
             ctx->UnlockDeletePlayer(__FILE__, __LINE__);
+        }
+        else
+            handled = false;
+    }
+    if (isBD)
+    {
+        int64_t pts = 0;
+        VideoOutput *output = ctx->player->getVideoOutput();
+        if (output)
+        {
+            VideoFrame *frame = output->GetLastShownFrame();
+            if (frame)
+               pts = frame->timecode;
+        }
+
+        handled = true;
+        if (has_action("UP", actions) ||
+            has_action("CHANNELUP", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_UP, pts);
+        }
+        else if (has_action("DOWN", actions) ||
+                 has_action("CHANNELDOWN", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_DOWN, pts);
+        }
+        else if (has_action("LEFT", actions) ||
+                 has_action("SEEKRWND", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_LEFT, pts);
+        }
+        else if (has_action("RIGHT", actions) ||
+                 has_action("SEEKFFWD", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_RIGHT, pts);
+        }
+        else if (has_action("0", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_0, pts);
+        }
+        else if (has_action("1", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_1, pts);
+        }
+        else if (has_action("2", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_2, pts);
+        }
+        else if (has_action("3", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_3, pts);
+        }
+        else if (has_action("4", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_4, pts);
+        }
+        else if (has_action("5", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_5, pts);
+        }
+        else if (has_action("6", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_6, pts);
+        }
+        else if (has_action("7", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_7, pts);
+        }
+        else if (has_action("8", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_8, pts);
+        }
+        else if (has_action("9", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_9, pts);
+        }
+        else if (has_action("SELECT", actions))
+        {
+            ctx->buffer->BD()->PressButton(BD_VK_ENTER, pts);
         }
         else
             handled = false;
@@ -4715,7 +4802,7 @@ void TV::ProcessNetworkControlCommand(PlayerContext *ctx,
     }
     else if (tokens.size() >= 3 && tokens[1] == "SEEK" && ctx->HasPlayer())
     {
-        if (ctx->buffer && ctx->buffer->InDVDMenuOrStillFrame())
+        if (ctx->buffer && ctx->buffer->InDiscMenuOrStillFrame())
             return;
 
         ctx->LockDeletePlayer(__FILE__, __LINE__);
@@ -5654,7 +5741,7 @@ float TV::DoTogglePauseStart(PlayerContext *ctx)
     if (!ctx)
         return 0.0f;
 
-    if (ctx->buffer && ctx->buffer->InDVDMenuOrStillFrame())
+    if (ctx->buffer && ctx->buffer->InDiscMenuOrStillFrame())
         return 0.0f;
 
     ctx->ff_rew_speed = 0;
@@ -5693,7 +5780,7 @@ void TV::DoTogglePauseFinish(PlayerContext *ctx, float time, bool showOSD)
     if (!ctx || !ctx->HasPlayer())
         return;
 
-    if (ctx->buffer && ctx->buffer->InDVDMenuOrStillFrame())
+    if (ctx->buffer && ctx->buffer->InDiscMenuOrStillFrame())
         return;
 
     if (ctx->paused)
@@ -5750,12 +5837,6 @@ bool TV::DoPlayerSeek(PlayerContext *ctx, float time)
         PauseAudioUntilBuffered(ctx);
 
     bool res = false;
-
-    if (LLONG_MIN != audiosyncBaseline)
-    {
-        int64_t aud_tc = ctx->player->GetAudioTimecodeOffset();
-        ctx->player->SaveAudioTimecodeOffset(aud_tc - audiosyncBaseline);
-    }
 
     if (time > 0.0f)
     {
@@ -8029,7 +8110,7 @@ void TV::ToggleUpmix(PlayerContext *ctx)
 }
 
 // dir in 10ms jumps
-void TV::ChangeAudioSync(PlayerContext *ctx, int dir, bool allowEdit)
+void TV::ChangeAudioSync(PlayerContext *ctx, int dir)
 {
     long long newval;
 
@@ -8040,43 +8121,14 @@ void TV::ChangeAudioSync(PlayerContext *ctx, int dir, bool allowEdit)
         return;
     }
 
-    if (!audiosyncAdjustment && LLONG_MIN == audiosyncBaseline)
-        audiosyncBaseline = ctx->player->GetAudioTimecodeOffset();
-
-    audiosyncAdjustment = allowEdit;
-
-    if (dir == 1000000)
-    {
-        newval = ctx->player->ResyncAudioTimecodeOffset() -
-                 audiosyncBaseline;
-        audiosyncBaseline = ctx->player->GetAudioTimecodeOffset();
-    }
-    else if (dir == -1000000)
-    {
-        newval = ctx->player->ResetAudioTimecodeOffset() -
-                 audiosyncBaseline;
-        audiosyncBaseline = ctx->player->GetAudioTimecodeOffset();
-    }
-    else
-    {
-        newval = ctx->player->AdjustAudioTimecodeOffset(dir*10) -
-                 audiosyncBaseline;
-    }
+    audiosyncAdjustment = true;
+    newval = ctx->player->AdjustAudioTimecodeOffset(dir * 10);
     ctx->UnlockDeletePlayer(__FILE__, __LINE__);
 
     if (!browsehelper->IsBrowsing())
     {
-        QString text;
         int val = (int)newval;
-        if (dir == 1000000 || dir == -1000000)
-        {
-            text = tr("Audio Resync");
-            val = 0;
-        }
-        else
-            text = tr("Audio Sync");
-
-        UpdateOSDStatus(ctx, tr("Adjust Audio Sync"), text,
+        UpdateOSDStatus(ctx, tr("Adjust Audio Sync"), tr("Audio Sync"),
                         QString::number(val),
                         kOSDFunctionalType_AudioSyncAdjust,
                         "ms", (val/2) + 500, kOSDTimeout_Med);
@@ -10622,11 +10674,12 @@ void TV::FillOSDMenuJobs(const PlayerContext *ctx, OSD *osd,
 {
     TVState state    = ctx->GetState();
     bool islivetv    = StateIsLiveTV(state);
-    bool isrecording = state ==  kState_WatchingPreRecorded;
+    bool isrecorded  = state == kState_WatchingPreRecorded;
+    bool isrecording = state == kState_WatchingRecording;
 
     if (category == "MAIN")
     {
-        if (islivetv || isrecording)
+        if (islivetv || isrecording || isrecorded)
         {
             osd->DialogAddButton(tr("Jobs"), "DIALOG_MENU_JOBS_0",
                                  true, selected == "JOBS");
@@ -10649,11 +10702,16 @@ void TV::FillOSDMenuJobs(const PlayerContext *ctx, OSD *osd,
         {
             osd->DialogAddButton(tr("Edit Channel"),   "EDIT");
         }
-        else if (isrecording)
+
+        if (isrecorded || isrecording)
         {
             osd->DialogAddButton(tr("Edit Recording"), "EDIT");
             osd->DialogAddButton(is_on ? tr("Turn Auto-Expire OFF") :
                                  tr("Turn Auto-Expire ON"), "TOGGLEAUTOEXPIRE");
+        }
+
+        if (isrecorded)
+        {
             if (transcoding)
             {
                 osd->DialogAddButton(tr("Stop Transcoding"), "QUEUETRANSCODE");
@@ -11388,7 +11446,7 @@ void TV::DVDJumpBack(PlayerContext *ctx)
     if (!ctx->HasPlayer() || !ctx->buffer || !ctx->buffer->isDVD())
         return;
 
-    if (ctx->buffer->InDVDMenuOrStillFrame())
+    if (ctx->buffer->InDiscMenuOrStillFrame())
     {
         UpdateOSDSeekMessage(ctx, tr("Skip Back Not Allowed"), kOSDTimeout_Med);
     }
@@ -11925,9 +11983,13 @@ OSD *TV::GetOSDL(const PlayerContext *ctx, const char *file, int location)
     mctx->LockDeletePlayer(file, location);
     if (mctx->player && (ctx->IsPIP() || mctx->IsOSDFullScreen()))
     {
+        mctx->LockOSD();
         OSD *osd = mctx->player->GetOSD();
         if (!osd)
+        {
+            mctx->UnlockOSD();
             mctx->UnlockDeletePlayer(file, location);
+        }
         else
             osd_lctx[osd] = mctx;
         return osd;
@@ -11937,9 +11999,13 @@ OSD *TV::GetOSDL(const PlayerContext *ctx, const char *file, int location)
     ctx->LockDeletePlayer(file, location);
     if (ctx->player && !ctx->IsPIP())
     {
+        ctx->LockOSD();
         OSD *osd = ctx->player->GetOSD();
         if (!osd)
+        {
+            ctx->UnlockOSD();
             ctx->UnlockDeletePlayer(file, location);
+        }
         else
             osd_lctx[osd] = ctx;
         return osd;
@@ -11949,23 +12015,12 @@ OSD *TV::GetOSDL(const PlayerContext *ctx, const char *file, int location)
     return NULL;
 }
 
-void TV::ReturnOSDLock(OSD *&osd)
-{
-    if (!osd)
-        return;
-
-    // we already have the player lock because we have an osd pointer..
-    osd_lctx[osd]->UnlockDeletePlayer(__FILE__, __LINE__);
-    ReturnPlayerLock(osd_lctx[osd]);
-
-    osd = NULL;
-}
-
 void TV::ReturnOSDLock(const PlayerContext *ctx, OSD *&osd)
 {
     if (!ctx || !osd)
         return;
 
+    osd_lctx[osd]->UnlockOSD();
     osd_lctx[osd]->UnlockDeletePlayer(__FILE__, __LINE__);
 
     osd = NULL;

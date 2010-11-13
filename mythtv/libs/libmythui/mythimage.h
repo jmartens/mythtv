@@ -32,6 +32,8 @@ class MPUBLIC MythImage : public QImage
   public:
     MythImage(MythPainter *parent);
 
+    MythPainter* GetParent(void)        { return m_Parent;   }
+    void SetParent(MythPainter *parent) { m_Parent = parent; }
     void UpRef(void);
     bool DownRef(void);
 
@@ -49,9 +51,6 @@ class MPUBLIC MythImage : public QImage
     void Assign(const QImage &img);
     void Assign(const QPixmap &pix);
 
-    // *NOTE* *DELETES* img!
-    static MythImage *FromQImage(QImage **img);
-
     bool Load(MythImageReader &reader);
     bool Load(const QString &filename, bool scale = true);
 
@@ -67,7 +66,8 @@ class MPUBLIC MythImage : public QImage
      * @param end The ending colour.
      * @return A MythImage filled with a gradient.
      */
-    static MythImage *Gradient(const QSize & size, const QColor &begin,
+    static MythImage *Gradient(MythPainter *painter,
+                               const QSize & size, const QColor &beg,
                                const QColor &end, uint alpha,
                                FillDirection direction = FillTopToBottom);
 
