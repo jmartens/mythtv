@@ -214,7 +214,10 @@ void RecorderBase::Pause(bool clear)
     request_pause = true;
 }
 
-/// \brief Unpause tells StartRecording() to unpause, it should not block.
+/** \brief Unpause tells StartRecording() to unpause.
+ *  This is an asynchronous call it should not wait block waiting
+ *  for the command to be processed.
+ */
 void RecorderBase::Unpause(void)
 {
     QMutexLocker locker(&pauseLock);

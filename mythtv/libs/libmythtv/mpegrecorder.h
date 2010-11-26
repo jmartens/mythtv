@@ -30,6 +30,7 @@ class MpegRecorder : public V4LRecorder,
 
     void Initialize(void) {}
     void StartRecording(void);
+    void StopRecording(void);
     void Reset(void);
 
     void Pause(bool clear = true);
