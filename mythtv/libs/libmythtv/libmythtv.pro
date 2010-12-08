@@ -20,7 +20,7 @@ contains(INCLUDEPATH, /usr/local/include) {
 }
 
 DEPENDPATH  += .
-DEPENDPATH  += ../libmyth
+DEPENDPATH  += ../libmyth ../libmyth/audio
 DEPENDPATH  += ../libmythdb ../libmythhdhomerun
 DEPENDPATH  += ../libmythdvdnav/
 DEPENDPATH  += ../libmythbluray/
@@ -142,8 +142,6 @@ SOURCES += minilzo.cpp              RTjpegN.cpp
 
 # Misc. needed by backend/frontend
 HEADERS += recordinginfo.h
-HEADERS += RingBuffer.h             avfringbuffer.h
-HEADERS += ThreadedFileWriter.h
 HEADERS += dbcheck.h
 HEADERS += tvremoteutil.h           tv.h
 HEADERS += jobqueue.h
@@ -165,10 +163,12 @@ HEADERS += myth_imgconvert.h
 HEADERS += channelgroup.h           channelgroupsettings.h
 HEADERS += recordingrule.h          programdetail.h
 HEADERS += mythsystemevent.h
+HEADERS += avfringbuffer.h          ThreadedFileWriter.h
+HEADERS += ringbuffer.h             fileringbuffer.h
+HEADERS += dvdringbuffer.h          bdringbuffer.h
+HEADERS += streamingringbuffer.h
 
 SOURCES += recordinginfo.cpp
-SOURCES += RingBuffer.cpp           avfringbuffer.cpp
-SOURCES += ThreadedFileWriter.cpp
 SOURCES += dbcheck.cpp
 SOURCES += tvremoteutil.cpp         tv.cpp
 SOURCES += jobqueue.cpp
@@ -190,6 +190,10 @@ SOURCES += channelgroup.cpp         channelgroupsettings.cpp
 SOURCES += myth_imgconvert.cpp
 SOURCES += recordingrule.cpp        programdetail.cpp
 SOURCES += mythsystemevent.cpp
+SOURCES += avfringbuffer.cpp        ThreadedFileWriter.cpp
+SOURCES += ringbuffer.cpp           fileringBuffer.cpp
+SOURCES += dvdringbuffer.cpp        bdringbuffer.cpp
+SOURCES += streamingringbuffer.cpp
 
 # DiSEqC
 HEADERS += diseqc.h                 diseqcsettings.h
@@ -200,8 +204,8 @@ HEADERS += datadirect.h
 SOURCES += datadirect.cpp
 
 # Teletext stuff
-HEADERS += teletextdecoder.h        vbilut.h
-SOURCES += teletextdecoder.cpp      vbilut.cpp
+HEADERS += teletextdecoder.h        teletextreader.h   vbilut.h
+SOURCES += teletextdecoder.cpp      teletextreader.cpp vbilut.cpp
 
 # MPEG parsing stuff
 HEADERS += mpeg/tspacket.h          mpeg/pespacket.h
@@ -246,6 +250,11 @@ SOURCES += dtvconfparser.cpp        dtvconfparserhelpers.cpp
 HEADERS += channelscan/scaninfo.h   channelscan/channelimporter.h
 SOURCES += channelscan/scaninfo.cpp channelscan/channelimporter.cpp
 
+inc.path = $${PREFIX}/include/mythtv/
+inc.files  = playgroup.h
+
+INSTALLS += inc
+
 using_frontend {
     # Recording profile stuff
     HEADERS += profilegroup.h
@@ -254,17 +263,17 @@ using_frontend {
     # Video playback
     HEADERS += tv_play.h                mythplayer.h
     HEADERS += mythdvdplayer.h          audioplayer.h
-    HEADERS += DVDRingBuffer.h          playercontext.h
+    HEADERS += playercontext.h
     HEADERS += tv_play_win.h            deletemap.h
     HEADERS += mythcommflagplayer.h     commbreakmap.h
-    HEADERS += BDRingBuffer.h           mythbdplayer.h
+    HEADERS += mythbdplayer.h
     HEADERS += mythiowrapper.h          tvbrowsehelper.h
     SOURCES += tv_play.cpp              mythplayer.cpp
     SOURCES += mythdvdplayer.cpp        audioplayer.cpp
-    SOURCES += DVDRingBuffer.cpp        playercontext.cpp
+    SOURCES += playercontext.cpp
     SOURCES += tv_play_win.cpp          deletemap.cpp
     SOURCES += mythcommflagplayer.cpp   commbreakmap.cpp
-    SOURCES += BDRingBuffer.cpp         mythbdplayer.cpp
+    SOURCES += mythbdplayer.cpp
     SOURCES += mythiowrapper.cpp        tvbrowsehelper.cpp
 
     # Text subtitle parser
@@ -305,12 +314,13 @@ using_frontend {
     HEADERS += jitterometer.h           yuv2rgb.h
     HEADERS += videodisplayprofile.h    mythcodecid.h
     HEADERS += videoouttypes.h          util-osd.h
-    HEADERS += videooutwindow.h
+    HEADERS += videooutwindow.h         videocolourspace.h
     SOURCES += videooutbase.cpp         videoout_null.cpp
     SOURCES += videobuffers.cpp         vsync.cpp
     SOURCES += jitterometer.cpp         yuv2rgb.cpp
     SOURCES += videodisplayprofile.cpp  mythcodecid.cpp
     SOURCES += videooutwindow.cpp       util-osd.cpp
+    SOURCES += videocolourspace.cpp
 
     using_quartz_video: DEFINES += USING_QUARTZ_VIDEO
     using_quartz_video: HEADERS += videoout_quartz.h
@@ -322,18 +332,10 @@ using_frontend {
 
     using_x11:DEFINES += USING_X11
 
-    using_xv:HEADERS += videoout_xv.h   XvMCSurfaceTypes.h
-    using_xv:HEADERS += osdxvmc.h       osdchromakey.h
-    using_xv:HEADERS += util-xvmc.h     util-xv.h
-    using_xv:SOURCES += videoout_xv.cpp XvMCSurfaceTypes.cpp
-    using_xv:SOURCES += osdxvmc.cpp     osdchromakey.cpp
-    using_xv:SOURCES += util-xvmc.cpp   util-xv.cpp
+    using_xv:HEADERS += videoout_xv.h   util-xv.h   osdchromakey.h
+    using_xv:SOURCES += videoout_xv.cpp util-xv.cpp osdchromakey.cpp
 
     using_xv:DEFINES += USING_XV
-
-    using_xvmc:DEFINES += USING_XVMC
-    using_xvmcw:DEFINES += USING_XVMCW
-    using_xvmc_vld:DEFINES += USING_XVMC_VLD
 
     using_vdpau {
         DEFINES += USING_VDPAU
@@ -347,8 +349,6 @@ using_frontend {
         DEFINES += USING_OPENGL
         HEADERS += util-opengl.h
         SOURCES += util-opengl.cpp
-        HEADERS += mythrender_opengl.h
-        SOURCES += mythrender_opengl.cpp
         QT += opengl
     }
     using_opengl_vsync:DEFINES += USING_OPENGL_VSYNC

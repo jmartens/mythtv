@@ -1356,25 +1356,25 @@
             <position>250,195</position>
         </textedit>
 
-        <textarea name="vcd_text" from="basetextarea">
+        <textarea name="blu_text" from="basetextarea">
             <area>100,255,130,30</area>
             <align>right</align>
-            <value>VCD Player:</value>
+            <value>Blu-ray Mount:</value>
         </textarea>
 
-        <textedit name="vcdplayer" from="basetextedit">
+        <textedit name="bluraymount" from="basetextedit">
             <position>250,245</position>
         </textedit>
 
-        <textarea name="vcddrive_text" from="basetextarea">
+        <textarea name="blureg_text" from="basetextarea">
             <area>100,305,130,30</area>
             <align>right</align>
-            <value>VCD Drive:</value>
+            <value>Blu-ray Region:</value>
         </textarea>
 
-        <textedit name="vcddrive" from="basetextedit">
+        <buttonlist name="blurayregionlist" from="basewideselector">
             <position>250,295</position>
-        </textedit>
+        </buttonlist>
 
         <checkbox name="altcheck" from="basecheckbox">
             <position>500,350</position>
@@ -1386,13 +1386,13 @@
         </textarea>
 
         <textarea name="alt_text" from="basetextarea">
-            <area>100,395,130,30</area>
+            <area>100,405,130,30</area>
             <align>right</align>
             <value>Alternate Player:</value>
         </textarea>
 
         <textedit name="altplayer" from="basetextedit">
-            <position>250,385</position>
+            <position>250,395</position>
         </textedit>
 
         <textarea name="helptext" from="basetextarea">

@@ -90,7 +90,7 @@ class DTVRecorder :
     void FinishRecording(void);
     void ResetForNewFile(void);
 
-    void HandleKeyframe(uint64_t extra = 0);
+    void HandleKeyframe(uint64_t frameNum, int64_t extra = 0);
 
     void BufferedWrite(const TSPacket &tspacket);
 

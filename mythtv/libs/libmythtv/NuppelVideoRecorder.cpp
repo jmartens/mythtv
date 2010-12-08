@@ -59,7 +59,7 @@ extern "C" {
 
 #define KEYFRAMEDIST   30
 
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "RTjpegN.h"
 
 #include "programinfo.h"
@@ -729,7 +729,7 @@ void NuppelVideoRecorder::Initialize(void)
     if (!ringBuffer)
     {
         VERBOSE(VB_IMPORTANT, LOC + "Warning, old RingBuffer creation");
-        ringBuffer = new RingBuffer("output.nuv", true);
+        ringBuffer = RingBuffer::Create("output.nuv", true);
         weMadeBuffer = true;
         livetv = false;
         if (!ringBuffer->IsOpen())

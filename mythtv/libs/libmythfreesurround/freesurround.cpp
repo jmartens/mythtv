@@ -37,7 +37,7 @@ using namespace std;
 #include <QDateTime>
 
 // our default internal block size, in floats
-static const unsigned default_block_size = 8192;
+static const unsigned default_block_size = SURROUND_BUFSIZE;
 // Gain of center and lfe channels in passive mode (sqrt 0.5)
 static const float center_level = 0.707107; 
 
@@ -289,7 +289,7 @@ uint FreeSurround::putFrames(void* buffer, uint numFrames, uint numChannels)
     }
 
     VERBOSE(VB_AUDIO+VB_TIMESTAMP+VB_EXTRA,
-            QString("FreeSurround::putFrames %1 #ch %2 used %4 generated %5")
+            QString("FreeSurround::putFrames %1 #ch %2 used %3 generated %4")
             .arg(numFrames).arg(numChannels).arg(i).arg(out_count));
 
     return i;

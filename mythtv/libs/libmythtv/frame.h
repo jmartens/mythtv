@@ -2,6 +2,7 @@
 #define _FRAME_H 
 
 #include <string.h>
+#include <stdint.h>
 #include "fourcc.h"
 
 #ifdef __cplusplus
@@ -13,9 +14,6 @@ typedef enum FrameType_
     FMT_NONE = -1,
     FMT_RGB24 = 0,
     FMT_YV12,
-    FMT_XVMC_IDCT_MPEG2,
-    FMT_XVMC_MOCO_MPEG2,
-    FMT_VIA_HWSLICE,
     FMT_IA44,
     FMT_AI44,
     FMT_ARGB32,
@@ -40,6 +38,7 @@ typedef struct VideoFrame_
 
     long long frameNumber;
     long long timecode;
+    int64_t   disp_timecode;
 
     unsigned char *priv[4]; // random empty storage
 

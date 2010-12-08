@@ -15,7 +15,8 @@ using namespace std;
 #include "avformatdecoder.h"
 #include "privatedecoder.h"
 #include "audiooutput.h"
-#include "RingBuffer.h"
+#include "audiooutpututil.h"
+#include "ringbuffer.h"
 #include "mythplayer.h"
 #include "remoteencoder.h"
 #include "programinfo.h"
@@ -27,23 +28,17 @@ using namespace std;
 #include "dvbdescriptors.h"
 #include "cc608decoder.h"
 #include "cc708decoder.h"
+#include "teletextdecoder.h"
 #include "subtitlereader.h"
 #include "interactivetv.h"
-#include "DVDRingBuffer.h"
-#include "BDRingBuffer.h"
+#include "dvdringbuffer.h"
+#include "bdringbuffer.h"
 #include "videodisplayprofile.h"
 #include "mythuihelper.h"
 
 #include "lcddevice.h"
 
 #include "videoout_quartz.h"  // For VOQ::GetBestSupportedCodec()
-
-#ifdef USING_XVMC
-#include "videoout_xv.h"
-extern "C" {
-#include "libavcodec/xvmc.h"
-}
-#endif // USING_XVMC
 
 #ifdef USING_VDPAU
 #include "videoout_vdpau.h"
@@ -114,14 +109,9 @@ static float get_aspect(const AVCodecContext &ctx)
     return aspect_ratio;
 }
 
-int get_avf_buffer_xvmc(struct AVCodecContext *c, AVFrame *pic);
-int get_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
+int  get_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
 void release_avf_buffer(struct AVCodecContext *c, AVFrame *pic);
-void release_avf_buffer_xvmc(struct AVCodecContext *c, AVFrame *pic);
-void render_slice_xvmc(struct AVCodecContext *s, const AVFrame *src,
-                       int offset[4], int y, int type, int height);
-
-int get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic);
+int  get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic);
 void release_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic);
 void render_slice_vdpau(struct AVCodecContext *s, const AVFrame *src,
                         int offset[4], int y, int type, int height);
@@ -226,13 +216,6 @@ void AvFormatDecoder::GetDecoders(render_opts &opts)
     (*opts.equiv_decoders)["ffmpeg"].append("nuppel");
     (*opts.equiv_decoders)["ffmpeg"].append("dummy");
 
-#ifdef USING_XVMC
-    opts.decoders->append("xvmc");
-    opts.decoders->append("xvmc-vld");
-    (*opts.equiv_decoders)["xvmc"].append("dummy");
-    (*opts.equiv_decoders)["xvmc-vld"].append("dummy");
-#endif
-
 #ifdef USING_VDPAU
     opts.decoders->append("vdpau");
     (*opts.equiv_decoders)["vdpau"].append("dummy");
@@ -276,7 +259,8 @@ AvFormatDecoder::AvFormatDecoder(MythPlayer *parent,
       // Closed Caption & Teletext decoders
       ccd608(new CC608Decoder(parent->GetCC608Reader())),
       ccd708(new CC708Decoder(parent->GetCC708Reader())),
-      ttd(new TeletextDecoder(parent)), subReader(parent->GetSubReader()),
+      ttd(new TeletextDecoder(parent->GetTeletextReader())),
+      subReader(parent->GetSubReader()),
       // Interactive TV
       itv(NULL),
       // Audio
@@ -284,8 +268,6 @@ AvFormatDecoder::AvFormatDecoder(MythPlayer *parent,
       internal_vol(false),
       disable_passthru(false),
       dummy_frame(NULL),
-      // DVD
-      dvd_xvmc_enabled(false), dvd_video_codec_changed(false),
       m_fps(0.0f)
 {
     bzero(&params, sizeof(AVFormatParameters));
@@ -403,6 +385,8 @@ static int64_t lsb3full(int64_t lsb, int64_t base_ts, int lsb_bits)
 
 int64_t AvFormatDecoder::NormalizeVideoTimecode(int64_t timecode)
 {
+    int64_t start_pts = 0, pts;
+
     AVStream *st = NULL;
     for (uint i = 0; i < ic->nb_streams; i++)
     {
@@ -416,19 +400,39 @@ int64_t AvFormatDecoder::NormalizeVideoTimecode(int64_t timecode)
     if (!st)
         return false;
 
-   // convert timecode and start_time to AV_TIME_BASE units
-   int64_t start_ts = av_rescale(ic->start_time,
-                                 st->time_base.den,
-                                 AV_TIME_BASE * (int64_t)st->time_base.num);
+    if (ic->start_time != (int64_t)AV_NOPTS_VALUE)
+        start_pts = av_rescale(ic->start_time,
+                               st->time_base.den,
+                               AV_TIME_BASE * (int64_t)st->time_base.num);
 
-   int64_t ts = av_rescale(timecode / 1000.0 * AV_TIME_BASE,
-                           st->time_base.den,
-                           AV_TIME_BASE * (int64_t)st->time_base.num);
+    pts = av_rescale(timecode / 1000.0,
+                     st->time_base.den,
+                     st->time_base.num);
 
-   // adjust for start time and wrap
-   ts = lsb3full(ts, start_ts, st->pts_wrap_bits);
+    // adjust for start time and wrap
+    pts = lsb3full(pts, start_pts, st->pts_wrap_bits);
 
-   return (int64_t)(av_q2d(st->time_base) * ts * 1000);
+    return (int64_t)(av_q2d(st->time_base) * pts * 1000);
+}
+
+int64_t AvFormatDecoder::NormalizeVideoTimecode(AVStream *st,
+                                                int64_t timecode)
+{
+    int64_t start_pts = 0, pts;
+
+    if (ic->start_time != (int64_t)AV_NOPTS_VALUE)
+        start_pts = av_rescale(ic->start_time,
+                               st->time_base.den,
+                               AV_TIME_BASE * (int64_t)st->time_base.num);
+
+    pts = av_rescale(timecode / 1000.0,
+                     st->time_base.den,
+                     st->time_base.num);
+
+    // adjust for start time and wrap
+    pts = lsb3full(pts, start_pts, st->pts_wrap_bits);
+
+    return (int64_t)(av_q2d(st->time_base) * pts * 1000);
 }
 
 int AvFormatDecoder::GetNumChapters()
@@ -545,8 +549,6 @@ bool AvFormatDecoder::DoFastForward(long long desiredFrame, bool discardFrames)
         return true;
     }
 
-    AVCodecContext *context = st->codec;
-
     long long ts = 0;
     if (ic->start_time != (int64_t)AV_NOPTS_VALUE)
         ts = ic->start_time;
@@ -632,12 +634,8 @@ bool AvFormatDecoder::DoFastForward(long long desiredFrame, bool discardFrames)
 void AvFormatDecoder::SeekReset(long long newKey, uint skipFrames,
                                 bool doflush, bool discardFrames)
 {
-    if (ringBuffer->isDVD())
-    {
-        if (ringBuffer->InDiscMenuOrStillFrame() ||
-            newKey == 0)
-            return;
-    }
+    if (ringBuffer->IsInDiscMenuOrStillFrame() || newKey == 0)
+        return;
 
     VERBOSE(VB_PLAYBACK, LOC +
             QString("SeekReset(%1, %2, %3 flush, %4 discard)")
@@ -697,7 +695,7 @@ void AvFormatDecoder::SeekReset(long long newKey, uint skipFrames,
 
         prevgoppos = 0;
         gopset = false;
-        if (!ringBuffer->isDVD())
+        if (!ringBuffer->IsDVD())
         {
             if (!no_dts_hack)
             {
@@ -739,7 +737,7 @@ void AvFormatDecoder::Reset()
 {
     DecoderBase::Reset();
 
-    if (ringBuffer->isDVD())
+    if (ringBuffer->IsDVD())
         SyncPositionMap();
 }
 
@@ -780,7 +778,8 @@ void AvFormatDecoder::InitByteContext(void)
     int streamed = 0;
     int buffer_size = 32768;
 
-    if (ringBuffer->isDVD()) {
+    if (ringBuffer->IsDVD())
+    {
         streamed = 1;
         buffer_size = 2048;
     }
@@ -900,7 +899,7 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         QMutexLocker locker(avcodeclock);
         ret = av_find_stream_info(ic);
     }
-    if (ringBuffer->isDVD())
+    if (ringBuffer->IsDVD())
     {
         if (!ringBuffer->DVD()->StartFromBeginning())
             return -1;
@@ -915,13 +914,13 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         return -1;
     }
     ic->streams_changed = HandleStreamChange;
-    if (ringBuffer->isDVD())
+    if (ringBuffer->IsDVD())
         ic->streams_changed = HandleDVDStreamChange;
     ic->stream_change_data = this;
 
     fmt->flags &= ~AVFMT_NOFILE;
 
-    if (!ringBuffer->isDVD() && !livetv)
+    if (!livetv && !ringBuffer->IsDisc())
         av_estimate_timings(ic, 0);
 
     // Scan for the initial A/V streams
@@ -957,12 +956,18 @@ int AvFormatDecoder::OpenFile(RingBuffer *rbuffer, bool novideo,
         }
     }
 
+    // If watching pre-recorded television or video use ffmpeg duration
+    int64_t dur = ic->duration / (int64_t)AV_TIME_BASE;
+    if (dur > 0 && !livetv && !watchingrecording)
+    {
+        m_parent->SetDuration((int)dur);
+    }
+
     // If we don't have a position map, set up ffmpeg for seeking
     if (!recordingHasPositionMap && !livetv)
     {
         VERBOSE(VB_PLAYBACK, LOC +
                 "Recording has no position -- using libavformat seeking.");
-        int64_t dur = ic->duration / (int64_t)AV_TIME_BASE;
 
         if (dur > 0)
         {
@@ -1081,19 +1086,6 @@ float AvFormatDecoder::normalized_fps(AVStream *stream, AVCodecContext *enc)
     return fps;
 }
 
-static bool IS_XVMC_VLD_PIX_FMT(enum PixelFormat fmt)
-{
-    return
-        fmt == PIX_FMT_XVMC_MPEG2_VLD;
-}
-
-static bool IS_XVMC_PIX_FMT(enum PixelFormat fmt)
-{
-    return
-        fmt == PIX_FMT_XVMC_MPEG2_MC ||
-        fmt == PIX_FMT_XVMC_MPEG2_IDCT;
-}
-
 static bool IS_VDPAU_PIX_FMT(enum PixelFormat fmt)
 {
     return
@@ -1103,30 +1095,6 @@ static bool IS_VDPAU_PIX_FMT(enum PixelFormat fmt)
         fmt == PIX_FMT_VDPAU_MPEG4 ||
         fmt == PIX_FMT_VDPAU_WMV3  ||
         fmt == PIX_FMT_VDPAU_VC1;
-}
-
-static enum PixelFormat get_format_xvmc_vld(struct AVCodecContext *avctx,
-                                            const enum PixelFormat *fmt)
-{
-    int i = 0;
-
-    for(i=0; fmt[i]!=PIX_FMT_NONE; i++)
-        if (IS_XVMC_VLD_PIX_FMT(fmt[i]))
-            break;
-
-    return fmt[i];
-}
-
-static enum PixelFormat get_format_xvmc(struct AVCodecContext *avctx,
-                                        const enum PixelFormat *fmt)
-{
-    int i = 0;
-
-    for(i=0; fmt[i]!=PIX_FMT_NONE; i++)
-        if (IS_XVMC_PIX_FMT(fmt[i]))
-            break;
-
-    return fmt[i];
 }
 
 static enum PixelFormat get_format_vdpau(struct AVCodecContext *avctx,
@@ -1193,7 +1161,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
             <<") type ("<<ff_codec_type_string(enc->codec_type)
             <<").");
 
-    if (ringBuffer && ringBuffer->isDVD())
+    if (ringBuffer && ringBuffer->IsDVD())
         directrendering = false;
 
     enc->opaque = (void *)this;
@@ -1225,17 +1193,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         }
     }
 
-    if (CODEC_IS_XVMC(codec))
-    {
-        enc->flags |= CODEC_FLAG_EMU_EDGE;
-        enc->get_buffer = get_avf_buffer_xvmc;
-        enc->get_format = (codec->id == CODEC_ID_MPEG2VIDEO_XVMC) ?
-                            get_format_xvmc : get_format_xvmc_vld;
-        enc->release_buffer = release_avf_buffer_xvmc;
-        enc->draw_horiz_band = render_slice_xvmc;
-        enc->slice_flags = SLICE_FLAG_CODED_ORDER | SLICE_FLAG_ALLOW_FIELD;
-    }
-    else if (CODEC_IS_VDPAU(codec))
+    if (CODEC_IS_VDPAU(codec))
     {
         enc->get_buffer      = get_avf_buffer_vdpau;
         enc->get_format      = get_format_vdpau;
@@ -1312,7 +1270,7 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
 
         m_parent->SetVideoParams(width, height, fps,
                                  keyframedist, aspect, kScan_Detect,
-                                 dvd_video_codec_changed);
+                                 false);
         if (LCD *lcd = LCD::Get())
         {
             LCDVideoFormatSet video_format;
@@ -1349,24 +1307,6 @@ void AvFormatDecoder::InitVideoCodec(AVStream *stream, AVCodecContext *enc,
         }
     }
 }
-
-#ifdef USING_XVMC
-static int xvmc_pixel_format(enum PixelFormat pix_fmt)
-{
-    int xvmc_chroma = XVMC_CHROMA_FORMAT_420;
-
-#if 0
-// We don't support other chromas yet
-    if (PIX_FMT_YUV420P == pix_fmt)
-        xvmc_chroma = XVMC_CHROMA_FORMAT_420;
-    else if (PIX_FMT_YUV422P == pix_fmt)
-        xvmc_chroma = XVMC_CHROMA_FORMAT_422;
-    else if (PIX_FMT_YUV420P == pix_fmt)
-        xvmc_chroma = XVMC_CHROMA_FORMAT_444;
-#endif
-    return xvmc_chroma;
-}
-#endif // USING_XVMC
 
 // CC Parity checking
 // taken from xine-lib libspucc
@@ -1695,7 +1635,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
     map<int,uint> lang_aud_cnt;
     uint audioStreamCount = 0;
 
-    if (ringBuffer && ringBuffer->isDVD() &&
+    if (ringBuffer && ringBuffer->IsDVD() &&
         ringBuffer->DVD()->AudioStreamsChanged())
     {
         ringBuffer->DVD()->AudioStreamsChanged(false);
@@ -1765,7 +1705,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
                 bool handled = false;
                 if (!using_null_videoout && mpeg_version(enc->codec_id))
                 {
-#if defined(USING_VDPAU) || defined(USING_XVMC)
+#if defined(USING_VDPAU)
                     // HACK -- begin
                     // Force MPEG2 decoder on MPEG1 streams.
                     // Needed for broken transmitters which mark
@@ -1774,7 +1714,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
                     if (CODEC_ID_MPEG1VIDEO == enc->codec_id)
                         enc->codec_id = CODEC_ID_MPEG2VIDEO;
                     // HACK -- end
-#endif // USING_XVMC || USING_VDPAU
+#endif // USING_VDPAU
 #ifdef USING_VDPAU
                     MythCodecID vdpau_mcid;
                     vdpau_mcid = VideoOutputVDPAU::GetBestSupportedCodec(
@@ -1788,55 +1728,6 @@ int AvFormatDecoder::ScanStreams(bool novideo)
                         handled = true;
                     }
 #endif // USING_VDPAU
-#ifdef USING_XVMC
-
-                    bool force_xv = no_hardware_decoders;
-                    if (ringBuffer && ringBuffer->isDVD())
-                    {
-                        if (dec.left(4) == "xvmc")
-                            dvd_xvmc_enabled = true;
-
-                        if (ringBuffer->InDiscMenuOrStillFrame() &&
-                            dvd_xvmc_enabled)
-                        {
-                            force_xv = true;
-                            enc->pix_fmt = PIX_FMT_YUV420P;
-                        }
-                    }
-
-                    MythCodecID mcid;
-                    mcid = VideoOutputXv::GetBestSupportedCodec(
-                        /* disp dim     */ width, height,
-                        /* osd dim      */ /*enc->width*/ 0, /*enc->height*/ 0,
-                        /* mpeg type    */ mpeg_version(enc->codec_id),
-                        /* xvmc pix fmt */ xvmc_pixel_format(enc->pix_fmt),
-                        /* test surface */ codec_is_std(video_codec_id),
-                        /* force_xv     */ force_xv);
-
-                    if (mcid >= video_codec_id)
-                    {
-                        bool vcd, idct, mc, vdpau;
-                        enc->codec_id = (CodecID)
-                            myth2av_codecid(mcid, vcd, idct, mc, vdpau);
-
-                        if (ringBuffer && ringBuffer->isDVD() &&
-                            (mcid == video_codec_id) &&
-                            dvd_video_codec_changed)
-                        {
-                            dvd_video_codec_changed = false;
-                            dvd_xvmc_enabled = false;
-                        }
-
-                        video_codec_id = mcid;
-                        if (!force_xv && codec_is_xvmc_std(mcid))
-                        {
-                            enc->pix_fmt = (idct) ?
-                                PIX_FMT_XVMC_MPEG2_IDCT :
-                                PIX_FMT_XVMC_MPEG2_MC;
-                        }
-                        handled = true;
-                    }
-#endif // USING_XVMC
                 }
 
                 if (!handled)
@@ -2045,8 +1936,11 @@ int AvFormatDecoder::ScanStreams(bool novideo)
         if (enc->codec_type == CODEC_TYPE_SUBTITLE)
         {
             int lang;
-            if (ringBuffer && ringBuffer->isBD())
-                lang = ringBuffer->BD()->GetSubtitleLanguage(subtitleStreamCount);
+            if (ringBuffer && ringBuffer->IsBD())
+            {
+                lang = ringBuffer->BD()->
+                    GetSubtitleLanguage(subtitleStreamCount);
+            }
             else
             {
                 AVMetadataTag *metatag = av_metadata_get(ic->streams[i]->metadata,
@@ -2070,16 +1964,22 @@ int AvFormatDecoder::ScanStreams(bool novideo)
         if (enc->codec_type == CODEC_TYPE_AUDIO)
         {
             int lang;
-            if (ringBuffer && ringBuffer->isDVD())
+            if (ringBuffer && ringBuffer->IsDVD())
+            {
                 lang = ringBuffer->DVD()->GetAudioLanguage(
                     ringBuffer->DVD()->GetAudioTrackNum(ic->streams[i]->id));
-            else if (ringBuffer && ringBuffer->isBD())
+            }
+            else if (ringBuffer && ringBuffer->IsBD())
+            {
                 lang = ringBuffer->BD()->GetAudioLanguage(audioStreamCount);
+            }
             else
             {
-                AVMetadataTag *metatag = av_metadata_get(ic->streams[i]->metadata,
-                                                         "language", NULL, 0);
-                lang = metatag ? get_canonical_lang(metatag->value) : iso639_str3_to_key("und");
+                AVMetadataTag *metatag = av_metadata_get(
+                    ic->streams[i]->metadata,
+                    "language", NULL, 0);
+                lang = metatag ? get_canonical_lang(metatag->value) :
+                    iso639_str3_to_key("und");
             }
 
             int channels  = ic->streams[i]->codec->channels;
@@ -2097,8 +1997,9 @@ int AvFormatDecoder::ScanStreams(bool novideo)
             else
             {
                 int logical_stream_id;
-                if (ringBuffer && ringBuffer->isDVD())
-                    logical_stream_id = ringBuffer->DVD()->GetAudioTrackNum(ic->streams[i]->id);
+                if (ringBuffer && ringBuffer->IsDVD())
+                    logical_stream_id =
+                        ringBuffer->DVD()->GetAudioTrackNum(ic->streams[i]->id);
                 else
                     logical_stream_id = ic->streams[i]->id;
 
@@ -2122,7 +2023,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
             ringBuffer->UpdateRawBitrate(bitrate);
     }
 
-    if (ringBuffer && ringBuffer->isDVD())
+    if (ringBuffer && ringBuffer->IsDVD())
     {
         if (tracks[kTrackTypeAudio].size() > 1)
         {
@@ -2165,7 +2066,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
                 m_parent->EnableSubtitles(false);
             }
             else if (trackNo >= 0 && trackNo < trackcount &&
-                    !ringBuffer->InDiscMenuOrStillFrame())
+                    !ringBuffer->IsInDiscMenuOrStillFrame())
             {
                     SetTrack(kTrackTypeSubtitle, trackNo);
                     m_parent->EnableSubtitles(true);
@@ -2182,7 +2083,7 @@ int AvFormatDecoder::ScanStreams(bool novideo)
     {
         m_audio->SetAudioParams(FORMAT_NONE, -1, -1, CODEC_ID_NONE, -1, false);
         m_audio->ReinitAudio();
-        if (ringBuffer && ringBuffer->isDVD())
+        if (ringBuffer && ringBuffer->IsDVD())
             audioIn = AudioInfo();
     }
 
@@ -2352,83 +2253,6 @@ void release_avf_buffer(struct AVCodecContext *c, AVFrame *pic)
 
     for (uint i = 0; i < 4; i++)
         pic->data[i] = NULL;
-}
-
-int get_avf_buffer_xvmc(struct AVCodecContext *c, AVFrame *pic)
-{
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-    VideoFrame *frame = nd->GetPlayer()->GetNextVideoFrame(false);
-
-    pic->data[0] = frame->priv[0];
-    pic->data[1] = frame->priv[1];
-    pic->data[2] = frame->buf;
-
-    pic->linesize[0] = 0;
-    pic->linesize[1] = 0;
-    pic->linesize[2] = 0;
-
-    pic->opaque = frame;
-    pic->type = FF_BUFFER_TYPE_USER;
-
-    pic->age = 256 * 256 * 256 * 64;
-
-#ifdef USING_XVMC
-    struct xvmc_pix_fmt *render = (struct xvmc_pix_fmt *)frame->buf;
-
-    render->state = AV_XVMC_STATE_PREDICTION;
-    render->picture_structure = 0;
-    render->flags = 0;
-    render->start_mv_blocks_num = 0;
-    render->filled_mv_blocks_num = 0;
-    render->next_free_data_block_num = 0;
-#endif
-
-    pic->reordered_opaque = c->reordered_opaque;
-
-    return 0;
-}
-
-void release_avf_buffer_xvmc(struct AVCodecContext *c, AVFrame *pic)
-{
-    assert(pic->type == FF_BUFFER_TYPE_USER);
-
-#ifdef USING_XVMC
-    struct xvmc_pix_fmt *render = (struct xvmc_pix_fmt *)pic->data[2];
-    render->state &= ~AV_XVMC_STATE_PREDICTION;
-#endif
-
-    AvFormatDecoder *nd = (AvFormatDecoder *)(c->opaque);
-    if (nd && nd->GetPlayer() && nd->GetPlayer()->getVideoOutput())
-        nd->GetPlayer()->getVideoOutput()->DeLimboFrame((VideoFrame*)pic->opaque);
-
-    for (uint i = 0; i < 4; i++)
-        pic->data[i] = NULL;
-
-}
-
-void render_slice_xvmc(struct AVCodecContext *s, const AVFrame *src,
-                       int offset[4], int y, int type, int height)
-{
-    if (!src)
-        return;
-
-    (void)offset;
-    (void)type;
-
-    if (s && src && s->opaque && src->opaque)
-    {
-        AvFormatDecoder *nd = (AvFormatDecoder *)(s->opaque);
-
-        int width = s->width;
-
-        VideoFrame *frame = (VideoFrame *)src->opaque;
-        nd->GetPlayer()->DrawSlice(frame, 0, y, width, height);
-    }
-    else
-    {
-        VERBOSE(VB_IMPORTANT, LOC +
-                "render_slice_xvmc called with bad avctx or src");
-    }
 }
 
 int get_avf_buffer_vdpau(struct AVCodecContext *c, AVFrame *pic)
@@ -2728,7 +2552,7 @@ void AvFormatDecoder::MpegPreProcessPkt(AVStream *stream, AVPacket *pkt)
     {
         bufptr = ff_find_start_code(bufptr, bufend, &start_code_state);
 
-        if (ringBuffer->isDVD() && (start_code_state == SEQ_END_CODE))
+        if (ringBuffer->IsDVD() && (start_code_state == SEQ_END_CODE))
             ringBuffer->DVD()->NewSequence(true);
 
         if (start_code_state >= SLICE_MIN && start_code_state <= SLICE_MAX)
@@ -2946,7 +2770,7 @@ bool AvFormatDecoder::PreProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
 bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
 {
     int ret = 0, gotpicture = 0;
-    long long pts = 0;
+    int64_t pts = 0;
     AVCodecContext *context = curstream->codec;
     AVFrame mpa_pic;
     avcodec_get_frame_defaults(&mpa_pic);
@@ -2972,7 +2796,7 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
         context->reordered_opaque = pkt->pts;
         ret = avcodec_decode_video2(context, &mpa_pic, &gotpicture, pkt);
         // Reparse it to not drop the DVD still frame
-        if (ringBuffer->isDVD() && ringBuffer->DVD()->NeedsStillFrame())
+        if (ringBuffer->IsDVD() && ringBuffer->DVD()->NeedsStillFrame())
             ret = avcodec_decode_video2(context, &mpa_pic, &gotpicture, pkt);
     }
     avcodeclock->unlock();
@@ -2986,65 +2810,6 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
     if (!gotpicture)
     {
         return true;
-    }
-
-    // Decode CEA-608 and CEA-708 captions
-    for (uint i = 0; i < (uint)mpa_pic.atsc_cc_len;
-    i += ((mpa_pic.atsc_cc_buf[i] & 0x1f) * 3) + 2)
-    {
-        DecodeDTVCC(mpa_pic.atsc_cc_buf + i,
-                    mpa_pic.atsc_cc_len - i);
-    }
-
-    VideoFrame *picframe = (VideoFrame *)(mpa_pic.opaque);
-
-    if (!directrendering)
-    {
-        AVPicture tmppicture;
-
-        VideoFrame *xf = picframe;
-        picframe = m_parent->GetNextVideoFrame(false);
-
-        unsigned char *buf = picframe->buf;
-        avpicture_fill(&tmppicture, buf, PIX_FMT_YUV420P, context->width,
-                       context->height);
-        tmppicture.data[0] = buf + picframe->offsets[0];
-        tmppicture.data[1] = buf + picframe->offsets[1];
-        tmppicture.data[2] = buf + picframe->offsets[2];
-        tmppicture.linesize[0] = picframe->pitches[0];
-        tmppicture.linesize[1] = picframe->pitches[1];
-        tmppicture.linesize[2] = picframe->pitches[2];
-
-        QSize dim = get_video_dim(*context);
-        sws_ctx = sws_getCachedContext(sws_ctx, context->width,
-                                       context->height, context->pix_fmt,
-                                       context->width, context->height,
-                                       PIX_FMT_YUV420P, SWS_FAST_BILINEAR,
-                                       NULL, NULL, NULL);
-        if (!sws_ctx)
-        {
-            VERBOSE(VB_IMPORTANT, LOC_ERR + "Failed to allocate sws context");
-            return false;
-        }
-        sws_scale(sws_ctx, mpa_pic.data, mpa_pic.linesize, 0, dim.height(),
-                  tmppicture.data, tmppicture.linesize);
-
-
-        if (xf)
-        {
-            // Set the frame flags, but then discard it
-            // since we are not using it for display.
-            xf->interlaced_frame = mpa_pic.interlaced_frame;
-            xf->top_field_first = mpa_pic.top_field_first;
-            xf->frameNumber = framesPlayed;
-            m_parent->DiscardVideoFrame(xf);
-        }
-    }
-    else if (!picframe)
-    {
-        VERBOSE(VB_IMPORTANT, LOC_ERR + "NULL videoframe - direct rendering not"
-                "correctly initialized.");
-        return false;
     }
 
     // Detect faulty video timestamps using logic from ffplay.
@@ -3066,92 +2831,41 @@ bool AvFormatDecoder::ProcessVideoPacket(AVStream *curstream, AVPacket *pkt)
     // the DTS timestamp is missing. Also use fixups for missing PTS instead of
     // DTS to avoid oscillating between PTS and DTS. Only select DTS if PTS is
     // more faulty or never detected.
-    if (ringBuffer->isDVD())
+    if (ringBuffer->IsDVD())
     {
         if (pkt->dts != (int64_t)AV_NOPTS_VALUE)
-            pts = (long long)pkt->dts;
+            pts = pkt->dts;
     }
     else if (private_dec && private_dec->NeedsReorderedPTS() &&
              mpa_pic.reordered_opaque != (int64_t)AV_NOPTS_VALUE)
     {
-        pts = (long long)mpa_pic.reordered_opaque;
+        pts = mpa_pic.reordered_opaque;
     }
     else if ((force_reordered_opaque || faulty_pts <= faulty_dts ||
              pkt->dts == (int64_t)AV_NOPTS_VALUE) &&
              mpa_pic.reordered_opaque != (int64_t)AV_NOPTS_VALUE)
     {
-        pts = (long long)mpa_pic.reordered_opaque;
+        pts = mpa_pic.reordered_opaque;
     }
     else if ((faulty_dts < faulty_pts || !reordered_pts_detected) &&
              pkt->dts != (int64_t)AV_NOPTS_VALUE)
     {
-        pts = (long long)pkt->dts;
-    }
-    pts = (long long)(av_q2d(curstream->time_base) * pts * 1000);
-
-    long long temppts = pts;
-
-    // Validate the video pts against the last pts. If it's
-    // a little bit smaller, equal or missing, compute
-    // it from the last. Otherwise assume a wraparound.
-    if (!ringBuffer->isDVD() &&
-        temppts <= lastvpts &&
-        (temppts + 10000 > lastvpts || temppts <= 0))
-    {
-        temppts = lastvpts;
-        temppts += (long long)(1000 / fps);
-        // MPEG2/H264 frames can be repeated, update pts accordingly
-        temppts += (long long)(mpa_pic.repeat_pict * 500 / fps);
+        pts = pkt->dts;
     }
 
-    VERBOSE(VB_PLAYBACK+VB_TIMESTAMP, LOC +
-            QString("video timecode %1 %2 %3 %4 %5").arg(mpa_pic.reordered_opaque).arg(pkt->pts).arg(pkt->dts)
-            .arg(temppts).arg(lastvpts));
+    VERBOSE(VB_PLAYBACK+VB_TIMESTAMP+VB_EXTRA, LOC +
+            QString("video packet timestamps reordered %1 pts %2 dts %3")
+            .arg(mpa_pic.reordered_opaque).arg(pkt->pts).arg(pkt->dts));
 
-/* XXX: Broken.
-    if (mpa_pic.qscale_table != NULL && mpa_pic.qstride > 0 &&
-        context->height == picframe->height)
-    {
-        int tblsize = mpa_pic.qstride *
-                      ((picframe->height + 15) / 16);
+    mpa_pic.reordered_opaque = pts;
 
-        if (picframe->qstride != mpa_pic.qstride ||
-            picframe->qscale_table == NULL)
-        {
-            picframe->qstride = mpa_pic.qstride;
-            if (picframe->qscale_table)
-                delete [] picframe->qscale_table;
-            picframe->qscale_table = new unsigned char[tblsize];
-        }
-
-        memcpy(picframe->qscale_table, mpa_pic.qscale_table,
-               tblsize);
-    }
-*/
-
-    picframe->interlaced_frame = mpa_pic.interlaced_frame;
-    picframe->top_field_first = mpa_pic.top_field_first;
-    picframe->repeat_pict = mpa_pic.repeat_pict;
-
-    picframe->frameNumber = framesPlayed;
-    m_parent->ReleaseNextVideoFrame(picframe, temppts);
-    if (private_dec && mpa_pic.data[3])
-        context->release_buffer(context, &mpa_pic);
-
-    decoded_video_frame = picframe;
-    gotvideo = 1;
-    framesPlayed++;
-
-    lastvpts = temppts;
+    ProcessVideoFrame(curstream, &mpa_pic);
 
     return true;
 }
 
-// TODO this is a temporary implementation. Remove code duplication with
-// ProcessVideoPacket for 0.25
 bool AvFormatDecoder::ProcessVideoFrame(AVStream *stream, AVFrame *mpa_pic)
 {
-    long long pts = 0;
     AVCodecContext *context = stream->codec;
 
     // Decode CEA-608 and CEA-708 captions
@@ -3212,14 +2926,13 @@ bool AvFormatDecoder::ProcessVideoFrame(AVStream *stream, AVFrame *mpa_pic)
         return false;
     }
 
-    pts = (long long)(av_q2d(stream->time_base) * mpa_pic->reordered_opaque * 1000);
-
-    long long temppts = pts;
+    long long temppts = (long long)(av_q2d(stream->time_base) * 
+                                    mpa_pic->reordered_opaque * 1000);
 
     // Validate the video pts against the last pts. If it's
     // a little bit smaller, equal or missing, compute
     // it from the last. Otherwise assume a wraparound.
-    if (!ringBuffer->isDVD() &&
+    if (!ringBuffer->IsDVD() &&
         temppts <= lastvpts &&
         (temppts + 10000 > lastvpts || temppts <= 0))
     {
@@ -3230,14 +2943,15 @@ bool AvFormatDecoder::ProcessVideoFrame(AVStream *stream, AVFrame *mpa_pic)
     }
 
     VERBOSE(VB_PLAYBACK+VB_TIMESTAMP, LOC +
-            QString("ProcessVideoFrame timecode %1 %2 %3")
+            QString("video timecode %1 %2 %3")
             .arg(mpa_pic->reordered_opaque).arg(temppts).arg(lastvpts));
 
     picframe->interlaced_frame = mpa_pic->interlaced_frame;
-    picframe->top_field_first = mpa_pic->top_field_first;
-    picframe->repeat_pict = mpa_pic->repeat_pict;
+    picframe->top_field_first  = mpa_pic->top_field_first;
+    picframe->repeat_pict      = mpa_pic->repeat_pict;
+    picframe->disp_timecode    = NormalizeVideoTimecode(stream, temppts);
+    picframe->frameNumber      = framesPlayed;
 
-    picframe->frameNumber = framesPlayed;
     m_parent->ReleaseNextVideoFrame(picframe, temppts);
     if (private_dec && mpa_pic->data[3])
         context->release_buffer(context, mpa_pic);
@@ -3432,7 +3146,7 @@ bool AvFormatDecoder::ProcessSubtitlePacket(AVStream *curstream, AVPacket *pkt)
     AVSubtitle subtitle;
     memset(&subtitle, 0, sizeof(AVSubtitle));
 
-    if (ringBuffer->isDVD())
+    if (ringBuffer->IsDVD())
     {
         if (ringBuffer->DVD()->NumMenuButtons() > 0)
         {
@@ -3543,7 +3257,7 @@ QString AvFormatDecoder::GetTrackDesc(uint type, uint trackNo) const
     int lang_key = tracks[type][trackNo].language;
     if (kTrackTypeAudio == type)
     {
-        if (ringBuffer->isDVD())
+        if (ringBuffer->IsDVD())
             lang_key = ringBuffer->DVD()->GetAudioLanguage(trackNo);
 
         QString msg = iso639_key_toName(lang_key);
@@ -3560,7 +3274,7 @@ QString AvFormatDecoder::GetTrackDesc(uint type, uint trackNo) const
             msg += QString(" %1").arg(s->codec->codec->name).toUpper();
 
         int channels = 0;
-        if (ringBuffer->isDVD())
+        if (ringBuffer->IsDVD())
             channels = ringBuffer->DVD()->GetNumAudioChannels(trackNo);
         else if (s->codec->channels)
             channels = tracks[kTrackTypeAudio][trackNo].orig_num_channels;
@@ -3576,7 +3290,7 @@ QString AvFormatDecoder::GetTrackDesc(uint type, uint trackNo) const
     }
     else if (kTrackTypeSubtitle == type)
     {
-        if (ringBuffer->isDVD())
+        if (ringBuffer->IsDVD())
             lang_key = ringBuffer->DVD()->GetSubtitleLanguage(trackNo);
 
         return QObject::tr("Subtitle") + QString(" %1: %2")
@@ -3591,11 +3305,6 @@ QString AvFormatDecoder::GetTrackDesc(uint type, uint trackNo) const
 int AvFormatDecoder::GetTeletextDecoderType(void) const
 {
     return ttd->GetDecoderType();
-}
-
-void AvFormatDecoder::SetTeletextDecoderViewer(TeletextViewer *view)
-{
-    ttd->SetViewer(view);
 }
 
 QString AvFormatDecoder::GetXDS(const QString &key) const
@@ -3644,7 +3353,7 @@ int AvFormatDecoder::AutoSelectTrack(uint type)
     if (kTrackTypeAudio == type)
         return AutoSelectAudioTrack();
 
-    if (ringBuffer->InDiscMenuOrStillFrame())
+    if (ringBuffer->IsInDiscMenuOrStillFrame())
         return -1;
 
     return DecoderBase::AutoSelectTrack(type);
@@ -4099,7 +3808,7 @@ bool AvFormatDecoder::ProcessAudioPacket(AVStream *curstream, AVPacket *pkt,
 
         total_decoded_audio += data_size;
 
-        allowedquit |= ringBuffer->InDiscMenuOrStillFrame();
+        allowedquit |= ringBuffer->IsInDiscMenuOrStillFrame();
         // Audio can expand by a factor of 6 in audiooutputbase's audiobuffer
         allowedquit |= !(decodetype & kDecodeVideo) &&
                        ((ofill + total_decoded_audio * 6) > othresh);
@@ -4192,10 +3901,11 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
                 allowedquit = true;
         }
 
-        if (ringBuffer->isDVD())
+        if (ringBuffer->IsDVD())
         {
             // Update the title length
-            if (m_parent->AtNormalSpeed() && ringBuffer->DVD()->PGCLengthChanged())
+            if (m_parent->AtNormalSpeed() &&
+                ringBuffer->DVD()->PGCLengthChanged())
             {
                 ResetPosMap();
                 SyncPositionMap();
@@ -4206,7 +3916,23 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
             if (ringBuffer->DVD()->AudioStreamsChanged())
                 ScanStreams(true);
 
-            // always use the first video stream (must come after ScanStreams above)
+            // Always use the first video stream
+            // (must come after ScanStreams above)
+            selectedTrack[kTrackTypeVideo].av_stream_index = 0;
+        }
+
+        if (ringBuffer->IsBD())
+        {
+            // Update the title length
+            if (m_parent->AtNormalSpeed() && ringBuffer->BD()->TitleChanged())
+            {
+                ResetPosMap();
+                SyncPositionMap();
+                UpdateFramesPlayed();
+            }
+
+            // Always use the first video stream
+            // (must come after ScanStreams above)
             selectedTrack[kTrackTypeVideo].av_stream_index = 0;
         }
 
@@ -4222,7 +3948,7 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
             else if (lowbuffers && ((decodetype & kDecodeAV) == kDecodeAV) &&
                      storedPackets.count() < max_video_queue_size &&
                      lastapts < lastvpts + 100 &&
-                     !ringBuffer->InDiscMenuOrStillFrame())
+                     !ringBuffer->IsInDiscMenuOrStillFrame())
             {
                 storevideoframes = true;
             }
@@ -4256,7 +3982,7 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
                 av_init_packet(pkt);
             }
 
-            int retval;
+            int retval = 0;
             if (!ic || ((retval = av_read_frame(ic, pkt)) < 0))
             {
                 if (retval == -EAGAIN)
@@ -4289,53 +4015,6 @@ bool AvFormatDecoder::GetFrame(DecodeType decodetype)
             VERBOSE(VB_IMPORTANT, LOC_ERR + "Bad stream (NULL)");
             av_free_packet(pkt);
             continue;
-        }
-
-        if (ringBuffer->isDVD() &&
-            curstream->codec->codec_type == CODEC_TYPE_VIDEO)
-        {
-#ifdef USING_XVMC
-            if (!private_dec)
-            {
-                int current_width = curstream->codec->width;
-                int video_width = m_parent->GetVideoSize().width();
-                if (dvd_xvmc_enabled && m_parent && m_parent->getVideoOutput())
-                {
-                    bool dvd_xvmc_active = false;
-                    if (codec_is_xvmc(video_codec_id))
-                    {
-                        dvd_xvmc_active = true;
-                    }
-
-                    bool indiscmenu   = ringBuffer->InDiscMenuOrStillFrame();
-                    if ((indiscmenu && dvd_xvmc_active) ||
-                        ((!indiscmenu && !dvd_xvmc_active)))
-                    {
-                        VERBOSE(VB_PLAYBACK, LOC + QString("DVD Codec Change "
-                                    "indiscmenu %1 dvd_xvmc_active %2")
-                                .arg(indiscmenu).arg(dvd_xvmc_active));
-                        dvd_video_codec_changed = true;
-                    }
-                }
-
-                if ((video_width > 0) && dvd_video_codec_changed)
-                {
-                    VERBOSE(VB_PLAYBACK, LOC + QString("DVD Stream/Codec Change "
-                                "video_width %1 current_width %2 "
-                                "dvd_video_codec_changed %3")
-                            .arg(video_width).arg(current_width)
-                            .arg(dvd_video_codec_changed));
-                    av_free_packet(pkt);
-                    if (current_width > 0) {
-                        CloseCodecs();
-                        ScanStreams(false);
-                        allowedquit = true;
-                        dvd_video_codec_changed = false;
-                    }
-                    continue;
-                }
-            }
-#endif //USING_XVMC
         }
 
         enum CodecType codec_type = curstream->codec->codec_type;
@@ -4584,6 +4263,10 @@ void AvFormatDecoder::SetDisablePassThrough(bool disable)
 
 inline bool AvFormatDecoder::DecoderWillDownmix(const AVCodecContext *ctx)
 {
+        // Until ffmpeg properly implements dialnorm
+        // use Myth internal downmixer if machines has FPU/SSE
+    if (AudioOutputUtil::has_hardware_fpu())
+        return false;
     switch (ctx->codec_id)
     {
         case CODEC_ID_AC3:
@@ -4603,14 +4286,9 @@ bool AvFormatDecoder::DoPassThrough(const AVCodecContext *ctx)
         passthru = m_audio->CanAC3();
     else if (ctx->codec_id == CODEC_ID_DTS)
         passthru = m_audio->CanDTS();
-    passthru &= m_audio->CanPassthrough(ctx->sample_rate);
-        // Will downmix if we can't support the amount of channels
-    passthru &= ctx->channels >= (int)m_audio->GetMaxChannels();
+    passthru &= m_audio->CanPassthrough(ctx->sample_rate, ctx->channels);
     passthru &= !internal_vol;
     passthru &= !transcoding && !disable_passthru;
-    // Don't know any cards that support spdif clocked at < 44100
-    // Some US cable transmissions have 2ch 32k AC-3 streams
-    passthru &= ctx->sample_rate >= 44100;
 
     return passthru;
 }

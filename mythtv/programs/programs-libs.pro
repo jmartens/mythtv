@@ -1,6 +1,6 @@
-INCLUDEPATH += ../.. ../../libs/ ../../libs/libmyth ../../libs/libmythtv
-INCLUDEPATH += ../../external/FFmpeg
-INCLUDEPATH += ../../libs/libmythupnp ../../libs/libmythui
+INCLUDEPATH += ../.. ../../libs/ ../../libs/libmyth ../../libs/libmyth/audio
+INCLUDEPATH +=  ../../libs/libmythtv ../../external/FFmpeg
+INCLUDEPATH += ../../libs/libmythupnp ../../libs/libmythui ../../libs/libmythmetadata
 INCLUDEPATH += ../../libs/libmythlivemedia ../../libs/libmythdb ../../libmythhdhomerun
 INCLUDEPATH += ../../libs/libmythdvdnav ../../libs/libmythbluray ../../libs/libmythsamplerate
 INCLUDEPATH += ../../libs/libmythtv/mpeg
@@ -15,6 +15,7 @@ LIBS += -L../../external/FFmpeg/libswscale
 LIBS += -L../../libs/libmythdb
 LIBS += -L../../libs/libmythui
 LIBS += -L../../libs/libmythupnp
+LIBS += -L../../libs/libmythmetadata
 
 LIBS += -lmythtv-$$LIBVERSION
 LIBS += -lmythswscale
@@ -26,6 +27,7 @@ LIBS += -lmythupnp-$$LIBVERSION
 LIBS += -lmythdb-$$LIBVERSION
 LIBS += -lmythui-$$LIBVERSION
 LIBS += -lmyth-$$LIBVERSION
+LIBS += -lmythmetadata-$$LIBVERSION
 
 using_live:LIBS += -L../../libs/libmythlivemedia -lmythlivemedia-$$LIBVERSION
 using_mheg:LIBS += -L../../libs/libmythfreemheg -lmythfreemheg-$$LIBVERSION
@@ -50,7 +52,8 @@ using_live: TARGETDEPS += ../../libs/libmythlivemedia/libmythlivemedia-$${MYTH_S
 using_hdhomerun: TARGETDEPS += ../../libs/libmythhdhomerun/libmythhdhomerun-$${MYTH_SHLIB_EXT}
 
 DEPENDPATH += ../.. ../../libs ../../libs/libmyth
-DEPENDPATH += ../../libs/libmythtv ../../libs/libmythtv/mpeg ../../libs/libmythtv/vbitext
+DEPENDPATH += ../../libs/libmythtv
+DEPENDPATH += ../../libs/libmythtv/mpeg ../../libs/libmythtv/vbitext
 DEPENDPATH += ../../external/FFmpeg
 DEPENDPATH += ../../libs/libmythupnp ../../libs/libmythui
 DEPENDPATH += ../../libs/libmythlivemedia ../../libmythdb ../../libmythhdhomerun

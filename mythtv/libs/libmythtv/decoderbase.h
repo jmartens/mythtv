@@ -6,7 +6,7 @@
 #include <vector>
 using namespace std;
 
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "remoteencoder.h"
 #include "mythcontext.h"
 #include "mythdbcon.h"
@@ -18,7 +18,7 @@ class TeletextViewer;
 class MythPlayer;
 class AudioPlayer;
 
-const int kDecoderProbeBufferSize = 128 * 1024;
+const int kDecoderProbeBufferSize = 256 * 1024;
 
 /// Track types
 typedef enum TrackTypes
@@ -188,7 +188,6 @@ class DecoderBase
     inline int   NextTrack(uint type);
 
     virtual int  GetTeletextDecoderType(void) const { return -1; }
-    virtual void SetTeletextDecoderViewer(TeletextViewer*) {;}
 
     virtual QString GetXDS(const QString&) const { return QString::null; }
 

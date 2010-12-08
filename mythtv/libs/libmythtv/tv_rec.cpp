@@ -26,7 +26,7 @@
 #include "eitscanner.h"
 #include "mythconfig.h"
 #include "remoteutil.h"
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "v4lchannel.h"
 #include "dialogbox.h"
 #include "jobqueue.h"
@@ -2989,8 +2989,7 @@ void TVRec::GetNextProgram(BrowseDirection direction,
         }
         else if (BROWSE_RIGHT == direction)
         {
-                chanid = channel->GetNextChannel(channum,
-                                                 CHANNEL_DIRECTION_SAME);
+            chanid = channel->GetNextChannel(channum, CHANNEL_DIRECTION_SAME);
             compare = ">";
             sortorder = "asc";
         }
@@ -3842,7 +3841,7 @@ void TVRec::TuningNewRecorder(MPEGStreamData *streamData)
         bool write = genOpt.cardtype != "IMPORT";
         VERBOSE(VB_IMPORTANT, LOC + QString("rec->GetPathname(): '%1'")
                 .arg(rec->GetPathname()));
-        SetRingBuffer(new RingBuffer(rec->GetPathname(), write));
+        SetRingBuffer(RingBuffer::Create(rec->GetPathname(), write));
         if (!ringBuffer->IsOpen() && write)
         {
             VERBOSE(VB_IMPORTANT, LOC_ERR +
@@ -4243,7 +4242,7 @@ bool TVRec::GetProgramRingBufferForLiveTV(RecordingInfo **pginfo,
 
     StartedRecording(prog);
 
-    *rb = new RingBuffer(prog->GetPathname(), true);
+    *rb = RingBuffer::Create(prog->GetPathname(), true);
     if (!(*rb)->IsOpen())
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR +

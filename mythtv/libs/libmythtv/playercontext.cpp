@@ -10,7 +10,7 @@
 #include "mythbdplayer.h"
 #include "remoteencoder.h"
 #include "livetvchain.h"
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "playgroup.h"
 #include "videoouttypes.h"
 #include "storagegroup.h"
@@ -468,8 +468,6 @@ bool PlayerContext::CreatePlayer(TV *tv, QWidget *widget,
         if (audio->HasAudioOut())
         {
             QString errMsg = audio->ReinitAudio();
-            if (!errMsg.isEmpty())
-                VERBOSE(VB_IMPORTANT, LOC_ERR + errMsg);
         }
     }
     else if (pipState == kPBPRight)

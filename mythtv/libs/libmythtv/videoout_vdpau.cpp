@@ -57,9 +57,9 @@ VideoOutputVDPAU::VideoOutputVDPAU()
     m_checked_output_surfaces(false),
     m_decoder(0),            m_pix_fmt(-1),    m_frame_delay(0),
     m_lock(QMutex::Recursive), m_pip_layer(0), m_pip_surface(0),
-    m_pip_ready(false),      m_osd_painter(NULL), m_using_piccontrols(false),
+    m_pip_ready(false),      m_osd_painter(NULL),
     m_skip_chroma(false),    m_denoise(0.0f),
-    m_sharpen(0.0f),         m_studio(false),
+    m_sharpen(0.0f),
     m_colorspace(VDP_COLOR_STANDARD_ITUR_BT_601)
 {
     if (gCoreContext->GetNumSetting("UseVideoModes", 0))
@@ -112,10 +112,7 @@ bool VideoOutputVDPAU::Init(int width, int height, float aspect, WId winid,
         return ok;
     }
 
-    m_using_piccontrols = (db_use_picture_controls || m_studio ||
-                           m_colorspace != VDP_COLOR_STANDARD_ITUR_BT_601);
-    if (m_using_piccontrols)
-        InitPictureAttributes();
+    InitPictureAttributes();
     MoveResize();
     VERBOSE(VB_PLAYBACK, LOC +
             QString("Created VDPAU context (%1 decode)")
@@ -792,22 +789,16 @@ void VideoOutputVDPAU::UpdatePauseFrame(void)
 
 void VideoOutputVDPAU::InitPictureAttributes(void)
 {
-    supported_attributes = (PictureAttributeSupported)
-                           (kPictureAttributeSupported_Brightness |
-                            kPictureAttributeSupported_Contrast |
-                            kPictureAttributeSupported_Colour |
-                            kPictureAttributeSupported_Hue);
-    VERBOSE(VB_PLAYBACK, LOC + QString("PictureAttributes: %1")
-            .arg(toString(supported_attributes)));
-    VideoOutput::InitPictureAttributes();
+    videoColourSpace.SetSupportedAttributes((PictureAttributeSupported)
+                                       (kPictureAttributeSupported_Brightness |
+                                        kPictureAttributeSupported_Contrast |
+                                        kPictureAttributeSupported_Colour |
+                                        kPictureAttributeSupported_Hue |
+                                        kPictureAttributeSupported_StudioLevels));
 
     m_lock.lock();
     if (m_render && m_video_mixer)
     {
-        if (m_studio)
-            m_render->SetMixerAttribute(m_video_mixer,
-                                        kVDPAttribStudioLevels, 1);
-
         if (m_colorspace < 0)
         {
             QSize size = window.GetVideoDim();
@@ -820,9 +811,11 @@ void VideoOutputVDPAU::InitPictureAttributes(void)
         }
 
         if (m_colorspace != VDP_COLOR_STANDARD_ITUR_BT_601)
-            m_render->SetMixerAttribute(m_video_mixer,
-                                        kVDPAttribColorStandard,
-                                        m_colorspace);
+        {
+            videoColourSpace.SetColourSpace((m_colorspace == VDP_COLOR_STANDARD_ITUR_BT_601)
+                         ? kCSTD_ITUR_BT_601 : kCSTD_ITUR_BT_709);
+        }
+        m_render->SetCSCMatrix(m_video_mixer, videoColourSpace.GetMatrix());
     }
     m_lock.unlock();
 }
@@ -830,37 +823,13 @@ void VideoOutputVDPAU::InitPictureAttributes(void)
 int VideoOutputVDPAU::SetPictureAttribute(PictureAttribute attribute,
                                           int newValue)
 {
-    if (!m_using_piccontrols || !m_render || !m_video_mixer)
+    if (!m_render || !m_video_mixer)
         return -1;
 
     m_lock.lock();
-    newValue = min(max(newValue, 0), 100);
-
-    uint vdpau_attrib = kVDPAttribNone;
-    switch (attribute)
-    {
-        case kPictureAttribute_Brightness:
-            vdpau_attrib = kVDPAttribBrightness;
-            break;
-        case kPictureAttribute_Contrast:
-            vdpau_attrib = kVDPAttribContrast;
-            break;
-        case kPictureAttribute_Colour:
-            vdpau_attrib = kVDPAttribColour;
-            break;
-        case kPictureAttribute_Hue:
-            vdpau_attrib = kVDPAttribHue;
-            break;
-        default:
-            newValue = -1;
-    }
-
-    if (vdpau_attrib != kVDPAttribNone)
-        newValue = m_render->SetMixerAttribute(m_video_mixer,
-                                               vdpau_attrib, newValue);
-
+    newValue = videoColourSpace.SetPictureAttribute(attribute, newValue);
     if (newValue >= 0)
-        SetPictureAttributeDBValue(attribute, newValue);
+        m_render->SetCSCMatrix(m_video_mixer, videoColourSpace.GetMatrix());
     m_lock.unlock();
     return newValue;
 }
@@ -991,7 +960,6 @@ void VideoOutputVDPAU::CheckFrameStates(void)
             }
             else
             {
-                vbuffers.RemoveInheritence(frame);
                 vbuffers.safeEnqueue(kVideoBuffer_avail, frame);
                 vbuffers.end_lock();
                 it = vbuffers.begin_lock(kVideoBuffer_displayed);
@@ -1163,7 +1131,6 @@ void VideoOutputVDPAU::ParseOptions(void)
     m_skip_chroma = false;
     m_denoise     = 0.0f;
     m_sharpen     = 0.0f;
-    m_studio      = false;
     m_colorspace  = VDP_COLOR_STANDARD_ITUR_BT_601;
     m_buffer_size = NUM_VDPAU_BUFFERS;
     m_mixer_features = kVDPFeatNone;
@@ -1242,12 +1209,6 @@ void VideoOutputVDPAU::ParseOptions(void)
                     .arg((m_colorspace == VDP_COLOR_STANDARD_ITUR_BT_601) ?
                     "BT.601" : "BT.709"));
             }
-        }
-        else if (name.contains("vdpaustudio"))
-        {
-            VERBOSE(VB_PLAYBACK, LOC +
-                    QString("Enabling Studio Levels [16-235]."));
-            m_studio = true;
         }
         else if (name.contains("vdpauhqscaling"))
         {

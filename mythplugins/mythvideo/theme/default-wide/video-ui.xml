@@ -1464,57 +1464,57 @@
             <position>550,235</position>
         </textedit>
 
-        <textarea name="vcd_text" from="basetextarea">
+        <textarea name="bluraymount_text" from="basetextarea">
             <area>300,315,230,30</area>
             <align>right</align>
-            <value>VCD Player:</value>
+            <value>Blu-ray Mount:</value>
         </textarea>
 
-        <textedit name="vcdplayer" from="basetextedit">
+        <textedit name="bluraymount" from="basetextedit">
             <position>550,305</position>
         </textedit>
 
-        <textarea name="vcddrive_text" from="basetextarea">
-            <area>300,385,230,30</area>
+        <textarea name="blureg_text" from="basetextarea">
+            <area>300,375,230,30</area>
             <align>right</align>
-            <value>VCD Drive:</value>
+            <value>Blu-ray Region:</value>
         </textarea>
 
-        <textedit name="vcddrive" from="basetextedit">
-            <position>550,375</position>
-        </textedit>
+        <buttonlist name="blurayregionlist" from="basewideselector">
+            <position>550,365</position>
+        </buttonlist>
 
         <checkbox name="altcheck" from="basecheckbox">
-            <position>775,450</position>
+            <position>775,440</position>
         </checkbox>
 
         <textarea name="altcheck_text" from="basetextarea">
-            <area>500,450,300,30</area>
+            <area>500,440,300,30</area>
             <value>Enable Alternate Player:</value>
         </textarea>
 
         <textarea name="alt_text" from="basetextarea">
-            <area>300,515,230,30</area>
+            <area>300,505,230,30</area>
             <align>right</align>
             <value>Alternate Player:</value>
         </textarea>
 
         <textedit name="altplayer" from="basetextedit">
-            <position>550,505</position>
+            <position>550,495</position>
         </textedit>
 
         <textarea name="helptext" from="basetextarea">
-            <area>50,580,1180,60</area>
+            <area>50,550,1180,60</area>
             <multiline>true</multiline>
         </textarea>
 
         <button name="ok" from="basebutton">
-            <position>415,650</position>
+            <position>415,620</position>
             <value>OK</value>
         </button>
 
         <button name="cancel" from="basebutton">
-            <position>715,650</position>
+            <position>715,620</position>
             <value>Cancel</value>
         </button>
 

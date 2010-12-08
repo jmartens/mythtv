@@ -51,12 +51,13 @@ class AudioConfigSettings : public VerticalConfigurationGroup
     HostComboBox         *m_MaxAudioChannels;
     HostCheckBox         *m_AudioUpmix;
     HostComboBox         *m_AudioUpmixType;
-    TransCheckBoxSetting *m_triggerAC3;
-    TransCheckBoxSetting *m_triggerDTS;
+    TransCheckBoxSetting *m_triggerDigital;
     TransCheckBoxSetting *m_triggerMPCM;
     HostCheckBox         *m_AC3PassThrough;
     HostCheckBox         *m_DTSPassThrough;
     HostCheckBox         *m_MPCM;
+    HostCheckBox         *m_AdvancedAudioSettings;
+    HostCheckBox         *m_PassThroughOverride;
     ADCMap                audiodevs;
     AudioOutput::ADCVect  devices;
     QMutex                slotlock;

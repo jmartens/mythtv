@@ -25,7 +25,7 @@
 #include "asistreamhandler.h"
 #include "asirecorder.h"
 #include "asichannel.h"
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "tv_rec.h"
 
 #define LOC QString("ASIRec(%1): ").arg(tvrec->GetCaptureCardNum())

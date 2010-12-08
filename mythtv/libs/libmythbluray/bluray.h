@@ -114,6 +114,12 @@ typedef enum {
     BLURAY_TEXT_CHAR_CODE_BIG5            = 0x07
 } bd_char_code_e;
 
+typedef enum {
+    BLURAY_STILL_NONE     = 0x00,
+    BLURAY_STILL_TIME     = 0x01,
+    BLURAY_STILL_INFINITE = 0x02,
+} bd_still_mode_e;
+
 typedef struct bd_stream_info {
     uint8_t     coding_type;
     uint8_t     format;
@@ -126,6 +132,8 @@ typedef struct bd_stream_info {
 
 typedef struct bd_clip {
     uint32_t           pkt_count;
+    uint8_t            still_mode;
+    uint16_t           still_time;  /* seconds */
     uint8_t            video_stream_count;
     uint8_t            audio_stream_count;
     uint8_t            pg_stream_count;
@@ -393,6 +401,13 @@ typedef struct {
 
 } BLURAY_DISC_INFO;
 
+/**
+ *
+ *  Get information about current BluRay disc
+ *
+ * @param bd  BLURAY object
+ * @return pointer to BLURAY_DISC_INFO object, NULL on error
+ */
 const BLURAY_DISC_INFO *bd_get_disc_info(BLURAY*);
 
 /*
@@ -432,12 +447,13 @@ int bd_start_bdj(BLURAY *bd, const char* start_object); // start BD-J from the s
 void bd_stop_bdj(BLURAY *bd); // shutdown BD-J and clean up resources
 
 /*
- * navigaton mode
+ * events
  */
 
 typedef enum {
     BD_EVENT_NONE = 0,
     BD_EVENT_ERROR,
+    BD_EVENT_ENCRYPTED,
 
     /* current playback position */
     BD_EVENT_ANGLE,     /* current angle, 1...N */
@@ -460,13 +476,6 @@ typedef enum {
     BD_EVENT_SECONDARY_VIDEO,        /* 0 - disable, 1 - enable */
     BD_EVENT_SECONDARY_VIDEO_SIZE,   /* 0 - PIP, 0xf - fullscreen */
 
-    /* Interactive Graphics */
-    BD_EVENT_MENU_PAGE_ID,           /* 0..0xfe */
-    BD_EVENT_SELECTED_BUTTON_ID,     /* 0..0x1fdf, 0xffff = invalid */
-    BD_EVENT_POPUP_OFF,
-    BD_EVENT_ENABLE_BUTTON,    /* param: button id */
-    BD_EVENT_DISABLE_BUTTON,   /* param: button id */
-
     /* still */
     BD_EVENT_STILL,         /* 0 - off, 1 - on */
 
@@ -477,17 +486,100 @@ typedef struct {
     uint32_t   param;
 } BD_EVENT;
 
-struct bd_overlay_s;
-typedef void (*bd_overlay_proc_f)(void *, const struct bd_overlay_s * const);
-
-int  bd_play(BLURAY *bd); /* start playing disc in navigation mode */
-int  bd_read_ext(BLURAY *bd, unsigned char *buf, int len, BD_EVENT *event);
+/**
+ *
+ *  Get event from libbluray event queue.
+ *
+ * @param bd  BLURAY object
+ * @param event next BD_EVENT from event queue
+ * @return 1 on success, 0 if no events
+ */
 int  bd_get_event(BLURAY *bd, BD_EVENT *event);
 
-int  bd_play_title(BLURAY *bd, unsigned title); /* play title (from disc index) */
-int  bd_menu_call(BLURAY *bd);                  /* open disc root menu */
+/*
+ * navigaton mode
+ */
 
+/**
+ *
+ *  Start playing disc in navigation mode.
+ *
+ *  Playback is started from "First Play" title.
+ *
+ * @param bd  BLURAY object
+ * @return 1 on success, 0 if error
+ */
+int  bd_play(BLURAY *bd);
+
+/**
+ *
+ *  Read from currently playing title.
+ *
+ *  When playing disc in navigation mode this function must be used instead of bd_read().
+ *
+ * @param bd  BLURAY object
+ * @param buf buffer to read data into
+ * @param len size of data to be read
+ * @param event next BD_EVENT from event queue (BD_EVENT_NONE if no events)
+ * @return size of data read, -1 if error, 0 if event needs to be handled first, 0 if end of title was reached
+ */
+int  bd_read_ext(BLURAY *bd, unsigned char *buf, int len, BD_EVENT *event);
+
+/**
+ *
+ *  Play a title (from disc index).
+ *
+ *  Title 0      = Top Menu
+ *  Title 0xffff = First Play title
+ *  Number of titles can be found from BLURAY_DISC_INFO.
+ *
+ * @param bd  BLURAY object
+ * @param title title number from disc index
+ * @return 1 on success, 0 if error
+ */
+int  bd_play_title(BLURAY *bd, unsigned title);
+
+/**
+ *
+ *  Open BluRay disc Top Menu.
+ *
+ *  Current pts is needed for resuming playback when menu is closed.
+ *
+ * @param bd  BLURAY object
+ * @param pts current playback position (1/90000s) or -1
+ * @return 1 on success, 0 if error
+ */
+int  bd_menu_call(BLURAY *bd, int64_t pts);
+
+/*
+ * User interaction and On-screen display controller
+ */
+
+struct bd_overlay_s; /* defined in overlay.h */
+typedef void (*bd_overlay_proc_f)(void *, const struct bd_overlay_s * const);
+
+/**
+ *
+ *  Register overlay graphics handler function.
+ *
+ * @param bd  BLURAY object
+ * @param handle application-specific handle that will be passed to handler function
+ * @param func handler function pointer
+ * @return 1 on success, 0 if error
+ */
 void bd_register_overlay_proc(BLURAY *bd, void *handle, bd_overlay_proc_f func);
+
+/**
+ *
+ *  Pass user input to graphics controller.
+ *  Keys are defined in libbluray/keys.h.
+ *  Current pts can be updated by using BD_VK_NONE key. This is required for animated menus.
+ *
+ * @param bd  BLURAY object
+ * @param pts current playback position (1/90000s) or -1
+ * @param key input key
+ * @return 1 on success, 0 if error
+ */
 void bd_user_input(BLURAY *bd, int64_t pts, uint32_t key);
 
 #ifdef __cplusplus

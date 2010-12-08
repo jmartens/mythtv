@@ -11,11 +11,11 @@
 #include "playercontext.h"
 #include "volumebase.h"
 #include "audiooutputsettings.h"
-#include "RingBuffer.h"
+#include "ringbuffer.h"
 #include "osd.h"
 #include "jitterometer.h"
 #include "videooutbase.h"
-#include "teletextdecoder.h"
+#include "teletextreader.h"
 #include "subtitlereader.h"
 #include "tv_play.h"
 #include "yuv2rgb.h"
@@ -150,6 +150,7 @@ class MPUBLIC MythPlayer
                         float a = 1.33333, FrameScanType scan = kScan_Ignore,
                         bool video_codec_changed = false);
     void SetFileLength(int total, int frames);
+    void SetDuration(int duration);
     void SetForcedAspectRatio(int mpeg2_aspect_value, int letterbox_permission);
     void SetVideoResize(const QRect &videoRect);
 
@@ -253,11 +254,11 @@ class MPUBLIC MythPlayer
     virtual bool PrepareAudioSample(int64_t &timecode);
 
     // Public Closed caption and teletext stuff
-    void SetupTeletextViewer(void);
     uint GetCaptionMode(void) const    { return textDisplayMode; }
     CC708Reader* GetCC708Reader(void)  { return &cc708; }
     CC608Reader* GetCC608Reader(void)  { return &cc608; }
     SubtitleReader* GetSubReader(void) { return &subReader; }
+    TeletextReader* GetTeletextReader(void) { return &ttxReader; }
 
     // Public Audio/Subtitle/EIA-608/EIA-708 stream selection - thread safe
     void TracksChanged(uint trackType);
@@ -297,8 +298,12 @@ class MPUBLIC MythPlayer
                        QMap<long long, long long> &posMap);
 
     // OSD locking for TV class
-    void LockOSD(void)   { osdLock.lock();   }
-    void UnlockOSD(void) { osdLock.unlock(); }
+    bool TryLockOSD(void) { return osdLock.tryLock(50); }
+    void LockOSD(void)    { osdLock.lock();   }
+    void UnlockOSD(void)  { osdLock.unlock(); }
+
+    // Public picture controls
+    void ToggleStudioLevels(void);
 
   protected:
     // Initialization
@@ -591,6 +596,7 @@ class MPUBLIC MythPlayer
     uint64_t  framesPlayed;
     uint64_t  totalFrames;
     long long totalLength;
+    int64_t   totalDuration;
     long long rewindtime;
 
     // -- end state stuff --
@@ -628,12 +634,12 @@ class MPUBLIC MythPlayer
 
     // Support for captions, teletext, etc. decoded by libav
     SubtitleReader subReader;
+    TeletextReader ttxReader;
     /// This allows us to enable captions/subtitles later if the streams
     /// are not immediately available when the video starts playing.
     bool      textDesired;
     bool      enableCaptions;
     bool      disableCaptions;
-    bool      initTeletext;
 
     // CC608/708
     bool db_prefer708;
@@ -700,6 +706,7 @@ class MPUBLIC MythPlayer
     bool       lastsync;
     bool       decode_extra_audio;
     int        repeat_delay;
+    int64_t    disp_timecode;
 
     // Time Code stuff
     int        prevtc;        ///< 32 bit timecode if last VideoFrame shown

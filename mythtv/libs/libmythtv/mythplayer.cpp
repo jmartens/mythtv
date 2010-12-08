@@ -191,6 +191,7 @@ MythPlayer::MythPlayer(bool muted)
       // Playback misc.
       videobuf_retries(0),          framesPlayed(0),
       totalFrames(0),               totalLength(0),
+      totalDuration(0),
       rewindtime(0),
       // Input Video Attributes
       video_disp_dim(0,0), video_dim(0,0),
@@ -209,7 +210,6 @@ MythPlayer::MythPlayer(bool muted)
       ttPageNum(0x888),
       // Support for captions, teletext, etc. decoded by libav
       textDesired(false), enableCaptions(false), disableCaptions(false),
-      initTeletext(false),
       // CC608/708
       db_prefer708(true), cc608(this), cc708(this),
       // MHEG/MHI Interactive TV visible in OSD
@@ -240,6 +240,7 @@ MythPlayer::MythPlayer(bool muted)
       avsync_adjustment(0),         avsync_avg(0),
       refreshrate(0),
       lastsync(false),              repeat_delay(0),
+      disp_timecode(0),
       // Time Code stuff
       prevtc(0),                    prevrp(0),
       // LiveTVChain stuff
@@ -615,7 +616,6 @@ void MythPlayer::ReinitOSD(void)
                 uint old = textDisplayMode;
                 ToggleCaptions(old);
                 osd->Reinit(visible, aspect);
-                SetupTeletextViewer();
                 EnableCaptions(old, false);
             }
         }
@@ -897,6 +897,11 @@ void MythPlayer::SetFileLength(int total, int frames)
     totalFrames = frames;
 }
 
+void MythPlayer::SetDuration(int duration)
+{
+    totalDuration = duration;
+}
+
 void MythPlayer::OpenDummy(void)
 {
     isDummy = true;
@@ -951,7 +956,8 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
     }
 
     player_ctx->buffer->Start();
-    char testbuf[kDecoderProbeBufferSize];
+    /// OSX has a small stack, so we put this buffer on the heap instead.
+    char *testbuf = new char[kDecoderProbeBufferSize];
     UnpauseBuffer();
 
     // delete any pre-existing recorder
@@ -971,7 +977,8 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
                         QString("OpenFile(): Could not read "
                                 "first %1 bytes of '%2'")
                         .arg(testreadsize)
-                        .arg(player_ctx->buffer->GetFilename()));
+                        .arg(player_ctx->buffer->GetFilename())); 
+                delete[] testbuf;
                 return -1;
             }
             VERBOSE(VB_IMPORTANT, LOC_WARN + "OpenFile() waiting on data");
@@ -994,12 +1001,15 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
                 QString("Couldn't find an A/V decoder for: '%1'")
                 .arg(player_ctx->buffer->GetFilename()));
 
+        delete[] testbuf;
         return -1;
     }
     else if (decoder->IsErrored())
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "Could not initialize A/V decoder.");
         SetDecoder(NULL);
+
+        delete[] testbuf;
         return -1;
     }
 
@@ -1020,6 +1030,7 @@ int MythPlayer::OpenFile(uint retries, bool allow_libmpeg2)
     // is true, only disable if no_video_decode is true.
     int ret = decoder->OpenFile(
         player_ctx->buffer, no_video_decode, testbuf, testreadsize);
+    delete[] testbuf;
 
     if (ret < 0)
     {
@@ -1420,26 +1431,6 @@ bool MythPlayer::ToggleCaptions(uint type)
     return textDisplayMode;
 }
 
-void MythPlayer::SetupTeletextViewer(void)
-{
-    if (QThread::currentThread() != playerThread)
-    {
-        initTeletext = true;
-        return;
-    }
-
-    if (osd)
-    {
-        QMutexLocker locker(&osdLock);
-        TeletextViewer* ttview =  (TeletextViewer*)osd->InitTeletext();
-        if (ttview && decoder)
-        {
-            initTeletext = false;
-            decoder->SetTeletextDecoderViewer(ttview);
-        }
-    }
-}
-
 void MythPlayer::SetCaptionsEnabled(bool enable, bool osd_msg)
 {
     QMutexLocker locker(&osdLock);
@@ -1674,8 +1665,9 @@ void MythPlayer::AVSync(VideoFrame *buffer, bool limit_delay)
 
     if (buffer)
     {
-        repeat_pict = buffer->repeat_pict;
-        timecode    = buffer->timecode;
+        repeat_pict   = buffer->repeat_pict;
+        timecode      = buffer->timecode;
+        disp_timecode = buffer->disp_timecode;
     }
 
     float diverge = 0.0f;
@@ -2036,7 +2028,6 @@ void MythPlayer::VideoStart(void)
         videoOutput->GetOSDBounds(total, visible, aspect, scaling, 1.0f);
         osd->Init(visible, aspect);
         videoOutput->InitOSD(osd);
-        SetupTeletextViewer();
         osd->EnableSubtitles(kDisplayNone);
 
 #ifdef USING_MHEG
@@ -2529,10 +2520,6 @@ void MythPlayer::EventLoop(void)
     if (disableCaptions)
         SetCaptionsEnabled(false, false);
 
-    // (re)initialise the teletext viewer
-    if (initTeletext)
-        SetupTeletextViewer();
-
     // refresh the position map for an in-progress recording while editing
     if (hasFullPositionMap && watchingrecording && player_ctx->recorder &&
         player_ctx->recorder->IsValidRecorder() && deleteMap.IsEditing())
@@ -2912,10 +2899,10 @@ bool MythPlayer::DecoderGetFrame(DecodeType decodetype, bool unsafe)
     {
         int tries = 0;
         while (!videoOutput->EnoughFreeFrames() && (tries++ < 10))
-            usleep(10000);
+            usleep(1000);
         if (!videoOutput->EnoughFreeFrames())
         {
-            if (++videobuf_retries >= 200)
+            if (++videobuf_retries >= 2000)
             {
                 VERBOSE(VB_IMPORTANT, LOC +
                         "Timed out waiting for free video buffers.");
@@ -3182,7 +3169,7 @@ void MythPlayer::ChangeSpeed(void)
         videoOutput->SetPrebuffering(ffrew_skip == 1);
         decoder->setExactSeeks(exactseeks && ffrew_skip == 1);
         if (play_speed != 0.0f && !(last_speed == 0.0f && ffrew_skip == 1))
-            DoJumpToFrame(framesPlayed);
+            DoJumpToFrame(framesPlayed + fftime - rewindtime);
     }
 
     VERBOSE(VB_PLAYBACK, LOC + "Play speed: " +
@@ -3522,6 +3509,7 @@ bool MythPlayer::EnableEdit(void)
     pausedBeforeEdit = Pause();
     deleteMap.SetEditing(true);
     osd->DialogQuit();
+    ResetCaptions();
     osd->HideAll();
     deleteMap.UpdateSeekAmount(0, video_frame_rate);
     deleteMap.UpdateOSD(framesPlayed, totalFrames, video_frame_rate,
@@ -4267,8 +4255,8 @@ void MythPlayer::calcSliderPos(osdInfo &info, bool paddedFields)
     info.values.insert("progbefore", 0);
     info.values.insert("progafter",  0);
 
-    int playbackLen = totalLength;
-
+    int playbackLen = (totalDuration > 0) ? totalDuration : totalLength;
+       
     if (livetv && player_ctx->tvchain)
     {
         info.values["progbefore"] = (int)player_ctx->tvchain->HasPrev();
@@ -4285,7 +4273,7 @@ void MythPlayer::calcSliderPos(osdInfo &info, bool paddedFields)
         islive = true;
     }
 
-    float secsplayed = ((float)framesPlayed / video_frame_rate);
+    float secsplayed = (float)(disp_timecode / 1000.f);
     calcSliderPosPriv(info, paddedFields, playbackLen, secsplayed, islive);
 }
 
@@ -4555,6 +4543,23 @@ QString MythPlayer::GetError(void) const
     QString tmp = errorMsg;
     tmp.detach();
     return tmp;
+}
+
+void MythPlayer::ToggleStudioLevels(void)
+{
+    if (!videoOutput)
+        return;
+
+    if (!(videoOutput->GetSupportedPictureAttributes() &
+          kPictureAttributeSupported_StudioLevels))
+        return;
+
+    int val = videoOutput->GetPictureAttribute(kPictureAttribute_StudioLevels);
+    val = (val > 0) ? 0 : 1;
+    videoOutput->SetPictureAttribute(kPictureAttribute_StudioLevels, val);
+    QString msg = (val > 0) ? QObject::tr("Enabled Studio Levels") :
+                              QObject::tr("Disabled Studio Levels");
+    SetOSDMessage(msg, kOSDTimeout_Med);
 }
 
 void MythPlayer::SetOSDMessage(const QString &msg, OSDTimeout timeout)

@@ -60,6 +60,10 @@
 #define GL_MAX_TEXTURE_UNITS 0x84E2
 #endif
 
+#ifndef GL_ARRAY_BUFFER_ARB
+#define GL_ARRAY_BUFFER_ARB               0x8892
+#endif
+
 #ifndef GL_PIXEL_UNPACK_BUFFER_ARB
 #define GL_PIXEL_UNPACK_BUFFER_ARB        0x88EC
 #endif
@@ -114,6 +118,20 @@
 #define GL_OBJECT_INFO_LOG_LENGTH_ARB     0x8B84
 #endif
 
+#ifndef GL_COMPILE_STATUS
+#define GL_COMPILE_STATUS                 0x8B81
+#endif
+#ifndef GL_INFO_LOG_LENGTH
+#define GL_INFO_LOG_LENGTH                0x8B84
+#endif
+
+#ifndef GL_VERSION_2_0
+typedef char GLchar;
+#endif
+#ifndef GL_ARB_shader_objects
+typedef char GLcharARB;
+#endif
+
 #ifndef APIENTRY
 #define APIENTRY
 #endif
@@ -128,7 +146,7 @@ typedef void (APIENTRY * MYTH_GLDELETEPROGRAMSARBPROC)
     (GLsizei n, const GLuint *programs);
 typedef void (APIENTRY * MYTH_GLGENPROGRAMSARBPROC)
     (GLsizei n, GLuint *programs);
-typedef void (APIENTRY * MYTH_GLPROGRAMENVPARAMETER4FARBPROC)
+typedef void (APIENTRY * MYTH_GLPROGRAMLOCALPARAMETER4FARBPROC)
     (GLenum target, GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w);
 typedef void (APIENTRY * MYTH_GLGETPROGRAMIVARBPROC)
     (GLenum target, GLenum pname, GLint *params);
@@ -182,6 +200,12 @@ typedef void ( * MYTH_GLSHADERSOURCE)
     (GLuint shader, int numOfStrings, const char **strings, int *lenOfStrings);
 typedef void ( * MYTH_GLCOMPILESHADER)
     (GLuint shader);
+typedef void ( * MYTH_GLGETSHADER)
+    (GLuint shader, GLenum pname, GLint *params);
+typedef void ( * MYTH_GLGETSHADERINFOLOG)
+    (GLuint shader, GLint maxlength, GLint length, GLchar *infolog);
+typedef void ( * MYTH_GLDELETESHADER)
+    (GLuint shader);
 typedef GLuint ( * MYTH_GLCREATEPROGRAMOBJECT)
     (void);
 typedef void ( * MYTH_GLATTACHOBJECT)
@@ -202,5 +226,16 @@ typedef GLint ( * MYTH_GLGETUNIFORMLOCATION)
     (GLuint program, const char *name);
 typedef void  ( * MYTH_GLUNIFORM4F)
     (GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3);
+typedef void ( * MYTH_GLVERTEXATTRIBPOINTER)
+    (GLuint index, GLint size, GLenum type, GLboolean normalize,
+     GLsizei stride, const GLvoid *ptr);
+typedef void ( * MYTH_GLENABLEVERTEXATTRIBARRAY)
+    (GLuint index);
+typedef void ( * MYTH_GLDISABLEVERTEXATTRIBARRAY)
+    (GLuint index);
+typedef void ( * MYTH_GLBINDATTRIBLOCATION)
+    (GLuint program, GLuint index, const GLcharARB *name);
+typedef void ( * MYTH_GLVERTEXATTRIB4F)
+    (GLuint index, GLfloat x, GLfloat y, GLfloat z, GLfloat w);
 
 #endif

@@ -118,7 +118,8 @@ AudioConfigSettings::AudioConfigSettings() :
     VerticalConfigurationGroup(false, true, false, false),
     m_OutputDevice(NULL),   m_MaxAudioChannels(NULL),
     m_AudioUpmix(NULL),     m_AudioUpmixType(NULL),
-    m_AC3PassThrough(NULL), m_DTSPassThrough(NULL),  m_MPCM(NULL)
+    m_AC3PassThrough(NULL), m_DTSPassThrough(NULL),  m_MPCM(NULL),
+    m_AdvancedAudioSettings(NULL),                   m_PassThroughOverride(NULL)
 {
     setLabel(QObject::tr("Audio System"));
     setUseLabel(false);
@@ -144,51 +145,43 @@ AudioConfigSettings::AudioConfigSettings() :
     devices.append(*adc);
     delete adc;
 
-    m_triggerAC3 = new TransCheckBoxSetting();
-    m_AC3PassThrough = AC3PassThrough();
-    TriggeredItem *subAC3 = new TriggeredItem(m_triggerAC3, m_AC3PassThrough);
-
-    m_triggerDTS = new TransCheckBoxSetting();
-    m_DTSPassThrough = DTSPassThrough();
-    TriggeredItem *subDTS = new TriggeredItem(m_triggerDTS, m_DTSPassThrough);
-
-    m_triggerMPCM = new TransCheckBoxSetting();
-    m_MPCM = MPCM();
-    TriggeredItem *subMPCM = new TriggeredItem(m_triggerMPCM, m_MPCM);
-
     ConfigurationGroup *maingroup = new VerticalConfigurationGroup(false,
                                                                    false);
     addChild(maingroup);
 
+    m_triggerDigital = new TransCheckBoxSetting();
+    m_AC3PassThrough = AC3PassThrough();
+    m_DTSPassThrough = DTSPassThrough();
+
     m_cgsettings = new HorizontalConfigurationGroup();
-    m_cgsettings->setLabel(QObject::tr("Audio Capabilities"));
+    m_cgsettings->setLabel(QObject::tr("Digital Audio Capabilities"));
+    m_cgsettings->addChild(m_AC3PassThrough);
+    m_cgsettings->addChild(m_DTSPassThrough);
 
-    m_cgsettings->addChild(subMPCM);
-    m_cgsettings->addChild(subAC3);
-    m_cgsettings->addChild(subDTS);
+    TriggeredItem *sub1 = new TriggeredItem(m_triggerDigital, m_cgsettings);
 
-    maingroup->addChild(m_cgsettings);
+    maingroup->addChild(sub1);
 
     maingroup->addChild((m_MaxAudioChannels = MaxAudioChannels()));
     maingroup->addChild((m_AudioUpmix = AudioUpmix()));
     maingroup->addChild((m_AudioUpmixType = AudioUpmixType()));
 
-    Setting *advancedsettings = AdvancedAudioSettings();
-    addChild(advancedsettings);
+    m_AdvancedAudioSettings = AdvancedAudioSettings();
+    addChild(m_AdvancedAudioSettings);
 
     ConfigurationGroup *group2 =
         new VerticalConfigurationGroup(false);
 
-    TriggeredItem *sub2 = new TriggeredItem(advancedsettings, group2);
+    TriggeredItem *sub2 = new TriggeredItem(m_AdvancedAudioSettings, group2);
     addChild(sub2);
 
     ConfigurationGroup *settings3 =
         new HorizontalConfigurationGroup(false, false);
 
-    Setting *passthroughoverride = PassThroughOverride();
+    m_PassThroughOverride = PassThroughOverride();
     TriggeredItem *sub3 =
-        new TriggeredItem(passthroughoverride, PassThroughOutputDevice());
-    settings3->addChild(passthroughoverride);
+        new TriggeredItem(m_PassThroughOverride, PassThroughOutputDevice());
+    settings3->addChild(m_PassThroughOverride);
     settings3->addChild(sub3);
 
     ConfigurationGroup *settings4 =
@@ -203,9 +196,18 @@ AudioConfigSettings::AudioConfigSettings() :
         new HorizontalConfigurationGroup(false, false);
     settings5->addChild(Audio48kOverride());
 
+    m_triggerMPCM = new TransCheckBoxSetting();
+    m_MPCM = MPCM();
+    TriggeredItem *subMPCM = new TriggeredItem(m_triggerMPCM, m_MPCM);
+
+    ConfigurationGroup *settings6 =
+        new HorizontalConfigurationGroup(false, false);
+    settings6->addChild(subMPCM);
+
     group2->addChild(settings4);
     group2->addChild(settings5);
     group2->addChild(settings3);
+    group2->addChild(settings6);
 
         // Set slots
     connect(m_MaxAudioChannels, SIGNAL(valueChanged(const QString&)),
@@ -217,6 +219,10 @@ AudioConfigSettings::AudioConfigSettings() :
     connect(m_DTSPassThrough, SIGNAL(valueChanged(const QString&)),
             this, SLOT(UpdateCapabilities(const QString&)));
     connect(m_MPCM, SIGNAL(valueChanged(const QString&)),
+            this, SLOT(UpdateCapabilities(const QString&)));
+    connect(m_PassThroughOverride, SIGNAL(valueChanged(const QString&)),
+            this, SLOT(UpdateCapabilities(const QString&)));
+    connect(m_AdvancedAudioSettings, SIGNAL(valueChanged(const QString&)),
             this, SLOT(UpdateCapabilities(const QString&)));
 }
 
@@ -271,18 +277,21 @@ void AudioConfigSettings::UpdateVisibility(const QString &device)
 
 void AudioConfigSettings::UpdateCapabilities(const QString &device)
 {
-   int max_speakers = 8;
+    int max_speakers = 8;
     bool invalid = false;
-    int passthrough = 0;
     AudioOutputSettings settings;
 
         // Test if everything is set yet
-    if (!m_OutputDevice   || !m_MaxAudioChannels ||
-        !m_AC3PassThrough || !m_DTSPassThrough   || !m_MPCM)
+    if (!m_OutputDevice   || !m_MaxAudioChannels || !m_AdvancedAudioSettings ||
+        !m_AC3PassThrough || !m_DTSPassThrough   || !m_MPCM ||
+        !m_PassThroughOverride)
         return;
 
     if (!slotlock.tryLock()) // Doing a rescan of channels
         return;
+
+    bool bForceDigital = (m_AdvancedAudioSettings->boolValue() &&
+                          m_PassThroughOverride->boolValue());
 
     QString out = m_OutputDevice->getValue();
     if (!audiodevs.contains(out))
@@ -296,44 +305,24 @@ void AudioConfigSettings::UpdateCapabilities(const QString &device)
 
         max_speakers = settings.BestSupportedChannels();
 
-        bool bAC3  = settings.canAC3() && m_AC3PassThrough->boolValue();
-        bool bDTS  = settings.canDTS() && m_DTSPassThrough->boolValue();
+        bool bAC3  = (settings.canAC3() || bForceDigital) &&
+            m_AC3PassThrough->boolValue();
+        bool bDTS  = (settings.canDTS() || bForceDigital) &&
+            m_DTSPassThrough->boolValue();
         bool bLPCM = settings.canPassthrough() == -1 ||
-            (settings.canLPCM() && m_MPCM->boolValue());
+            (settings.canLPCM() &&
+             !(m_AdvancedAudioSettings->boolValue() && m_MPCM->boolValue()));
 
         if (max_speakers > 2 && !bLPCM)
             max_speakers = 2;
         if (max_speakers == 2 && (bAC3 || bDTS))
             max_speakers = 6;
-        passthrough = settings.canPassthrough();
     }
 
-    m_triggerAC3->setValue(invalid || settings.canAC3());
-    m_triggerDTS->setValue(invalid || settings.canDTS());
-
-    m_MPCM->setEnabled(invalid || (settings.canLPCM() &&
-                                   settings.canPassthrough() >= 0));
-    switch (passthrough)
-    {
-        case -1:
-            m_MPCM->setLabel(QObject::tr("No digital passthrough"));
-            break;
-        case 1:
-            m_MPCM->setLabel(QObject::tr("LPCM"));
-            m_MPCM->setHelpText(QObject::tr(
-                            "Enable if your amplifier or TV supports "
-                            "multi-channel LPCM. If unchecked Dolby Digital "
-                            "support is required for multi-channel audio"));
-            break;
-        default:
-            m_MPCM->setLabel(QObject::tr("Analog or LPCM"));
-            m_MPCM->setHelpText(QObject::tr(
-                            "Enable if analog output or if your amplifier "
-                            "or TV supports multi-channel LPCM. "
-                            "If unchecked with digital output, Dolby Digital "
-                            "support is required for multi-channel audio"));
-            break;
-    }
+    m_triggerDigital->setValue(invalid || bForceDigital ||
+                               settings.canAC3() || settings.canDTS());
+    m_triggerMPCM->setValue(invalid || (settings.canLPCM() &&
+                                        settings.canPassthrough() >= 0));
 
     int cur_speakers = m_MaxAudioChannels->getValue().toInt();
 
@@ -348,7 +337,8 @@ void AudioConfigSettings::UpdateCapabilities(const QString &device)
     m_MaxAudioChannels->resetMaxCount(3);
     for (int i = 1; i <= max_speakers; i++)
     {
-        if (invalid || settings.IsSupportedChannels(i))
+        if (invalid || settings.IsSupportedChannels(i) ||
+            (bForceDigital && i == 6))
         {
             QString txt;
 
@@ -430,8 +420,13 @@ HostCheckBox *AudioConfigSettings::DTSPassThrough()
 
 HostCheckBox *AudioConfigSettings::MPCM()
 {
-    HostCheckBox *gc = new HostCheckBox("MultiChannelPCM");
+    HostCheckBox *gc = new HostCheckBox("StereoPCM");
+    gc->setLabel(QObject::tr("Stereo PCM Only"));
     gc->setValue(false);
+    gc->setHelpText(QObject::tr("Enable if your amplifier or sound decoder "
+                    "only supports 2 channels PCM (typically an old HDMI 1.0 "
+                    "device). Multi-channels audio will be re-encoded to AC3 "
+                    "when required"));
     return gc;
 }
 
@@ -829,18 +824,6 @@ static GlobalCheckBox *AggressiveCommDetect()
     bc->setValue(true);
     bc->setHelpText(QObject::tr("Enable stricter commercial detection code. "
                     "Disable if some commercials are not being detected."));
-    return bc;
-}
-
-static GlobalCheckBox *CommSkipAllBlanks()
-{
-    GlobalCheckBox *bc = new GlobalCheckBox("CommSkipAllBlanks");
-    bc->setLabel(QObject::tr("Skip blank frames after commercials"));
-    bc->setValue(true);
-    bc->setHelpText(QObject::tr("When using blank frame detection and "
-                    "automatic flagging, enable this option to include blank "
-                    "frames following commercial breaks as part of the "
-                    "commercial break."));
     return bc;
 }
 
@@ -2092,20 +2075,6 @@ static HostCheckBox *AltClearSavedPosition()
     return gc;
 }
 
-#if defined(USING_XV) || defined(USING_OPENGL_VIDEO) || defined(USING_VDPAU)
-static HostCheckBox *UsePicControls()
-{
-    HostCheckBox *gc = new HostCheckBox("UseOutputPictureControls");
-    gc->setLabel(QObject::tr("Enable picture controls"));
-    gc->setValue(false);
-    gc->setHelpText(
-        QObject::tr(
-            "If enabled, MythTV attempts to initialize picture controls "
-            "(brightness, contrast, etc.) that are applied during playback."));
-    return gc;
-}
-#endif
-
 // This currently does not work
 /*
 static HostLineEdit *UDPNotifyPort()
@@ -2302,16 +2271,6 @@ static HostLineEdit *LircDaemonDevice()
         "UNIX socket or IP address[:port] to connect in "
         "order to communicate with the LIRC Daemon.");
     ge->setHelpText(help);
-    return ge;
-}
-
-static HostLineEdit *LircKeyPressedApp()
-{
-    HostLineEdit *ge = new HostLineEdit("LircKeyPressedApp");
-    ge->setLabel(QObject::tr("LIRC keypress application"));
-    ge->setValue("");
-    ge->setHelpText(QObject::tr("External application or script to run when "
-                    "a keypress is received by LIRC."));
     return ge;
 }
 
@@ -2702,11 +2661,10 @@ static HostCheckBox *HideMouseCursor()
 {
     HostCheckBox *gc = new HostCheckBox("HideMouseCursor");
     gc->setLabel(QObject::tr("Hide mouse cursor in MythTV"));
-    gc->setValue(true);
-    gc->setHelpText(QObject::tr("Toggles mouse cursor visibility. "
-                    "Most of the MythTV GUI does not respond "
-                    "to mouse clicks. Use this option to avoid "
-                    "\"losing\" your mouse cursor."));
+    gc->setValue(false);
+    gc->setHelpText(QObject::tr("Toggles mouse cursor visibility for touchscreens. "
+                    "By default MythTV will auto-hide the cursor if the mouse doesn't "
+                    "move for a period, this setting disables the cursor entirely."));
     return gc;
 };
 
@@ -4004,7 +3962,6 @@ MainGeneralSettings::MainGeneralSettings()
         new VerticalConfigurationGroup(false, true, false, false);
     remotecontrol->setLabel(QObject::tr("Remote Control"));
     remotecontrol->addChild(LircDaemonDevice());
-    remotecontrol->addChild(LircKeyPressedApp());
     remotecontrol->addChild(NetworkControlEnabled());
     remotecontrol->addChild(NetworkControlPort());
     addChild(remotecontrol);
@@ -4046,9 +4003,6 @@ PlaybackSettings::PlaybackSettings()
 #ifdef USING_OPENGL_VSYNC
     //general1->addChild(UseOpenGLVSync());
 #endif // USING_OPENGL_VSYNC
-#if defined(USING_XV) || defined(USING_OPENGL_VIDEO) || defined(USING_VDPAU)
-    general1->addChild(UsePicControls());
-#endif // USING_XV
     addChild(general1);
 
     VerticalConfigurationGroup* general2 =
@@ -4129,7 +4083,6 @@ PlaybackSettings::PlaybackSettings()
     comms->addChild(CommNotifyAmount());
     comms->addChild(MaximumCommercialSkip());
     comms->addChild(MergeShortCommBreaks());
-    comms->addChild(CommSkipAllBlanks());
     addChild(comms);
 
 #if CONFIG_DARWIN

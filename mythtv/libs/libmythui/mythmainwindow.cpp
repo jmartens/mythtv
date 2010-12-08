@@ -236,6 +236,7 @@ class MythMainWindowPrivate
 
     MythGesture gesture;
     QTimer *gestureTimer;
+    QTimer *hideMouseTimer;
 
     /* compatibility only, FIXME remove */
     std::vector<QWidget *> widgetList;
@@ -459,6 +460,10 @@ MythMainWindow::MythMainWindow(const bool useDB)
 
     d->gestureTimer = new QTimer(this);
     connect(d->gestureTimer, SIGNAL(timeout()), this, SLOT(mouseTimeout()));
+    d->hideMouseTimer = new QTimer(this);
+    d->hideMouseTimer->setSingleShot(true);
+    d->hideMouseTimer->setInterval(3000); // 3 seconds
+    connect(d->hideMouseTimer, SIGNAL(timeout()), SLOT(HideMouseTimeout()));
 
     d->drawTimer = new MythSignalingTimer(this, SLOT(animate()));
     d->drawTimer->start(1000 / 70);
@@ -851,11 +856,6 @@ bool MythMainWindow::event(QEvent *e)
 
 void MythMainWindow::Init(void)
 {
-    bool hideCursor = GetMythDB()->GetNumSetting("HideMouseCursor", 1);
-#ifdef QWS
-    QWSServer::setCursorVisible(!hideCursor);
-#endif
-
     GetMythUI()->GetScreenSettings(d->xbase, d->screenwidth, d->wmult,
                                    d->ybase, d->screenheight, d->hmult);
 
@@ -898,8 +898,10 @@ void MythMainWindow::Init(void)
     GetMythUI()->ThemeWidget(this);
     Show();
 
+    if (!GetMythDB()->GetNumSetting("HideMouseCursor", 0))
+        setMouseTracking(true); // Required for mouse cursor auto-hide
     // Set cursor call must come after Show() to work on some systems.
-    setCursor((hideCursor) ? (Qt::BlankCursor) : (Qt::ArrowCursor));
+    ShowMouseCursor(false);
 
     move(d->xbase, d->ybase);
 
@@ -976,6 +978,8 @@ void MythMainWindow::Init(void)
     d->paintwin->setFixedSize(size());
     d->paintwin->raise();
     d->paintwin->show();
+    if (!GetMythDB()->GetNumSetting("HideMouseCursor", 0))
+        d->paintwin->setMouseTracking(true); // Required for mouse cursor auto-hide
 
     GetMythUI()->UpdateImageCache();
     if (d->m_themeBase)
@@ -1159,7 +1163,6 @@ void MythMainWindow::attach(QWidget *child)
     // if windows are created on different threads,
     // or if setFocus() is called from a thread other than the main UI thread,
     // setFocus() hangs the thread that called it
-    // currently, it's impossible to switch to program guide from livetv
     VERBOSE(VB_IMPORTANT,
             QString("MythMainWindow::attach old: %1, new: %2, thread: %3")
             .arg(currentWidget() ? currentWidget()->objectName() : "none")
@@ -1173,6 +1176,7 @@ void MythMainWindow::attach(QWidget *child)
     child->winId();
     child->raise();
     child->setFocus();
+    child->setMouseTracking(true);
 }
 
 void MythMainWindow::detach(QWidget *child)
@@ -1193,6 +1197,7 @@ void MythMainWindow::detach(QWidget *child)
     {
         current->setEnabled(true);
         current->setFocus();
+        current->setMouseTracking(true);
     }
 
     if (d->exitingtomain)
@@ -1781,6 +1786,7 @@ bool MythMainWindow::eventFilter(QObject *, QEvent *e)
         }
         case QEvent::MouseButtonPress:
         {
+            ShowMouseCursor(true);
             if (!d->gesture.recording())
             {
                 d->gesture.start();
@@ -1795,6 +1801,7 @@ bool MythMainWindow::eventFilter(QObject *, QEvent *e)
         }
         case QEvent::MouseButtonRelease:
         {
+            ShowMouseCursor(true);
             if (d->gestureTimer->isActive())
                 d->gestureTimer->stop();
 
@@ -1875,6 +1882,7 @@ bool MythMainWindow::eventFilter(QObject *, QEvent *e)
         }
         case QEvent::MouseMove:
         {
+            ShowMouseCursor(true);
             if (d->gesture.recording())
             {
                 /* reset the timer */
@@ -1888,6 +1896,7 @@ bool MythMainWindow::eventFilter(QObject *, QEvent *e)
         }
         case QEvent::Wheel:
         {
+            ShowMouseCursor(true);
             QWheelEvent* qmw = dynamic_cast<QWheelEvent*>(e);
             int delta = qmw->delta();
             if (delta>0)
@@ -1933,7 +1942,7 @@ void MythMainWindow::customEvent(QEvent *ce)
             if (screen)
                 screen->gestureEvent(ge);
         }
-        VERBOSE(VB_IMPORTANT, QString("Gesture: %1")
+        VERBOSE(VB_GUI, QString("Gesture: %1")
                 .arg(QString(*ge).toLocal8Bit().constData()));
     }
     else if (ce->type() == MythEvent::kExitToMainMenuEventType &&
@@ -2227,8 +2236,7 @@ void MythMainWindow::StartLIRC(void)
     d->lircThread = new LIRC(
         this,
         GetMythDB()->GetSetting("LircSocket", lirc_socket),
-        "mythtv", config_file,
-        GetMythDB()->GetSetting("LircKeyPressedApp", ""));
+        "mythtv", config_file);
 
     if (d->lircThread->Init())
     {
@@ -2256,6 +2264,25 @@ void MythMainWindow::LockInputDevices( bool locked )
 #ifdef USE_JOYSTICK_MENU
     d->ignore_joystick_keys = locked;
 #endif
+}
+
+void MythMainWindow::ShowMouseCursor(bool show)
+{
+    if (show && GetMythDB()->GetNumSetting("HideMouseCursor", 0))
+        return;
+#ifdef QWS
+    QWSServer::setCursorVisible(show);
+#endif
+    // Set cursor call must come after Show() to work on some systems.
+    setCursor(show ? (Qt::ArrowCursor) : (Qt::BlankCursor));
+
+    if (show)
+        d->hideMouseTimer->start();
+}
+
+void MythMainWindow::HideMouseTimeout(void)
+{
+    ShowMouseCursor(false);
 }
 
 /* vim: set expandtab tabstop=4 shiftwidth=4: */

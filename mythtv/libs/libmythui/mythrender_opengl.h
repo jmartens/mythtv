@@ -22,14 +22,6 @@
 
 typedef enum
 {
-    kGLAttribNone = 0,
-    kGLAttribBrightness,
-    kGLAttribContrast,
-    kGLAttribColour,
-} GLPictureAttribute;
-
-typedef enum
-{
     kGLFeatNone    = 0x0000,
     kGLMultiTex    = 0x0001,
     kGLExtRect     = 0x0002,
@@ -44,14 +36,29 @@ typedef enum
     kGLMipMaps     = 0x0400,
     kGLSL          = 0x0800,
     kGLVertexArray = 0x1000,
-    kGLMaxFeat     = 0x2000,
+    kGLExtVBO      = 0x2000,
+    kGLMaxFeat     = 0x4000,
 } GLFeatures;
+
+typedef enum
+{
+    kGLNoProfile     = 0x00,
+    kGLLegacyProfile = 0x01,
+    kGLHighProfile   = 0x02,
+} GLProfile;
+
+typedef enum
+{
+    kShaderSimple  = 0,
+    kShaderDefault = 1,
+    kShaderCount   = 2,
+} DefaultShaders;
 
 class MythGLTexture;
 class MythGLShaderObject;
 class MythRenderOpenGL;
 
-class OpenGLLocker
+class MPUBLIC OpenGLLocker
 {
   public:
     OpenGLLocker(MythRenderOpenGL *render);
@@ -60,7 +67,7 @@ class OpenGLLocker
     MythRenderOpenGL *m_render;
 };
 
-class MythRenderOpenGL : public QGLContext, public MythRender
+class MPUBLIC MythRenderOpenGL : public QGLContext, public MythRender
 {
   public:
     MythRenderOpenGL(const QGLFormat& format, QPaintDevice* device);
@@ -74,8 +81,7 @@ class MythRenderOpenGL : public QGLContext, public MythRender
 
     int   GetMaxTextureSize(void)    { return m_max_tex_size;   }
     uint  GetFeatures(void)          { return m_exts_supported; }
-    void  SetFeatures(uint features) { m_exts_used = features;  }
-    int   SetPictureAttribute(int attribute, int newValue);
+    void  SetFeatures(uint features);
 
     void  MoveResizeWindow(const QRect &rect);
     void  SetViewPort(const QSize &size);
@@ -110,6 +116,7 @@ class MythRenderOpenGL : public QGLContext, public MythRender
     bool CreateFragmentProgram(const QString &program, uint &prog);
     void DeleteFragmentProgram(uint prog);
     void EnableFragmentProgram(int fp);
+    void SetFragmentParams(uint fp, void* vals);
 
     uint CreateShaderObject(const QString &vert, const QString &frag);
     void DeleteShaderObject(uint obj);
@@ -119,8 +126,7 @@ class MythRenderOpenGL : public QGLContext, public MythRender
                     uint prog, int alpha = 255, int red = 255, int green = 255,
                     int blue = 255);
     void DrawBitmap(uint *textures, uint texture_count, uint target,
-                    const QRectF *src, const QRectF *dst, uint prog,
-                    bool colour_control = false);
+                    const QRectF *src, const QRectF *dst, uint prog);
     void DrawRect(const QRect &area, bool drawFill,
                   const QColor &fillColor, bool drawLine,
                   int lineWidth, const QColor &lineColor,
@@ -131,33 +137,55 @@ class MythRenderOpenGL : public QGLContext, public MythRender
     void         WaitForVideoSync(int div, int rem, unsigned int *count);
 
   private:
+    void DrawBitmapLegacy(uint tex, const QRect *src, const QRect *dst,
+                         uint prog, int alpha, int red, int green, int blue);
+    void DrawBitmapHigh(uint tex, const QRect *src, const QRect *dst,
+                        uint prog, int alpha, int red, int green, int blue);
+    void DrawBitmapLegacy(uint *textures, uint texture_count,
+                          const QRectF *src, const QRectF *dst, uint prog);
+    void DrawBitmapHigh(uint *textures, uint texture_count,
+                        const QRectF *src, const QRectF *dst, uint prog);
+    void DrawRectLegacy(const QRect &area, bool drawFill,
+                        const QColor &fillColor,  bool drawLine,
+                        int lineWidth, const QColor &lineColor, int prog);
+    void DrawRectHigh(const QRect &area, bool drawFill,
+                      const QColor &fillColor,  bool drawLine,
+                      int lineWidth, const QColor &lineColor, int prog);
+
     void Init2DState(void);
     void InitProcs(void);
+    void* GetProcAddress(const QString &proc) const;
     void InitFeatures(void);
     void Reset(void);
     void ResetVars(void);
     void ResetProcs(void);
 
     uint CreatePBO(uint tex);
+    uint CreateVBO(void);
     void DeleteOpenGLResources(void);
     void DeleteTextures(void);
     void DeletePrograms(void);
     void DeleteShaderObjects(void);
     void DeleteFrameBuffers(void);
 
+    void CreateDefaultShaders(void);
+    void DeleteDefaultShaders(void);
     uint CreateShader(int type, const QString source);
     bool ValidateShaderObject(uint obj);
     bool CheckObjectStatus(uint obj);
+    void OptimiseShaderSource(QString &source);
 
     bool UpdateTextureVertices(uint tex, const QRect *src, const QRect *dst);
     bool UpdateTextureVertices(uint tex, const QRectF *src, const QRectF *dst);
+    GLfloat* GetCachedVertices(GLuint type, const QRect &area);
+    void ExpireVertices(uint max = 0);
+    void GetCachedVBO(GLuint type, const QRect &area);
+    void ExpireVBOS(uint max = 0);
     bool ClearTexture(uint tex);
     uint GetBufferSize(QSize size, uint fmt, uint type);
-    void InitFragmentParams(uint fp, float a, float b, float c, float d);
 
   private:
     // GL resources
-    QHash<int, float>            m_attribs;
     QHash<GLuint, MythGLTexture> m_textures;
     QHash<GLuint, MythGLShaderObject> m_shader_objects;
     QVector<GLuint>              m_programs;
@@ -167,12 +195,15 @@ class MythRenderOpenGL : public QGLContext, public MythRender
     QMutex  *m_lock;
     int      m_lock_level;
 
+    // profile
+    GLProfile m_profile;
     QString  m_extensions;
     uint     m_exts_supported;
     uint     m_exts_used;
     int      m_max_tex_size;
     int      m_max_units;
     int      m_default_texture_type;
+    uint     m_shaders[kShaderCount];
 
     // basic GL state tracking
     QSize    m_viewport;
@@ -185,55 +216,69 @@ class MythRenderOpenGL : public QGLContext, public MythRender
     uint32_t m_color;
     uint32_t m_background;
 
+    // vertex cache
+    QMap<uint64_t,GLfloat*> m_cachedVertices;
+    QList<uint64_t>         m_vertexExpiry;
+    QMap<uint64_t,GLuint>   m_cachedVBOS;
+    QList<uint64_t>         m_vboExpiry;
+
     // Multi-texturing
-    MYTH_GLACTIVETEXTUREPROC             gMythGLActiveTexture;
+    MYTH_GLACTIVETEXTUREPROC             m_glActiveTexture;
     // Fragment programs
-    MYTH_GLGENPROGRAMSARBPROC            gMythGLGenProgramsARB;
-    MYTH_GLBINDPROGRAMARBPROC            gMythGLBindProgramARB;
-    MYTH_GLPROGRAMSTRINGARBPROC          gMythGLProgramStringARB;
-    MYTH_GLPROGRAMENVPARAMETER4FARBPROC  gMythGLProgramEnvParameter4fARB;
-    MYTH_GLDELETEPROGRAMSARBPROC         gMythGLDeleteProgramsARB;
-    MYTH_GLGETPROGRAMIVARBPROC           gMythGLGetProgramivARB;
+    MYTH_GLGENPROGRAMSARBPROC            m_glGenProgramsARB;
+    MYTH_GLBINDPROGRAMARBPROC            m_glBindProgramARB;
+    MYTH_GLPROGRAMSTRINGARBPROC          m_glProgramStringARB;
+    MYTH_GLPROGRAMLOCALPARAMETER4FARBPROC m_glProgramLocalParameter4fARB;
+    MYTH_GLDELETEPROGRAMSARBPROC         m_glDeleteProgramsARB;
+    MYTH_GLGETPROGRAMIVARBPROC           m_glGetProgramivARB;
     // PixelBuffer Objects
-    MYTH_GLMAPBUFFERARBPROC              gMythGLMapBufferARB;
-    MYTH_GLBINDBUFFERARBPROC             gMythGLBindBufferARB;
-    MYTH_GLGENBUFFERSARBPROC             gMythGLGenBuffersARB;
-    MYTH_GLBUFFERDATAARBPROC             gMythGLBufferDataARB;
-    MYTH_GLUNMAPBUFFERARBPROC            gMythGLUnmapBufferARB;
-    MYTH_GLDELETEBUFFERSARBPROC          gMythGLDeleteBuffersARB;
+    MYTH_GLMAPBUFFERARBPROC              m_glMapBufferARB;
+    MYTH_GLBINDBUFFERARBPROC             m_glBindBufferARB;
+    MYTH_GLGENBUFFERSARBPROC             m_glGenBuffersARB;
+    MYTH_GLBUFFERDATAARBPROC             m_glBufferDataARB;
+    MYTH_GLUNMAPBUFFERARBPROC            m_glUnmapBufferARB;
+    MYTH_GLDELETEBUFFERSARBPROC          m_glDeleteBuffersARB;
     // FrameBuffer Objects
-    MYTH_GLGENFRAMEBUFFERSEXTPROC        gMythGLGenFramebuffersEXT;
-    MYTH_GLBINDFRAMEBUFFEREXTPROC        gMythGLBindFramebufferEXT;
-    MYTH_GLFRAMEBUFFERTEXTURE2DEXTPROC   gMythGLFramebufferTexture2DEXT;
-    MYTH_GLCHECKFRAMEBUFFERSTATUSEXTPROC gMythGLCheckFramebufferStatusEXT;
-    MYTH_GLDELETEFRAMEBUFFERSEXTPROC     gMythGLDeleteFramebuffersEXT;
+    MYTH_GLGENFRAMEBUFFERSEXTPROC        m_glGenFramebuffersEXT;
+    MYTH_GLBINDFRAMEBUFFEREXTPROC        m_glBindFramebufferEXT;
+    MYTH_GLFRAMEBUFFERTEXTURE2DEXTPROC   m_glFramebufferTexture2DEXT;
+    MYTH_GLCHECKFRAMEBUFFERSTATUSEXTPROC m_glCheckFramebufferStatusEXT;
+    MYTH_GLDELETEFRAMEBUFFERSEXTPROC     m_glDeleteFramebuffersEXT;
     // NV_fence
-    MYTH_GLGENFENCESNVPROC               gMythGLGenFencesNV;
-    MYTH_GLDELETEFENCESNVPROC            gMythGLDeleteFencesNV;
-    MYTH_GLSETFENCENVPROC                gMythGLSetFenceNV;
-    MYTH_GLFINISHFENCENVPROC             gMythGLFinishFenceNV;
+    MYTH_GLGENFENCESNVPROC               m_glGenFencesNV;
+    MYTH_GLDELETEFENCESNVPROC            m_glDeleteFencesNV;
+    MYTH_GLSETFENCENVPROC                m_glSetFenceNV;
+    MYTH_GLFINISHFENCENVPROC             m_glFinishFenceNV;
     // APPLE_fence
-    MYTH_GLGENFENCESAPPLEPROC            gMythGLGenFencesAPPLE;
-    MYTH_GLDELETEFENCESAPPLEPROC         gMythGLDeleteFencesAPPLE;
-    MYTH_GLSETFENCEAPPLEPROC             gMythGLSetFenceAPPLE;
-    MYTH_GLFINISHFENCEAPPLEPROC          gMythGLFinishFenceAPPLE;
+    MYTH_GLGENFENCESAPPLEPROC            m_glGenFencesAPPLE;
+    MYTH_GLDELETEFENCESAPPLEPROC         m_glDeleteFencesAPPLE;
+    MYTH_GLSETFENCEAPPLEPROC             m_glSetFenceAPPLE;
+    MYTH_GLFINISHFENCEAPPLEPROC          m_glFinishFenceAPPLE;
     // GLX_SGI_video_sync
-    static MYTH_GLXGETVIDEOSYNCSGIPROC   gMythGLXGetVideoSyncSGI;
-    static MYTH_GLXWAITVIDEOSYNCSGIPROC  gMythGLXWaitVideoSyncSGI;
+    static MYTH_GLXGETVIDEOSYNCSGIPROC   g_glXGetVideoSyncSGI;
+    static MYTH_GLXWAITVIDEOSYNCSGIPROC  g_glXWaitVideoSyncSGI;
     // GLSL
-    MYTH_GLCREATESHADEROBJECT            gMythGLCreateShaderObject;
-    MYTH_GLSHADERSOURCE                  gMythGLShaderSource;
-    MYTH_GLCOMPILESHADER                 gMythGLCompileShader;
-    MYTH_GLCREATEPROGRAMOBJECT           gMythGLCreateProgramObject;
-    MYTH_GLATTACHOBJECT                  gMythGLAttachObject;
-    MYTH_GLLINKPROGRAM                   gMythGLLinkProgram;
-    MYTH_GLUSEPROGRAM                    gMythGLUseProgram;
-    MYTH_GLGETINFOLOG                    gMythGLGetInfoLog;
-    MYTH_GLGETOBJECTPARAMETERIV          gMythGLGetObjectParameteriv;
-    MYTH_GLDETACHOBJECT                  gMythGLDetachObject;
-    MYTH_GLDELETEOBJECT                  gMythGLDeleteObject;
-    MYTH_GLGETUNIFORMLOCATION            gMythGLGetUniformLocation;
-    MYTH_GLUNIFORM4F                     gMythGLUniform4f;
+    MYTH_GLCREATESHADEROBJECT            m_glCreateShaderObject;
+    MYTH_GLSHADERSOURCE                  m_glShaderSource;
+    MYTH_GLCOMPILESHADER                 m_glCompileShader;
+    MYTH_GLGETSHADER                     m_glGetShader;
+    MYTH_GLGETSHADERINFOLOG              m_glGetShaderInfoLog;
+    MYTH_GLDELETESHADER                  m_glDeleteShader;
+    MYTH_GLCREATEPROGRAMOBJECT           m_glCreateProgramObject;
+    MYTH_GLATTACHOBJECT                  m_glAttachObject;
+    MYTH_GLLINKPROGRAM                   m_glLinkProgram;
+    MYTH_GLUSEPROGRAM                    m_glUseProgram;
+    MYTH_GLGETINFOLOG                    m_glGetInfoLog;
+    MYTH_GLGETOBJECTPARAMETERIV          m_glGetObjectParameteriv;
+    MYTH_GLDETACHOBJECT                  m_glDetachObject;
+    MYTH_GLDELETEOBJECT                  m_glDeleteObject;
+    MYTH_GLGETUNIFORMLOCATION            m_glGetUniformLocation;
+    MYTH_GLUNIFORM4F                     m_glUniform4f;
+    MYTH_GLVERTEXATTRIBPOINTER           m_glVertexAttribPointer;
+    MYTH_GLENABLEVERTEXATTRIBARRAY       m_glEnableVertexAttribArray;
+    MYTH_GLDISABLEVERTEXATTRIBARRAY      m_glDisableVertexAttribArray;
+    MYTH_GLBINDATTRIBLOCATION            m_glBindAttribLocation;
+    MYTH_GLVERTEXATTRIB4F                m_glVertexAttrib4f;
 };
 
 #endif

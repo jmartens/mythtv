@@ -111,7 +111,7 @@ void ImportRecorder::StartRecording(void)
     if (_import_fd && IsRecordingRequested() && !IsErrored())
     {
         MythCommFlagPlayer *cfp = new MythCommFlagPlayer();
-        RingBuffer *rb = new RingBuffer(
+        RingBuffer *rb = RingBuffer::Create(
             ringBuffer->GetFilename(), false, true, 6000);
 
         PlayerContext *ctx = new PlayerContext(kImportRecorderInUseID);
