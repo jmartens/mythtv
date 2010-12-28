@@ -20,7 +20,7 @@ using namespace std;
    mythtv/bindings/perl/MythTV.pm
 */
 /// This is the DB schema version expected by the running MythTV instance.
-const QString currentDatabaseVersion = "1265";
+const QString currentDatabaseVersion = "1266";
 
 static bool UpdateDBVersionNumber(const QString &newnumber, QString &dbver);
 static bool performActualUpdate(
@@ -451,6 +451,9 @@ static bool performActualUpdate(
 bool UpgradeTVDatabaseSchema(const bool upgradeAllowed,
                              const bool upgradeIfNoUI)
 {
+#if IGNORE_SCHEMA_VER_MISMATCH
+    return true;
+#endif
     SchemaUpgradeWizard  * DBup;
 
 
@@ -5505,6 +5508,25 @@ NULL
     if (dbver == "1264")
     {
         const char *updates[] = {
+"DELETE FROM displayprofiles WHERE profilegroupid IN "
+"  (SELECT profilegroupid FROM displayprofilegroups "
+"    WHERE name IN ('CPU++', 'CPU+', 'CPU--'))",
+"DELETE FROM displayprofilegroups WHERE name IN ('CPU++', 'CPU+', 'CPU--')",
+"DELETE FROM settings WHERE value = 'DefaultVideoPlaybackProfile' "
+"   AND data IN ('CPU++', 'CPU+', 'CPU--')",
+"UPDATE displayprofiles SET data = 'ffmpeg' WHERE data = 'libmpeg2'",
+"UPDATE displayprofiles SET data = 'ffmpeg' WHERE data = 'xvmc'",
+"UPDATE displayprofiles SET data = 'xv-blit' WHERE data = 'xvmc-blit'",
+"UPDATE displayprofiles SET data = 'softblend' WHERE data = 'ia44blend'",
+NULL
+};
+        if (!performActualUpdate(updates, "1265", dbver))
+            return false;
+    }
+
+    if (dbver == "1266")
+    {
+        const char *updates[] = {
 "INSERT INTO profilegroups SET name = 'ASI Recorder (DVEO)', cardtype = 'ASI', is_default = 1;",
 "INSERT INTO recordingprofiles SET name = \"Default\", profilegroup = 14;",
 "INSERT INTO recordingprofiles SET name = \"Live TV\", profilegroup = 14;",
@@ -5522,7 +5544,7 @@ NULL
 "INSERT INTO recordingprofiles SET name = \"Low Quality\", profilegroup = 16;",
 NULL
 };
-        if (!performActualUpdate(updates, "1265", dbver))
+        if (!performActualUpdate(updates, "1266", dbver))
             return false;
     }
 

@@ -165,7 +165,7 @@ QString SOAPClient::GetNodeValue(
         if (!oText.isNull())
             sValue = oText.nodeValue();
 
-        return QUrl::fromPercentEncoding(sValue.toLatin1());
+        return QUrl::fromPercentEncoding(sValue.toUtf8());
     }
 
     return sDefault;
@@ -333,8 +333,8 @@ bool SOAPClient::SendSOAPRequest(const QString &sMethod,
         if (!oText.isNull())
             sValue = oText.nodeValue();
 
-        list.insert(QUrl::fromPercentEncoding(sName.toLatin1()),
-                    QUrl::fromPercentEncoding(sValue.toLatin1()));
+        list.insert(QUrl::fromPercentEncoding(sName.toUtf8()),
+                    QUrl::fromPercentEncoding(sValue.toUtf8()));
     }
 
     return true;

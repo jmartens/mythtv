@@ -82,7 +82,7 @@ Advanced options (experts only):
   --extra-cflags=ECFLAGS   add ECFLAGS to CFLAGS [$CFLAGS]
   --extra-cxxflags=ECXFLAGS add ECXXFLAGS to list of flags for C++ compile
   --extra-ldflags=ELDFLAGS add ELDFLAGS to LDFLAGS [$LDFLAGS]
-  --enable-symbol-visibility enables symbol visibility options
+  --disable-symbol-visibility disables symbol visibility options
   --arch=ARCH              select architecture [$arch]
   --tune=CPU               tune instruction usage for a particular CPU [$tune]
   --cpu=CPU                select the minimum required CPU (affects
@@ -134,6 +134,11 @@ Advanced options (experts only):
   --disable-directfb       disable DirectFB (Linux non-X11 video)
 
   --enable-mac-bundle      produce standalone OS X apps (e.g. mythfrontend.app)
+
+  --disable-libxml2        disable libxml2 support (disc metadata)
+  --libxml2-path=HDRLOC    location of directory containing
+                           'libxml/parser.h', not the
+                           directory with parser.h [$libxml2_path_default]
 
   --with-bindings=LIST     install the bindings specified in the
                            comma-separated list
@@ -1311,6 +1316,7 @@ MYTHTV_CONFIG_LIST='
     joystick_menu
     libfftw3
     libmpeg2external
+    libxml2
     lirc
     mheg
     opengl_video
@@ -1392,6 +1398,7 @@ PATHS_LIST='
     runprefix
     shlibdir
     x11_path
+    libxml2_path
 '
 
 CMDLINE_SET="
@@ -1933,6 +1940,7 @@ enable ivtv
 enable asi
 enable ocur
 enable lamemp3
+enable libxml2
 enable lirc
 enable mheg
 enable mythtranscode
@@ -1940,6 +1948,7 @@ enable opengl
 enable opengl_vsync
 enable opengl_video
 enable quartz_video
+enable symbol_visibility
 enable v4l
 enable x11
 enable xrandr
@@ -1951,6 +1960,7 @@ enable xvmcw
 # mythtv paths
 dvb_path_default="${sysroot}/usr/include"
 x11_path_default="${sysroot}/usr/X11R6/include"
+libxml2_path_default="${sysroot}/usr/include/libxml2"
 xvmc_lib=""
 
 # configurable options
@@ -1963,6 +1973,8 @@ enable avutil
 enable asm
 enable debug
 #enable doc
+enable ffmpeg
+enable ffplay
 enable fastdiv
 enable gpl
 enable mpegaudio_hp
@@ -3260,10 +3272,10 @@ if ! is_qmake4 $qmake; then
     is_qmake4 qmake-qt4 && qmake=qmake-qt4 || die "qmake for Qt4.5 or newer not found.\nPlease specify the correct qmake with --qmake="
 fi
 
-if ! expr $($qmake -query QT_VERSION) : "4\.[5-9]\.[0-9]" >/dev/null; then 
-    die "Qt4.5 or newer is required to build MythTV." 
-fi 
-    
+if ! expr $($qmake -query QT_VERSION) : "4\.[5-9]\.[0-9]" >/dev/null; then
+    die "Qt4.5 or newer is required to build MythTV."
+fi
+
 enable_pic() {
     enable pic
     add_cppflags -DPIC
@@ -3594,7 +3606,7 @@ fi
 disabled  zlib || check_lib   zlib.h      zlibVersion -lz   || disable  zlib
 disabled bzlib || check_lib2 bzlib.h BZ2_bzlibVersion -lbz2 || disable bzlib
 
-# Attempt to use libudev for mediamonitor 
+# Attempt to use libudev for mediamonitor
 enabled libudev && check_lib2 libudev.h udev_new -ludev || disable libudev
 
 enabled ffmpeg_pthreads && enable pthreads
@@ -3992,6 +4004,15 @@ fi
 enabled libfftw3 && check_lib2 fftw3.h fftw_init_threads -lfftw3_threads -lfftw3f -lfftw3 ||
     disable libfftw3
 
+enabled libxml2 && check_cc -I"$libxml2_path" <<EOF && add_extralibs "-lxml2" || disable libxml2
+#include <libxml/xmlversion.h>
+int main(void) {
+    if (LIBXML_VERSION > 20600)
+        return 1;
+    return 0;
+}
+EOF
+
 enabled x11 && check_lib X11/Xlib.h XQueryExtension -lX11 || disable x11
 enabled xrandr && check_lib X11/extensions/Xrandr.h XRRSelectInput -lXrandr || disable xrandr
 enabled xv && check_lib X11/extensions/Xv.h XvPutStill -lXv || disable xv
@@ -4164,7 +4185,7 @@ fi
 # Check for perl dependencies
 # Modules distributed in Perl core
 if enabled bindings_perl; then
-    check_pl_lib "ExtUtils::MakeMaker" || 
+    check_pl_lib "ExtUtils::MakeMaker" ||
         disable_bindings_perl "ExtUtils::MakeMaker"
     check_pl_lib Config           || disable_bindings_perl Config
     check_pl_lib Exporter         || disable_bindings_perl Exporter
@@ -4175,9 +4196,9 @@ if enabled bindings_perl; then
     check_pl_lib DBI              || disable_bindings_perl DBI
     check_pl_lib "HTTP::Request"  || disable_bindings_perl "HTTP::Request"
     check_pl_lib "LWP::UserAgent" || disable_bindings_perl "LWP::UserAgent"
-    check_pl_lib "Net::UPnP::QueryResponse" || 
+    check_pl_lib "Net::UPnP::QueryResponse" ||
         disable_bindings_perl "Net::UPnP::QueryResponse"
-    check_pl_lib "Net::UPnP::ControlPoint"  || 
+    check_pl_lib "Net::UPnP::ControlPoint"  ||
         disable_bindings_perl "Net::UPnP::ControlPoint"
 fi
 
@@ -4408,6 +4429,7 @@ if enabled frontend; then
     echo "Windows (DirectX)         yes"
   fi
   echo "libfftw3 support          ${libfftw3-no}"
+  echo "libxml2 support           ${libxml2-no} [$libxml2_path]"
   echo
   echo "# Video Output Support"
   echo "x11 support               ${x11-no}"
@@ -4717,6 +4739,13 @@ if enabled dvb; then
   append CONFIG_INCLUDEPATH "$dvb_path"
 fi
 
+if enabled libxml2; then
+  if [ -d $libxml2_path ] ; then
+    append CONFIG_INCLUDEPATH "$libxml2_path"
+    append CCONFIG "using_libxml2"
+  fi
+fi
+
 if enabled x11; then
   if [ -d $x11_path ] ; then
     append CONFIG_INCLUDEPATH "$x11_path"
@@ -4786,7 +4815,8 @@ SLIB_EXTRA_CMD=${SLIB_EXTRA_CMD}
 SLIB_INSTALL_EXTRA_CMD=${SLIB_INSTALL_EXTRA_CMD}
 SLIB_UNINSTALL_EXTRA_CMD=${SLIB_UNINSTALL_EXTRA_CMD}
 EOF
-cat >> external/FFmpeg/config.mak < $MYTH_CONFIG_MAK
+# Strip out the old dirs that we are about to put back in.
+sed -e '/^S?H?LIBDIR=.*$/d' -e '/^INCDIR=.*$/d' -e '/^BINDIR=.*$/d' -e '/^DATADIR=.*$/d' -e '/^MANDIR=.*$/d' $MYTH_CONFIG_MAK >> external/FFmpeg/config.mak
 cat >> external/FFmpeg/config.mak <<EOF
 LIBDIR=\$(INSTALL_ROOT)$libdir
 SHLIBDIR=\$(INSTALL_ROOT)$shlibdir
@@ -4794,6 +4824,7 @@ INCDIR=\$(INSTALL_ROOT)$incdir
 BINDIR=\$(INSTALL_ROOT)$bindir
 DATADIR=\$(INSTALL_ROOT)$datadir
 MANDIR=\$(INSTALL_ROOT)$mandir
+CFLAGS=${CFLAGS} -w
 endif # FFMPEG_CONFIG_MAK
 EOF
 

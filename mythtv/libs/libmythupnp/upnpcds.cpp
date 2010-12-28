@@ -995,7 +995,7 @@ UPnpCDSExtensionResults *UPnpCDSExtension::ProcessKey( UPnpCDSRequest          *
     // ----------------------------------------------------------------------
     
     QString sKey = idPath.last().section( '=', 1, 1 );
-    sKey = QUrl::fromPercentEncoding(sKey.toLatin1());
+    sKey = QUrl::fromPercentEncoding(sKey.toUtf8());
 
     if (sKey.length() > 0)
     {
@@ -1275,6 +1275,7 @@ void UPnpCDSExtension::CreateItems( UPnpCDSRequest          *pRequest,
     if (query.isConnected())
     {
         QString sWhere( "" );
+        QString sOrder( "" );
 
         if ( sKey.length() > 0)
         {
@@ -1282,9 +1283,15 @@ void UPnpCDSExtension::CreateItems( UPnpCDSRequest          *pRequest,
                        .arg( pInfo->column );
         }
 
+        QString orderColumn( pInfo->orderColumn );
+        if (orderColumn.length() != 0) {
+            sOrder = QString( "ORDER BY %1 " )
+                       .arg( orderColumn );
+        }
+
         QString sSQL = QString( "%1 %2 LIMIT %3, %4" )
                           .arg( GetItemListSQL( pInfo->column )  )
-                          .arg( sWhere )
+                          .arg( sWhere + sOrder )
                           .arg( pRequest->m_nStartingIndex  )
                           .arg( pRequest->m_nRequestedCount );
 

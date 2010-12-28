@@ -30,6 +30,7 @@
 #include "util/strutl.h"
 #include "bdnav/navigation.h"
 #include "bdnav/index_parse.h"
+#include "bdnav/meta_parse.h"
 #include "hdmv/hdmv_vm.h"
 #include "decoders/graphics_controller.h"
 #include "file/file.h"
@@ -93,6 +94,7 @@ struct bluray {
     char             *device_path;
     BLURAY_DISC_INFO  disc_info;
     INDX_ROOT        *index;
+    META_ROOT        *meta;
     NAV_TITLE_LIST   *title_list;
 
     /* current playlist */
@@ -261,8 +263,10 @@ static int _open_m2ts(BLURAY *bd, BD_STREAM *st)
                         bd->aacs, title);
             }
 
-            if (st == &bd->st0)
+            if (st == &bd->st0) {
                 bd_psr_write(bd->regs, PSR_PLAYITEM, st->clip->ref);
+                bd_psr_write(bd->regs, PSR_TIME,     st->clip->in_time);
+            }
 
             return 1;
         }
@@ -540,6 +544,25 @@ static int _libaacs_open(BLURAY *bd, const char *keyfile_path)
     return 0;
 }
 
+static uint8_t *_libaacs_get_vid(BLURAY *bd)
+{
+    if (bd->aacs) {
+#ifdef DLOPEN_CRYPTO_LIBS
+        fptr_p_void fptr = dl_dlsym(bd->h_libaacs, "aacs_get_vid");
+        if (fptr) {
+            return (uint8_t*)fptr(bd->aacs);
+        }
+        DEBUG(DBG_BLURAY, "aacs_get_vid() dlsym failed! (%p)", bd);
+        return NULL;
+#else
+        return aacs_get_vid(bd->aacs);
+#endif
+    }
+
+    DEBUG(DBG_BLURAY, "_libaacs_get_vid(): libaacs not initialized! (%p)", bd);
+    return NULL;
+}
+
 static void _libbdplus_close(BLURAY *bd)
 {
     if (bd->bdplus) {
@@ -652,7 +675,7 @@ static int _libbdplus_open(BLURAY *bd, const char *keyfile_path)
         return 0;
     }
 
-    bd->bdplus = bd->bdplus_init(bd->device_path, keyfile_path, vid);
+    bd->bdplus = bd->bdplus_init(bd->device_path, keyfile_path, _libaacs_get_vid(bd) ?: vid);
 
     if (bd->bdplus) {
         DEBUG(DBG_BLURAY,"libbdplus initialized\n");
@@ -684,6 +707,18 @@ static int _index_open(BLURAY *bd)
     return !!bd->index;
 }
 
+/*
+ * meta open
+ */
+
+static int _meta_open(BLURAY *bd)
+{
+    if (!bd->meta){
+      bd->meta = meta_parse(bd->device_path);
+    }
+
+    return !!bd->meta;
+}
 /*
  * disc info
  */
@@ -748,6 +783,8 @@ BLURAY *bd_open(const char* device_path, const char* keyfile_path)
         _libbdplus_open(bd, keyfile_path);
 
         _index_open(bd);
+
+        bd->meta = NULL;
 
         bd->regs = bd_registers_init();
 
@@ -911,6 +948,26 @@ uint32_t bd_get_current_chapter(BLURAY *bd)
     return 0;
 }
 
+int64_t bd_seek_playitem(BLURAY *bd, unsigned clip_ref)
+{
+    uint32_t clip_pkt, out_pkt;
+    NAV_CLIP *clip;
+
+    if (bd->title &&
+        clip_ref < bd->title->clip_list.count) {
+
+      _change_angle(bd);
+
+      clip     = &bd->title->clip_list.clip[clip_ref];
+      clip_pkt = clip->start_pkt;
+      out_pkt  = clip->pos;
+
+      return _seek_internal(bd, clip, out_pkt, clip_pkt);
+    }
+
+    return bd->s_pos;
+}
+
 int64_t bd_seek_mark(BLURAY *bd, unsigned mark)
 {
     uint32_t clip_pkt, out_pkt;
@@ -1037,6 +1094,18 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
                         return out_len;
                     }
 
+                    MPLS_PI *pi = &st->clip->title->pl->play_item[st->clip->ref];
+
+                    // handle still mode clips
+                    if (pi->still_mode == BLURAY_STILL_INFINITE) {
+                        _queue_event(bd, (BD_EVENT){BD_EVENT_STILL_TIME, 0});
+                        return 0;
+                    }
+                    if (pi->still_mode == BLURAY_STILL_TIME) {
+                        _queue_event(bd, (BD_EVENT){BD_EVENT_STILL_TIME, pi->still_time});
+                    }
+
+                    // find next clip
                     st->clip = nav_next_clip(bd->title, st->clip);
                     if (st->clip == NULL) {
                         DEBUG(DBG_BLURAY|DBG_STREAM, "End of title (%p)\n", bd);
@@ -1046,7 +1115,16 @@ int bd_read(BLURAY *bd, unsigned char *buf, int len)
                     if (!_open_m2ts(bd, st)) {
                         return -1;
                     }
+
+                    // timed still mode: allow application to process BD_EVENT_STILL_TIME.
+                    // next bd_read() will return new data.
+                    if (bd->event_queue) {
+                        if (pi->still_mode == BLURAY_STILL_TIME) {
+                            return 0;
+                        }
+                    }
                 }
+
                 if (_read_block(bd, st, bd->int_buf)) {
 
                     st->int_buf_off = st->clip_pos % 6144;
@@ -1796,11 +1874,12 @@ static void _process_hdmv_vm_event(BLURAY *bd, HDMV_EVENT *hev)
             break;
 
         case HDMV_EVENT_PLAY_PI:
-            //bd_seek_pi(bd, hev->param);
-            DEBUG(DBG_BLURAY|DBG_CRIT, "HDMV_EVENT_PLAY_PI: not implemented\n");
+            _queue_event(bd, (BD_EVENT){BD_EVENT_SEEK, 0});
+            bd_seek_playitem(bd, hev->param);
             break;
 
         case HDMV_EVENT_PLAY_PM:
+            _queue_event(bd, (BD_EVENT){BD_EVENT_SEEK, 0});
             bd_seek_mark(bd, hev->param);
             break;
 
@@ -1899,15 +1978,8 @@ int bd_read_ext(BLURAY *bd, unsigned char *buf, int len, BD_EVENT *event)
 
     if (bytes == 0) {
 
-        MPLS_PI  *pi        = &bd->title->pl->play_item[0];
-        if (pi->still_mode == BLURAY_STILL_INFINITE) {
-            // most likely menu background ; waiting for user interaction
-            DEBUG(DBG_BLURAY, "Reached end of infinite still mode play item\n");
-            _get_event(bd, event);
-            return 0;
-        }
-
-        if (bd->title_type == title_hdmv) {
+        // if no next clip (=end of title), resume HDMV VM
+        if (!bd->st0.clip && bd->title_type == title_hdmv) {
             hdmv_vm_resume(bd->hdmv_vm);
             bd->hdmv_suspended = !hdmv_vm_running(bd->hdmv_vm);
             DEBUG(DBG_BLURAY, "bd_read_ext(): reached end of playlist. hdmv_suspended=%d\n", bd->hdmv_suspended);
@@ -1935,6 +2007,15 @@ int bd_get_event(BLURAY *bd, BD_EVENT *event)
  * user interaction
  */
 
+void bd_mouse_select(BLURAY *bd, int64_t pts, uint16_t x, uint16_t y)
+{
+    if (pts >= 0) {
+        bd_psr_write(bd->regs, PSR_TIME, (uint32_t)(((uint64_t)pts) >> 1));
+    }
+
+    _run_gc(bd, GC_CTRL_MOUSE_MOVE, (x << 16) | y);
+}
+
 void bd_user_input(BLURAY *bd, int64_t pts, uint32_t key)
 {
     if (pts >= 0) {
@@ -1954,5 +2035,26 @@ void bd_register_overlay_proc(BLURAY *bd, void *handle, bd_overlay_proc_f func)
 
     if (func) {
         bd->graphics_controller = gc_init(bd->regs, handle, func);
+    }
+}
+
+struct meta_dl *bd_get_meta(BLURAY *bd)
+{
+    if (!bd) {
+        return NULL;
+    }
+
+    if (!bd->meta) {
+        _meta_open(bd);
+    }
+
+    uint32_t psr_menu_lang = bd_psr_read(bd->regs, PSR_MENU_LANG);
+
+    if (psr_menu_lang != 0 && psr_menu_lang != 0xffffff) {
+        const char language_code[] = {(psr_menu_lang >> 16) & 0xff, (psr_menu_lang >> 8) & 0xff, psr_menu_lang & 0xff, 0 };
+        return meta_get(bd->meta, language_code);
+    }
+    else {
+        return meta_get(bd->meta, NULL);
     }
 }

@@ -49,11 +49,9 @@ class DetectLetterbox;
 class RingBuffer;
 class ProgramInfo;
 class MythDialog;
-class UDPNotify;
 class OSDListTreeType;
 class OSDGenericTree;
 class PlayerContext;
-class UDPNotifyOSDSet;
 class TvPlayWindow;
 class TV;
 class OSDListTreeItemEnteredEvent;
@@ -203,7 +201,6 @@ class MPUBLIC TV : public QObject
                               NoRecorderMsg msgType = kNoRecorders);
     void FinishRecording(int player_idx); ///< Finishes player's recording
     void AskAllowRecording(PlayerContext*, const QStringList&, int, bool, bool);
-    bool PromptRecGroupPassword(PlayerContext*);
 
     bool CreatePBP(PlayerContext *lctx, const ProgramInfo *info);
     bool CreatePIP(PlayerContext *lctx, const ProgramInfo *info);
@@ -247,6 +244,7 @@ class MPUBLIC TV : public QObject
     static bool StartTV(ProgramInfo *tvrec = NULL,
                         uint flags = kStartTVNoFlags);
     static void SetFuncPtr(const char *, void *);
+    static int  ConfiguredTunerCards(void);
 
     // Used by EPG
     void ChangeVolume(PlayerContext*, bool up);
@@ -254,20 +252,12 @@ class MPUBLIC TV : public QObject
 
     void SetNextProgPIPState(PIPState state) { jumpToProgramPIPState = state; }
 
-    // Used for UDPNotify
-    bool HasUDPNotifyEvent(void) const;
-    void HandleUDPNotifyEvent(void);
-
     // Channel Groups
     void UpdateChannelList(int groupID);
 
   public slots:
     void HandleOSDClosed(int osdType);
     void timerEvent(QTimerEvent*);
-
-  protected slots:
-    void AddUDPNotifyEvent(const QString &name, const UDPNotifyOSDSet*);
-    void ClearUDPNotifyEvents(void);
 
   protected:
     void OSDDialogEvent(int result, QString text, QString action);
@@ -611,8 +601,6 @@ class MPUBLIC TV : public QObject
     static TVState RemoveRecording(TVState state);
     void RestoreScreenSaver(const PlayerContext*);
 
-    void InitUDPNotifyEvent(void);
-
     // for temp debugging only..
     int find_player_index(const PlayerContext*) const;
 
@@ -621,7 +609,6 @@ class MPUBLIC TV : public QObject
     QString baseFilters;
     QString db_channel_format;
     uint    db_idle_timeout;
-    uint    db_udpnotify_port;
     int     db_playback_exit_prompt;
     uint    db_autoexpire_default;
     bool    db_auto_set_watched;
@@ -758,12 +745,6 @@ class MPUBLIC TV : public QObject
     // OSD info
     QMap<OSD*,const PlayerContext*> osd_lctx;
 
-    /// UDPNotify instance which shows messages sent
-    /// to the "UDPNotifyPort" in an OSD dialog.
-    UDPNotify                        *udpnotify;
-    MythDeque<QString>                udpnotifyEventName;
-    MythDeque<const UDPNotifyOSDSet*> udpnotifyEventSet;
-
     // LCD Info
     QString   lcdTitle;
     QString   lcdSubtitle;
@@ -817,7 +798,6 @@ class MPUBLIC TV : public QObject
     volatile int         networkControlTimerId;
     volatile int         jumpMenuTimerId;
     volatile int         pipChangeTimerId;
-    volatile int         udpNotifyTimerId;
     volatile int         switchToInputTimerId;
     volatile int         ccInputTimerId;
     volatile int         asInputTimerId;
