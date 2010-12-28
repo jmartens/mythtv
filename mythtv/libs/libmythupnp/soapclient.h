@@ -30,9 +30,10 @@
 
 #include "httpcomms.h"
 #include "upnputil.h"
+#include "upnpexp.h"
 
 /// \brief Subclass SOAPClient to perform actions using the command URL.
-class SOAPClient
+class UPNP_PUBLIC SOAPClient
 {
   public:
     SOAPClient(const QUrl    &url,

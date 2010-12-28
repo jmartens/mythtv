@@ -24,12 +24,14 @@
 #ifndef _UPNPIMPL_H_
 #define _UPNPIMPL_H_
 
+#include "upnpexp.h"
+
 #include <QString>
 
 class UPnpDevice;
 
 /// Base class for services we offer to other UPnP devices.
-class UPnpServiceImpl
+class UPNP_PUBLIC UPnpServiceImpl
 {
   public:
     UPnpServiceImpl() {}

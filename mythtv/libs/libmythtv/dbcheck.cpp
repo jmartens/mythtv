@@ -5524,7 +5524,7 @@ NULL
             return false;
     }
 
-    if (dbver == "1266")
+    if (dbver == "1265")
     {
         const char *updates[] = {
 "INSERT INTO profilegroups SET name = 'ASI Recorder (DVEO)', cardtype = 'ASI', is_default = 1;",
