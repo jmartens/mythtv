@@ -29,9 +29,9 @@ using namespace std;
 
 #define DEBUG_ATTRIB 1
 
-#define LOC QString("Channel(%1): ").arg(device)
-#define LOC_WARN QString("Channel(%1) Warning: ").arg(device)
-#define LOC_ERR QString("Channel(%1) Error: ").arg(device)
+#define LOC      QString("V4LChannel(%1): ").arg(device)
+#define LOC_WARN QString("V4LChannel(%1) Warning: ").arg(device)
+#define LOC_ERR  QString("V4LChannel(%1) Error: ").arg(device)
 
 static int format_to_mode(const QString& fmt, int v4l_version);
 static QString mode_to_format(int mode, int v4l_version);
