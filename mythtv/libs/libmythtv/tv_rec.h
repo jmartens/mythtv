@@ -291,7 +291,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool TuningOnSameMultiplex(TuningRequest &request);
 
     void HandleStateChange(void);
-    void ChangeState(TVState nextState);
+    void ChangeStateX(TVState nextState, int line);
     bool StateIsRecording(TVState state);
     bool StateIsPlaying(TVState state);
     TVState RemovePlaying(TVState state);
@@ -305,6 +305,8 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool CreateLiveTVRingBuffer(const QString & channum);
     bool SwitchLiveTVRingBuffer(const QString & channum,
                                 bool discont, bool set_rec);
+
+    bool SwitchRecordingRingBuffer(const RecordingInfo &rcinfo);
 
     void StartedRecording(RecordingInfo*);
     void FinishedRecording(RecordingInfo*);
@@ -362,7 +364,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     mutable QMutex triggerEventSleepLock;
     QWaitCondition triggerEventSleepWait;
     bool           triggerEventSleepSignal;
-    bool           m_switchingBuffer;
+    volatile bool  switchingBuffer;
     RecStatusType  m_recStatus;
 
     // Current recording info

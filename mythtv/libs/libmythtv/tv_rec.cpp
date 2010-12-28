@@ -104,7 +104,7 @@ TVRec::TVRec(int capturecardnum)
       triggerEventLoopSignal(false),
       triggerEventSleepLock(QMutex::NonRecursive),
       triggerEventSleepSignal(false),
-      m_switchingBuffer(false),
+      switchingBuffer(false),
       m_recStatus(rsUnknown),
       // Current recording info
       curRecording(NULL), autoRunJobs(JOB_NONE),
@@ -392,8 +392,6 @@ void TVRec::CancelNextRecording(bool cancel)
  *  \brief Tells TVRec to Start recording the program "rcinfo"
  *         as soon as possible.
  *
- *  \return +1 if the recording started successfully,
- *          -1 if TVRec is busy doing something else, 0 otherwise.
  *  \sa EncoderLink::StartRecording(const ProgramInfo*)
  *      RecordPending(const ProgramInfo*, int, bool), StopRecording()
  */
@@ -552,12 +550,21 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         VERBOSE(VB_RECORD, LOC + "Checking input group recorders - done");
     }
 
-    // If in post-roll, end recording
+    bool did_switch = false;
     if (!cancelNext && (GetState() == kState_RecordingOnly))
     {
-        stateChangeLock.unlock();
-        StopRecording();
-        stateChangeLock.lock();
+        did_switch = SwitchRecordingRingBuffer(*rcinfo);
+        if (did_switch)
+        {
+            m_recStatus = rsRecording;
+        }
+        else
+        {
+            // If in post-roll, end recording
+            stateChangeLock.unlock();
+            StopRecording();
+            stateChangeLock.lock();
+        }
     }
 
     if (!cancelNext && (GetState() == kState_None))
@@ -602,7 +609,7 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         MythEvent me(message, prog);
         gCoreContext->dispatch(me);
     }
-    else
+    else if (!did_switch)
     {
         msg = QString("Wanted to record: %1 %2 %3 %4\n\t\t\t")
             .arg(rcinfo->GetTitle()).arg(rcinfo->GetChanID())
@@ -638,12 +645,18 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
         delete pendingRecordings[i].info;
     pendingRecordings.clear();
 
-    WaitForEventThreadSleep();
+    if (!did_switch)
+    {
+        WaitForEventThreadSleep();
 
-    QMutexLocker locker(&pendingRecLock);
-    if ((curRecording) && (curRecording->GetRecordingStatus() == rsFailed) &&
-        (m_recStatus == rsRecording || m_recStatus == rsTuning))
-        m_recStatus = rsFailed;
+        QMutexLocker locker(&pendingRecLock);
+        if ((curRecording) &&
+            (curRecording->GetRecordingStatus() == rsFailed) &&
+            (m_recStatus == rsRecording || m_recStatus == rsTuning))
+        {
+            m_recStatus = rsFailed;
+        }
+    }
 
     return m_recStatus;
 }
@@ -1166,8 +1179,12 @@ void TVRec::RunTV(void)
 
         // If we are recording a program, check if the recording is
         // over or someone has asked us to finish the recording.
-        if (GetState() == kState_RecordingOnly &&
-            (QDateTime::currentDateTime() > recordEndTime ||
+        // Add an extra 60 seconds to the recording end time if we
+        // might want a back to back recording.
+        QDateTime recEnd = (!pendingRecordings.empty()) ?
+            recordEndTime.addSecs(60) : recordEndTime;
+        if ((GetState() == kState_RecordingOnly) &&
+            (QDateTime::currentDateTime() > recEnd ||
              HasFlags(kFlagFinishRecording)))
         {
             ChangeState(kState_None);
@@ -1238,9 +1255,9 @@ void TVRec::RunTV(void)
             else if (!has_rec && !rec_soon && curRecording &&
                      (now >= curRecording->GetScheduledEndTime()))
             {
-                if (!m_switchingBuffer)
+                if (!switchingBuffer)
                 {
-                    m_switchingBuffer = true;
+                    switchingBuffer = true;
 
                     SwitchLiveTVRingBuffer(channel->GetCurrentName(),
                                            false, true);
@@ -3160,7 +3177,7 @@ void TVRec::SetRingBuffer(RingBuffer *rb)
         delete rb_old;
     }
 
-    m_switchingBuffer = false;
+    switchingBuffer = false;
 }
 
 void TVRec::RingBufferChanged(RingBuffer *rb, ProgramInfo *pginfo)
@@ -3175,6 +3192,7 @@ void TVRec::RingBufferChanged(RingBuffer *rb, ProgramInfo *pginfo)
             curRecording->MarkAsInUse(false, kRecorderInUseID);
             delete curRecording;
         }
+        recordEndTime = GetRecordEndTime(pginfo);
         curRecording = new RecordingInfo(*pginfo);
         curRecording->MarkAsInUse(true, kRecorderInUseID);
     }
@@ -4383,6 +4401,44 @@ bool TVRec::SwitchLiveTVRingBuffer(const QString & channum,
     }
 
     return true;
+}
+
+bool TVRec::SwitchRecordingRingBuffer(const RecordingInfo &rcinfo)
+{
+    VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer()");
+
+    if (switchingBuffer || !recorder || !curRecording ||
+        (rcinfo.GetChanID() != curRecording->GetChanID()))
+    {
+        VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> false 1");
+        return false;
+    }
+
+    PreviewGeneratorQueue::GetPreviewImage(*curRecording, "");
+
+    RecordingInfo ri(rcinfo);
+    ri.MarkAsInUse(true, kRecorderInUseID);
+    StartedRecording(&ri);
+
+    bool write = genOpt.cardtype != "IMPORT";
+    RingBuffer *rb = new RingBuffer(ri.GetPathname(), write);
+    if (!rb->IsOpen())
+    {
+        ri.SetRecordingStatus(rsFailed);
+        FinishedRecording(&ri);
+        ri.MarkAsInUse(false, kRecorderInUseID);
+        VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> false 2");
+        return false;
+    }
+    else
+    {
+        recorder->SetNextRecording(&ri, rb);
+        SetFlags(kFlagRingBufferReady);
+        recordEndTime = GetRecordEndTime(&ri);
+        switchingBuffer = true;
+        VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> true");
+        return true;
+    }
 }
 
 TVRec* TVRec::GetTVRec(uint cardid)
