@@ -1359,6 +1359,9 @@ bool TVRec::WaitForEventThreadSleep(bool wake, ulong time)
 
     while (!ok && ((unsigned long) t.elapsed()) < time)
     {
+        MythTimer t2;
+        t2.start();
+
         if (wake)
             WakeEventLoop();
 
@@ -1377,6 +1380,10 @@ bool TVRec::WaitForEventThreadSleep(bool wake, ulong time)
 
         // verify that we were triggered.
         ok = (tuningRequests.empty() && !changeState);
+
+        int te = t2.elapsed();
+        if (!ok && te < 10)
+            usleep((10-te) * 1000);
     }
     return ok;
 }
