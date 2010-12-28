@@ -594,52 +594,62 @@ bool V4LChannel::SetInputAndFormat(int inputNum, QString newFmt)
     {
         VERBOSE(VB_CHANNEL, LOC + msg + "(v4l v2)");
 
-        int ioctlval = ioctl(videofd, VIDIOC_S_INPUT, &inputNumV4L);
+        struct v4l2_input input;
+        int ioctlval = ioctl(videofd, VIDIOC_G_INPUT, &input);
+        bool input_switch = (0 != ioctlval || inputNumV4L != input.index);
 
-        // ConvertX (wis-go7007) requires streaming to be disabled
-        // before an input switch, do this if initial switch failed.
+        const v4l2_std_id new_vid_mode = format_to_mode(newFmt, 2);
+        v4l2_std_id cur_vid_mode;
+        ioctlval = ioctl(videofd, VIDIOC_G_STD, &cur_vid_mode);
+        bool mode_switch = (0 != ioctlval || new_vid_mode != cur_vid_mode);
+        bool needs_switch = input_switch || mode_switch;
+
+        VERBOSE(VB_IMPORTANT, LOC + msg +
+                QString("input_switch: %1 mode_switch: %2")
+                .arg(input_switch).arg(mode_switch));
+
         bool streamingDisabled = false;
         int  streamType = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        if ((ioctlval < 0) && (errno == EBUSY))
+        if (needs_switch)
         {
             ioctlval = ioctl(videofd, VIDIOC_STREAMOFF, &streamType);
             if (ioctlval < 0)
             {
                 VERBOSE(VB_IMPORTANT, LOC_ERR + msg +
                         "\n\t\t\twhile disabling streaming (v4l v2)" + ENO);
-
                 ok = false;
-                ioctlval = 0;
             }
             else
             {
                 streamingDisabled = true;
-
-                // Resend the input switch ioctl.
-                ioctlval = ioctl(videofd, VIDIOC_S_INPUT, &inputNumV4L);
             }
         }
 
-        if (ioctlval < 0)
+        if (input_switch)
         {
-            VERBOSE(VB_IMPORTANT, LOC_ERR + msg +
-                    "\n\t\t\twhile setting input (v4l v2)" + ENO);
+            // Send the input switch ioctl.
+            ioctlval = ioctl(videofd, VIDIOC_S_INPUT, &inputNumV4L);
+            if (ioctlval < 0)
+            {
+                VERBOSE(VB_IMPORTANT, LOC_ERR + msg +
+                        "\n\t\t\twhile setting input (v4l v2)" + ENO);
 
-            ok = false;
+                ok = false;
+            }
         }
 
-        v4l2_std_id vid_mode = format_to_mode(newFmt, 2);
-        ioctlval = ioctl(videofd, VIDIOC_S_STD, &vid_mode);
-        if (ioctlval < 0)
+        if (mode_switch)
         {
-            VERBOSE(VB_IMPORTANT, LOC_ERR + msg +
-                    "\n\t\t\twhile setting format (v4l v2)" + ENO);
+            ioctlval = ioctl(videofd, VIDIOC_S_STD, &new_vid_mode);
+            if (ioctlval < 0)
+            {
+                VERBOSE(VB_IMPORTANT, LOC_ERR + msg +
+                        "\n\t\t\twhile setting format (v4l v2)" + ENO);
 
-            ok = false;
+                ok = false;
+            }
         }
 
-        // ConvertX (wis-go7007) requires streaming to be disabled
-        // before an input switch, here we try to re-enable streaming.
         if (streamingDisabled)
         {
             ioctlval = ioctl(videofd, VIDIOC_STREAMON, &streamType);
