@@ -4421,7 +4421,7 @@ bool TVRec::SwitchRecordingRingBuffer(const RecordingInfo &rcinfo)
     StartedRecording(&ri);
 
     bool write = genOpt.cardtype != "IMPORT";
-    RingBuffer *rb = new RingBuffer(ri.GetPathname(), write);
+    RingBuffer *rb = RingBuffer::Create(ri.GetPathname(), write);
     if (!rb->IsOpen())
     {
         ri.SetRecordingStatus(rsFailed);

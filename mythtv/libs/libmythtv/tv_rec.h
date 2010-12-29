@@ -291,7 +291,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool TuningOnSameMultiplex(TuningRequest &request);
 
     void HandleStateChange(void);
-    void ChangeStateX(TVState nextState, int line);
+    void ChangeState(TVState nextState);
     bool StateIsRecording(TVState state);
     bool StateIsPlaying(TVState state);
     TVState RemovePlaying(TVState state);
