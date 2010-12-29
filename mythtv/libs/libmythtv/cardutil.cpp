@@ -1557,10 +1557,12 @@ bool CardUtil::hasV4L2(int videofd)
 }
 
 bool CardUtil::GetV4LInfo(
-    int videofd, QString &card, QString &driver, uint32_t &version)
+    int videofd, QString &card, QString &driver, uint32_t &version,
+    uint32_t &capabilities)
 {
     card = driver = QString::null;
     version = 0;
+    capabilities = 0;
 
     if (videofd < 0)
         return false;
@@ -1574,6 +1576,7 @@ bool CardUtil::GetV4LInfo(
         card = QString::fromAscii((const char*)capability.card);
         driver = QString::fromAscii((const char*)capability.driver);
         version = capability.version;
+        capabilities = capability.capabilities;
     }
     else // Fallback to V4L1 query
     {

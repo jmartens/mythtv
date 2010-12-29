@@ -42,7 +42,12 @@ V4LChannel::V4LChannel(TVRec *parent, const QString &videodevice)
       device_name(),                driver_name(),
       curList(NULL),                totalChannels(0),
       currentFormat(),
-      usingv4l2(false),             defaultFreqTable(1)
+      usingv4l2(false),
+      has_stream_io(false),         has_std_io(false),
+      has_async_io(false),
+      has_tuner(false),             has_sliced_vbi(false),
+
+      defaultFreqTable(1)
 {
 }
 
@@ -73,16 +78,37 @@ bool V4LChannel::Open(void)
     videofd = open(ascii_device.constData(), O_RDWR);
     if (videofd < 0)
     {
-         VERBOSE(VB_IMPORTANT,
-                 QString("Channel(%1)::Open(): Can't open video device, "
-                         "error \"%2\"").arg(device).arg(strerror(errno)));
+         VERBOSE(VB_IMPORTANT, LOC_ERR + "Can't open video device." + ENO);
          return false;
     }
 
-    usingv4l2 = CardUtil::hasV4L2(videofd);
-    CardUtil::GetV4LInfo(videofd, device_name, driver_name);
+    uint32_t version, capabilities;
+    if (!CardUtil::GetV4LInfo(videofd, device_name, driver_name,
+                              version, capabilities))
+    {
+        VERBOSE(VB_IMPORTANT, LOC_ERR +
+                "Failed to query capabilities." + ENO);
+        Close();
+        return false;
+    }
+
+    usingv4l2      = !!(capabilities & V4L2_CAP_VIDEO_CAPTURE);
+    has_stream_io  = !!(capabilities & V4L2_CAP_STREAMING);
+    has_std_io     = !!(capabilities & V4L2_CAP_READWRITE);
+    has_async_io   = !!(capabilities & V4L2_CAP_ASYNCIO);
+    has_tuner      = !!(capabilities & V4L2_CAP_TUNER);
+    has_sliced_vbi = !!(capabilities & V4L2_CAP_SLICED_VBI_CAPTURE);
+
     VERBOSE(VB_CHANNEL, LOC + QString("Device name '%1' driver '%2'.")
             .arg(device_name).arg(driver_name));
+
+    VERBOSE(VB_CHANNEL, LOC + QString(
+                "v4l2: %1 stream io: %2 std io: %3 async io: %4 "
+                "tuner %5 sliced vbi %6")
+            .arg(usingv4l2)
+            .arg(has_stream_io).arg(has_std_io).arg(has_async_io)
+            .arg(has_tuner).arg(has_sliced_vbi));
+
 
     if (!InitializeInputs())
     {
@@ -592,11 +618,9 @@ bool V4LChannel::SetInputAndFormat(int inputNum, QString newFmt)
 
     if (usingv4l2)
     {
-        VERBOSE(VB_CHANNEL, LOC + msg + "(v4l v2)");
-
         struct v4l2_input input;
         int ioctlval = ioctl(videofd, VIDIOC_G_INPUT, &input);
-        bool input_switch = (0 != ioctlval || inputNumV4L != input.index);
+        bool input_switch = (0 != ioctlval || (uint)inputNumV4L != input.index);
 
         const v4l2_std_id new_vid_mode = format_to_mode(newFmt, 2);
         v4l2_std_id cur_vid_mode;
@@ -604,13 +628,15 @@ bool V4LChannel::SetInputAndFormat(int inputNum, QString newFmt)
         bool mode_switch = (0 != ioctlval || new_vid_mode != cur_vid_mode);
         bool needs_switch = input_switch || mode_switch;
 
-        VERBOSE(VB_IMPORTANT, LOC + msg +
+        VERBOSE(VB_IMPORTANT, LOC + msg + "(v4l v2) " +
                 QString("input_switch: %1 mode_switch: %2")
                 .arg(input_switch).arg(mode_switch));
 
+        // ConvertX (wis-go7007) requires streaming to be disabled
+        // before an input switch, do this if CAP_STREAMING is set.
         bool streamingDisabled = false;
         int  streamType = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        if (needs_switch)
+        if (needs_switch && has_stream_io)
         {
             ioctlval = ioctl(videofd, VIDIOC_STREAMOFF, &streamType);
             if (ioctlval < 0)

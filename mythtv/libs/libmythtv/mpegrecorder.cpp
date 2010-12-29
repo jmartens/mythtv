@@ -389,31 +389,22 @@ bool MpegRecorder::OpenV4L2DeviceAsInput(void)
 
     bufferSize = 4096;
 
-    struct v4l2_capability cap;
-    memset(&cap, 0, sizeof(cap));
-
-    bool supports_tuner, supports_audio;
-
-    if (ioctl(chanfd, VIDIOC_QUERYCAP, &cap) >= 0)
+    bool supports_tuner = false, supports_audio = false;
+    uint32_t capabilities = 0;
+    if (CardUtil::GetV4LInfo(chanfd, card, driver, version, capabilities))
     {
-        driver  = QString::fromAscii((const char*)(cap.driver));
-        card    = QString::fromAscii((const char*)(cap.card));
-        version = cap.version;
-        supports_sliced_vbi = !!(cap.capabilities & V4L2_CAP_SLICED_VBI_CAPTURE);
-        supports_tuner      = !!(cap.capabilities & V4L2_CAP_TUNER);
-        supports_audio      = !!(cap.capabilities & V4L2_CAP_AUDIO);
-
+        supports_sliced_vbi = !!(capabilities & V4L2_CAP_SLICED_VBI_CAPTURE);
+        supports_tuner      = !!(capabilities & V4L2_CAP_TUNER);
+        supports_audio      = !!(capabilities & V4L2_CAP_AUDIO);
         /// Determine hacks needed for specific drivers & driver versions
-        if (CardUtil::GetV4LInfo(chanfd, card, driver, version))
+        if (driver == "hdpvr")
         {
-            if (driver == "hdpvr")
-            {
-                bufferSize = 1500 * TSPacket::kSize;
-                m_h264_parser.use_I_forKeyframes(false);
-            }
+            bufferSize = 1500 * TSPacket::kSize;
+            m_h264_parser.use_I_forKeyframes(false);
         }
     }
-    else
+
+    if (!(capabilities & V4L2_CAP_VIDEO_CAPTURE))
     {
         VERBOSE(VB_IMPORTANT, LOC_ERR + "V4L version 1, unsupported");
         close(chanfd);
@@ -568,14 +559,13 @@ bool MpegRecorder::SetRecordingVolume(int chanfd)
 {
     // Get volume min/max values
     struct v4l2_queryctrl qctrl;
+    memset(&qctrl, 0 , sizeof(struct v4l2_queryctrl));
     qctrl.id = V4L2_CID_AUDIO_VOLUME;
-    if (ioctl(chanfd, VIDIOC_QUERYCTRL, &qctrl) < 0)
+    if ((ioctl(chanfd, VIDIOC_QUERYCTRL, &qctrl) < 0) ||
+        (qctrl.flags & V4L2_CTRL_FLAG_DISABLED))
     {
-        VERBOSE(VB_IMPORTANT, LOC_WARN +
-                "Unable to get recording volume parameters(max/min)" + ENO +
-                "\n\t\t\tusing default range [0,65535].");
-        qctrl.maximum = 65535;
-        qctrl.minimum = 0;
+        VERBOSE(VB_CHANNEL, LOC_WARN + "Audio volume control not supported.");
+        return false;
     }
 
     // calculate volume in card units.
@@ -1363,7 +1353,8 @@ bool MpegRecorder::StopEncoding(int fd)
 
     struct v4l2_encoder_cmd command;
     memset(&command, 0, sizeof(struct v4l2_encoder_cmd));
-    command.cmd = V4L2_ENC_CMD_STOP;
+    command.cmd   = V4L2_ENC_CMD_STOP;
+    command.flags = V4L2_ENC_CMD_STOP_AT_GOP_END;
 
     VERBOSE(VB_RECORD, LOC + "StopEncoding");
 
