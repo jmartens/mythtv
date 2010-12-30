@@ -553,10 +553,19 @@ RecStatusType TVRec::StartRecording(const ProgramInfo *rcinfo)
     bool did_switch = false;
     if (!cancelNext && (GetState() == kState_RecordingOnly))
     {
-        did_switch = SwitchRecordingRingBuffer(*rcinfo);
+        RecordingInfo *ri = SwitchRecordingRingBuffer(*rcinfo);
+        did_switch = (NULL != ri);
         if (did_switch)
         {
+            delete curRecording;
+            curRecording = ri;
+
+            // Make sure scheduler is allowed to end this recording
+            ClearFlags(kFlagCancelNextRecording);
+
+            pendingRecLock.lock();
             m_recStatus = rsRecording;
+            pendingRecLock.unlock();
         }
         else
         {
@@ -3441,8 +3450,11 @@ void TVRec::TuningShutdowns(const TuningRequest &request)
             curRecording->MarkAsInUse(false, kRecorderInUseID);
         }
 
-        if (request.flags & kFlagCloseRec)
-            FinishedRecording(lastTuningRequest.program);
+        if (!!(request.flags & kFlagCloseRec) && curRecording)
+        {
+            FinishedRecording(curRecording);
+            curRecording->MarkAsInUse(false, kRecorderInUseID);
+        }
 
         if (HasFlags(kFlagRecorderRunning) ||
             (curRecording && curRecording->GetRecordingStatus() == rsFailed))
@@ -4403,7 +4415,7 @@ bool TVRec::SwitchLiveTVRingBuffer(const QString & channum,
     return true;
 }
 
-bool TVRec::SwitchRecordingRingBuffer(const RecordingInfo &rcinfo)
+RecordingInfo *TVRec::SwitchRecordingRingBuffer(const RecordingInfo &rcinfo)
 {
     VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer()");
 
@@ -4411,33 +4423,35 @@ bool TVRec::SwitchRecordingRingBuffer(const RecordingInfo &rcinfo)
         (rcinfo.GetChanID() != curRecording->GetChanID()))
     {
         VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> false 1");
-        return false;
+        return NULL;
     }
 
     PreviewGeneratorQueue::GetPreviewImage(*curRecording, "");
 
-    RecordingInfo ri(rcinfo);
-    ri.MarkAsInUse(true, kRecorderInUseID);
-    StartedRecording(&ri);
+    RecordingInfo *ri = new RecordingInfo(rcinfo);
+    ri->MarkAsInUse(true, kRecorderInUseID);
+    StartedRecording(ri);
 
     bool write = genOpt.cardtype != "IMPORT";
-    RingBuffer *rb = RingBuffer::Create(ri.GetPathname(), write);
+    RingBuffer *rb = RingBuffer::Create(ri->GetPathname(), write);
     if (!rb->IsOpen())
     {
-        ri.SetRecordingStatus(rsFailed);
-        FinishedRecording(&ri);
-        ri.MarkAsInUse(false, kRecorderInUseID);
+        ri->SetRecordingStatus(rsFailed);
+        FinishedRecording(ri);
+        ri->MarkAsInUse(false, kRecorderInUseID);
+        delete ri;
         VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> false 2");
-        return false;
+        return NULL;
     }
     else
     {
-        recorder->SetNextRecording(&ri, rb);
+        recorder->SetNextRecording(ri, rb);
         SetFlags(kFlagRingBufferReady);
-        recordEndTime = GetRecordEndTime(&ri);
+        recordEndTime = GetRecordEndTime(ri);
         switchingBuffer = true;
+        ri->SetRecordingStatus(rsRecording);
         VERBOSE(VB_RECORD, LOC + "SwitchRecordingRingBuffer() -> true");
-        return true;
+        return ri;
     }
 }
 
@@ -4453,7 +4467,8 @@ TVRec* TVRec::GetTVRec(uint cardid)
 QString TuningRequest::toString(void) const
 {
     return QString("Program(%1) channel(%2) input(%3) flags(%4)")
-        .arg((program != 0) ? "yes" : "no").arg(channel).arg(input)
+        .arg((program == NULL) ? QString("NULL") : program->toString())
+        .arg(channel).arg(input)
         .arg(TVRec::FlagToString(flags));
 }
 

@@ -306,7 +306,7 @@ class MPUBLIC TVRec : public SignalMonitorListener
     bool SwitchLiveTVRingBuffer(const QString & channum,
                                 bool discont, bool set_rec);
 
-    bool SwitchRecordingRingBuffer(const RecordingInfo &rcinfo);
+    RecordingInfo *SwitchRecordingRingBuffer(const RecordingInfo &rcinfo);
 
     void StartedRecording(RecordingInfo*);
     void FinishedRecording(RecordingInfo*);
