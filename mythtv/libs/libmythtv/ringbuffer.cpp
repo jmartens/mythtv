@@ -1117,9 +1117,9 @@ int RingBuffer::ReadPriv(void *buf, int count, bool peek)
     {
         VERBOSE(VB_FILE, LOC + loc_desc + ": !WaitForReadsAllowed()");
         rwlock.unlock();
+        stopreads = true; // this needs to be outside the lock
         rwlock.lockForWrite();
         wanttoread = 0;
-        stopreads = true;
         rwlock.unlock();
         return 0;
     }
@@ -1128,10 +1128,10 @@ int RingBuffer::ReadPriv(void *buf, int count, bool peek)
     {
         VERBOSE(VB_FILE, LOC + loc_desc + ": !WaitForAvail()");
         rwlock.unlock();
+        stopreads = true; // this needs to be outside the lock
         rwlock.lockForWrite();
         ateof = true;
         wanttoread = 0;
-        stopreads = true;
         rwlock.unlock();
         return 0;
     }
