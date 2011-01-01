@@ -4,12 +4,8 @@
 Contains any static and global variables for MythTV Python Bindings
 """
 
-<<<<<<< HEAD
-OWN_VERSION = (0,24,0,1)
-=======
 OWN_VERSION = (0,25,-1,1)
->>>>>>> remotes/origin/master
-SCHEMA_VERSION = 1265
+SCHEMA_VERSION = 1267
 MVSCHEMA_VERSION = 1038
 NVSCHEMA_VERSION = 1007
 MUSICSCHEMA_VERSION = 1017

@@ -488,7 +488,7 @@ bool MpegRecorder::SetVideoCaptureFormat(int chanfd)
         return true;
 
     struct v4l2_format vfmt;
-    bzero(&vfmt, sizeof(vfmt));
+    memset(&vfmt, 0, sizeof(vfmt));
 
     vfmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
 
@@ -514,7 +514,7 @@ bool MpegRecorder::SetVideoCaptureFormat(int chanfd)
 bool MpegRecorder::SetLanguageMode(int chanfd)
 {
     struct v4l2_tuner vt;
-    bzero(&vt, sizeof(struct v4l2_tuner));
+    memset(&vt, 0, sizeof(struct v4l2_tuner));
     if (ioctl(chanfd, VIDIOC_G_TUNER, &vt) < 0)
     {
         VERBOSE(VB_IMPORTANT, LOC_WARN + "Unable to get audio mode" + ENO);
@@ -689,7 +689,7 @@ static void add_ext_ctrl(vector<struct v4l2_ext_control> &ctrl_list,
                          uint32_t id, int32_t value)
 {
     struct v4l2_ext_control tmp_ctrl;
-    bzero(&tmp_ctrl, sizeof(struct v4l2_ext_control));
+    memset(&tmp_ctrl, 0, sizeof(struct v4l2_ext_control));
     tmp_ctrl.id    = id;
     tmp_ctrl.value = value;
     ctrl_list.push_back(tmp_ctrl);
@@ -725,7 +725,7 @@ static void set_ctrls(int fd, vector<struct v4l2_ext_control> &ext_ctrls)
     for (uint i = 0; i < ext_ctrls.size(); i++)
     {
         struct v4l2_ext_controls ctrls;
-        bzero(&ctrls, sizeof(struct v4l2_ext_controls));
+        memset(&ctrls, 0, sizeof(struct v4l2_ext_controls));
 
         int value = ext_ctrls[i].value;
 
@@ -800,7 +800,7 @@ bool MpegRecorder::SetV4L2DeviceOptions(int chanfd)
     if (ok)
     {
         struct v4l2_audio ain;
-        bzero(&ain, sizeof(ain));
+        memset(&ain, 0, sizeof(ain));
         ain.index = audioinput;
         if (ioctl(chanfd, VIDIOC_ENUMAUDIO, &ain) < 0)
         {

@@ -489,7 +489,7 @@ bool V4LChannel::Tune(uint64_t frequency, QString inputname)
     {
         bool isTunerCapLow = false;
         struct v4l2_modulator mod;
-        bzero(&mod, sizeof(mod));
+        memset(&mod, 0, sizeof(mod));
         mod.index = 0;
         ioctlval = ioctl(videofd, VIDIOC_G_MODULATOR, &mod);
         if (ioctlval >= 0)
@@ -500,7 +500,7 @@ bool V4LChannel::Tune(uint64_t frequency, QString inputname)
         }
 
         struct v4l2_frequency vf;
-        bzero(&vf, sizeof(vf));
+        memset(&vf, 0, sizeof(vf));
 
         vf.tuner = 0; // use first tuner
         vf.frequency = (isTunerCapLow) ?
@@ -554,7 +554,7 @@ bool V4LChannel::Retune(void)
     if (usingv4l2)
     {
         struct v4l2_frequency vf;
-        bzero(&vf, sizeof(vf));
+        memset(&vf, 0, sizeof(vf));
 
         vf.tuner = 0; // use first tuner
         vf.type = V4L2_TUNER_ANALOG_TV;
@@ -695,7 +695,7 @@ bool V4LChannel::SetInputAndFormat(int inputNum, QString newFmt)
 
         // read in old settings
         struct video_channel set;
-        bzero(&set, sizeof(set));
+        memset(&set, 0, sizeof(set));
         ioctl(videofd, VIDIOCGCHAN, &set);
 
         // set new settings
@@ -840,8 +840,8 @@ bool V4LChannel::InitPictureAttribute(const QString db_col_name)
     {
         struct v4l2_control ctrl;
         struct v4l2_queryctrl qctrl;
-        bzero(&ctrl, sizeof(ctrl));
-        bzero(&qctrl, sizeof(qctrl));
+        memset(&ctrl, 0, sizeof(ctrl));
+        memset(&qctrl, 0, sizeof(qctrl));
 
         ctrl.id = qctrl.id = v4l2_attrib;
         if (ioctl(videofd, VIDIOC_QUERYCTRL, &qctrl) < 0)
@@ -897,7 +897,7 @@ bool V4LChannel::InitPictureAttribute(const QString db_col_name)
     // V4L1
     unsigned short *setfield;
     struct video_picture vid_pic;
-    bzero(&vid_pic, sizeof(vid_pic));
+    memset(&vid_pic, 0, sizeof(vid_pic));
 
     if (ioctl(videofd, VIDIOCGPICT, &vid_pic) < 0)
     {
@@ -958,8 +958,8 @@ static int get_v4l2_attribute_value(int videofd, int v4l2_attrib)
 {
     struct v4l2_control ctrl;
     struct v4l2_queryctrl qctrl;
-    bzero(&ctrl, sizeof(ctrl));
-    bzero(&qctrl, sizeof(qctrl));
+    memset(&ctrl, 0, sizeof(ctrl));
+    memset(&qctrl, 0, sizeof(qctrl));
 
     ctrl.id = qctrl.id = v4l2_attrib;
     if (ioctl(videofd, VIDIOC_QUERYCTRL, &qctrl) < 0)
@@ -983,7 +983,7 @@ static int get_v4l2_attribute_value(int videofd, int v4l2_attrib)
 static int get_v4l1_attribute_value(int videofd, int v4l2_attrib)
 {
     struct video_picture vid_pic;
-    bzero(&vid_pic, sizeof(vid_pic));
+    memset(&vid_pic, 0, sizeof(vid_pic));
 
     if (ioctl(videofd, VIDIOCGPICT, &vid_pic) < 0)
     {
@@ -1010,8 +1010,8 @@ static int set_v4l2_attribute_value(int videofd, int v4l2_attrib, int newvalue)
 {
     struct v4l2_control ctrl;
     struct v4l2_queryctrl qctrl;
-    bzero(&ctrl, sizeof(ctrl));
-    bzero(&qctrl, sizeof(qctrl));
+    memset(&ctrl, 0, sizeof(ctrl));
+    memset(&qctrl, 0, sizeof(qctrl));
 
     ctrl.id = qctrl.id = v4l2_attrib;
     if (ioctl(videofd, VIDIOC_QUERYCTRL, &qctrl) < 0)
@@ -1040,7 +1040,7 @@ static int set_v4l1_attribute_value(int videofd, int v4l2_attrib, int newvalue)
 {
     unsigned short *setfield;
     struct video_picture vid_pic;
-    bzero(&vid_pic, sizeof(vid_pic));
+    memset(&vid_pic, 0, sizeof(vid_pic));
 
     if (ioctl(videofd, VIDIOCGPICT, &vid_pic) < 0)
     {

@@ -142,7 +142,7 @@ Advanced options (experts only):
 
   --with-bindings=LIST     install the bindings specified in the
                            comma-separated list
-                           Supported bindings: perl, python
+                           Supported bindings: perl, python, php
                            comma-separated list
   --python=PATH            Force a specific python executable to use [$python_default]
   --perl-config-opts=OPTS  Additional options to pass when generating
@@ -509,6 +509,11 @@ disable_bindings_python(){
 disable_bindings_perl(){
     echo "WARNING: disabling Perl bindings; missing $1"
     disable bindings_perl
+}
+
+disable_bindings_php(){
+    echo "WARNING: disabling PHP bindings; missing $1"
+    disable bindings_php
 }
 
 enabled(){
@@ -1202,6 +1207,7 @@ HAVE_LIST="
     attribute_may_alias
     attribute_packed
     bswap
+    byteswap_h
     closesocket
     cmov
     conio_h
@@ -1272,6 +1278,7 @@ HAVE_LIST="
     symver
     symver_gnu_asm
     symver_asm_label
+    sys_endian_h
     sys_mman_h
     sys_resource_h
     sys_select_h
@@ -1299,6 +1306,7 @@ MYTHTV_CONFIG_LIST='
     backend
     bindings_perl
     bindings_python
+    bindings_php
     crystalhd
     cygwin
     darwin
@@ -1364,6 +1372,7 @@ USING_LIST='
     appleremote
     bindings_perl
     bindings_python
+    bindings_php
     darwin_da
     mythtranscode
     opengl
@@ -1928,6 +1937,7 @@ audio_jack="default"
 enable audio_oss
 enable bindings_perl
 enable bindings_python
+enable bindings_php
 enable directfb
 enable dvb
 enable ffmpeg_pthreads
@@ -2159,6 +2169,9 @@ for opt do
             if test x"${binding}" = x"python"; then
                 bindings_python="yes"
             fi
+            if test x"${binding}" = x"php"; then
+                bindings_php="yes"
+            fi
         done
     ;;
     --without-bindings=*)
@@ -2169,6 +2182,9 @@ for opt do
             fi
             if test x"${binding}" = x"python"; then
                 bindings_python="no"
+            fi
+            if test x"${binding}" = x"php"; then
+                bindings_php="no"
             fi
         done
     ;;
@@ -3064,6 +3080,7 @@ case $target_os in
         enable  backend
         enable  darwin
         disable dvb
+        disable ffmpeg
         # Prevent linker problems on default Intel 10.5 XCode:
         ldver=$(ld -v 2>&1 | sed -e s/^[^-]*-//)
         osxver=$(uname -r | cut -c 1)
@@ -3111,6 +3128,7 @@ EOF
         enable  backend
         disable bindings_perl
         disable bindings_python
+        disable bindings_php
         disable dv1394
         disable dvb
         enable  memalign_hack
@@ -3574,11 +3592,13 @@ check_lib2 "windows.h psapi.h" GetProcessMemoryInfo -lpsapi
 check_func_headers windows.h GetProcessTimes
 check_func_headers windows.h VirtualAlloc
 
+check_header byteswap.h
 check_header conio.h
 check_header dlfcn.h
 check_header dxva2api.h
 check_header malloc.h
 check_header poll.h
+check_header sys/endian.h
 check_header sys/mman.h
 check_header sys/resource.h
 check_header sys/select.h
@@ -4202,6 +4222,9 @@ if enabled bindings_perl; then
         disable_bindings_perl "Net::UPnP::ControlPoint"
 fi
 
+# Check for php dependencies
+# are none at this time
+
 enabled_any $THREADS_LIST      && enable threads
 
 check_deps $CONFIG_LIST       \
@@ -4469,6 +4492,7 @@ if test x"$PERL_CONFIG_OPTS" != x""; then
   echo "Perl config options       $PERL_CONFIG_OPTS"
 fi
 echo "bindings_python           ${bindings_python-no}"
+echo "bindings_php              ${bindings_php-no}"
 echo ""
 
 MYTH_CONFIG_H=libs/libmythdb/mythconfig.h

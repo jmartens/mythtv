@@ -651,7 +651,7 @@ void NuppelVideoRecorder::UpdateResolutions(void)
         AspectChange((AspectRatio)aspect, 0);
     }
 
-    if (w_out && tot_height && 
+    if (w_out && tot_height &&
         ((uint)tot_height != m_videoHeight ||
          (uint)w_out      != m_videoWidth))
     {
@@ -844,7 +844,7 @@ bool NuppelVideoRecorder::MJPEGInit(void)
     }
 
     struct video_capability vc;
-    bzero(&vc, sizeof(vc));
+    memset(&vc, 0, sizeof(vc));
     int ret = ioctl(init_fd, VIDIOCGCAP, &vc);
 
     if (ret < 0)

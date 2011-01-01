@@ -617,7 +617,7 @@ bool DVBPIDInfo::Open(const QString &dvb_dev, bool use_section_reader)
     if (!use_section_reader)
     {
         struct dmx_pes_filter_params pesFilterParams;
-        bzero(&pesFilterParams, sizeof(struct dmx_pes_filter_params));
+        memset(&pesFilterParams, 0, sizeof(struct dmx_pes_filter_params));
         pesFilterParams.pid      = (__u16) _pid;
         pesFilterParams.input    = DMX_IN_FRONTEND;
         pesFilterParams.output   = DMX_OUT_TS_TAP;
@@ -637,7 +637,7 @@ bool DVBPIDInfo::Open(const QString &dvb_dev, bool use_section_reader)
     else
     {
         struct dmx_sct_filter_params sctFilterParams;
-        bzero(&sctFilterParams, sizeof(struct dmx_sct_filter_params));
+        memset(&sctFilterParams, 0, sizeof(struct dmx_sct_filter_params));
         switch ( (__u16) _pid )
         {
             case 0x0: // PAT
@@ -772,7 +772,7 @@ int DVBRecorder::OpenFilterFd(uint pid, int pes_type, uint stream_type)
 
     // Set the filter type
     struct dmx_pes_filter_params params;
-    bzero(&params, sizeof(params));
+    memset(&params, 0, sizeof(params));
     params.input    = DMX_IN_FRONTEND;
     params.output   = DMX_OUT_TS_TAP;
     params.flags    = DMX_IMMEDIATE_START;
