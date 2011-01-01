@@ -3840,7 +3840,7 @@ void PlaybackBox::customEvent(QEvent *event)
                                             keyevent);
             }
         }
-        else if (message.left(17) == "UPDATE_FILE_SIZE")
+        else if (message.left(16) == "UPDATE_FILE_SIZE")
         {
             QStringList tokens = message.simplified().split(" ");
             bool ok = false;
