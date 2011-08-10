@@ -289,7 +289,7 @@ inline Program *ChannelInfo::AddNewProgram()
     return pObject;
 }
 
-inline void ChannelInfo::InitializeCustomTypes()
+MBASE_PUBLIC inline void ChannelInfo::InitializeCustomTypes()
 {
     qRegisterMetaType< ChannelInfo  >();
     qRegisterMetaType< ChannelInfo* >();

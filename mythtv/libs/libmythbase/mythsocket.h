@@ -16,7 +16,7 @@ class MBASE_PUBLIC MythSocket : public MSocketDevice
 {
     friend class MythSocketThread;
     friend class QList<MythSocket*>;
-    friend void ShutdownRRT(void);
+    MBASE_PUBLIC friend void ShutdownRRT(void);
 
   public:
     MythSocket(int socket = -1, MythSocketCBs *cb = NULL);
