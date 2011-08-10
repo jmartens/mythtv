@@ -104,8 +104,7 @@ bool MetaIOID3::SaveFile()
 
 void MetaIOID3::CloseFile()
 {
-    LOG(VB_FILE, LOG_DEBUG, QString("MetaIO Close file: %1")
-                                                        .arg(m_file->name()));
+    LOG(VB_FILE, LOG_DEBUG, QString("MetaIO Close file: %1") .arg(m_filename));
     delete m_file;
     m_file = NULL;
     m_fileType = kMPEG;
@@ -155,7 +154,7 @@ TagLib::ID3v1::Tag* MetaIOID3::GetID3v1Tag(bool create)
  */
 bool MetaIOID3::write(const Metadata* mdata)
 {
-    if (!OpenFile(mdata->Filename()), true)
+    if (!OpenFile(mdata->Filename(), true))
         return false;
 
     TagLib::ID3v2::Tag *tag = GetID3v2Tag();
