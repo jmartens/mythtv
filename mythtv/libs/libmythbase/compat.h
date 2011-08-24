@@ -119,11 +119,9 @@ typedef unsigned int uint;
 #endif
 
 #if defined(__cplusplus) && defined(USING_MINGW)
-inline int random(void)
-{
-    srand(GetTickCount());
-    return rand() << 20 ^ rand() << 10 ^ rand();
-}
+#include <QtGlobal>
+static inline void srandom(unsigned int seed) { qsrand(seed); }
+static inline long int random(void) { return qrand(); }
 #endif // USING_MINGW
 
 #if defined(__cplusplus) && defined(USING_MINGW)
@@ -240,25 +238,40 @@ inline const char *dlerror(void)
 #define setuid(x)
 #endif // USING_MINGW
 
+#if defined(USING_MINGW)
+static inline struct tm *gmtime_r(const time_t *timep, struct tm *result)
+{
+    // this is safe on windows, where gmtime uses a thread local variable.
+    // using _gmtime_s() would be better, but needs to be tested on windows.
+    struct tm *tmp = gmtime(timep);
+    if (tmp)
+    {
+        *result = *tmp;
+        return result;
+    }
+    return NULL;
+}
+#endif 
+
 #ifdef USING_MINGW
-#define	timeradd(a, b, result)						      \
-  do {									      \
-    (result)->tv_sec = (a)->tv_sec + (b)->tv_sec;			      \
-    (result)->tv_usec = (a)->tv_usec + (b)->tv_usec;			      \
-    if ((result)->tv_usec >= 1000000)					      \
-      {									      \
-        ++(result)->tv_sec;						      \
-        (result)->tv_usec -= 1000000;					      \
-      }									      \
+#define    timeradd(a, b, result)                       \
+  do {                                                  \
+      (result)->tv_sec = (a)->tv_sec + (b)->tv_sec;     \
+      (result)->tv_usec = (a)->tv_usec + (b)->tv_usec;  \
+      if ((result)->tv_usec >= 1000000)                 \
+      {                                                 \
+          ++(result)->tv_sec;                           \
+          (result)->tv_usec -= 1000000;                 \
+      }                                                 \
   } while (0)
-#define	timersub(a, b, result)						      \
-  do {									      \
-    (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;			      \
-    (result)->tv_usec = (a)->tv_usec - (b)->tv_usec;			      \
-    if ((result)->tv_usec < 0) {					      \
-      --(result)->tv_sec;						      \
-      (result)->tv_usec += 1000000;					      \
-    }									      \
+#define    timersub(a, b, result)                       \
+  do {                                                  \
+      (result)->tv_sec = (a)->tv_sec - (b)->tv_sec;     \
+      (result)->tv_usec = (a)->tv_usec - (b)->tv_usec;  \
+      if ((result)->tv_usec < 0) {                      \
+          --(result)->tv_sec;                           \
+         (result)->tv_usec += 1000000;                  \
+      }                                                 \
   } while (0)
 #endif // USING_MINGW
 
@@ -270,11 +283,11 @@ inline const char *dlerror(void)
 
 #ifdef USING_MINGW
 // this stuff is untested
-#define WIFEXITED(w)	(((w) & 0xff) == 0)
-#define WIFSIGNALED(w)	(((w) & 0x7f) > 0 && (((w) & 0x7f) < 0x7f))
-#define WIFSTOPPED(w)	(((w) & 0xff) == 0x7f)
-#define WEXITSTATUS(w)	(((w) >> 8) & 0xff)
-#define WTERMSIG(w)	((w) & 0x7f)
+#define WIFEXITED(w)   (((w) & 0xff) == 0)
+#define WIFSIGNALED(w) (((w) & 0x7f) > 0 && (((w) & 0x7f) < 0x7f))
+#define WIFSTOPPED(w)  (((w) & 0xff) == 0x7f)
+#define WEXITSTATUS(w) (((w) >> 8) & 0xff)
+#define WTERMSIG(w)    ((w) & 0x7f)
 #endif // USING_MINGW
 
 

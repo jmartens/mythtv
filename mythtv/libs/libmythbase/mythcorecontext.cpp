@@ -65,6 +65,7 @@ class MythCoreContextPrivate : public QObject
     bool           m_WOLInProgress;
 
     bool m_backend;
+    bool m_hasIPv6;
 
     MythDB *m_database;
 
@@ -88,12 +89,15 @@ MythCoreContextPrivate::MythCoreContextPrivate(MythCoreContext *lparent,
       m_serverSock(NULL), m_eventSock(NULL),
       m_WOLInProgress(false),
       m_backend(false),
+      m_hasIPv6(false),
       m_database(GetMythDB()),
       m_UIThread(QThread::currentThread()),
       m_locale(NULL),
       m_scheduler(NULL)
 {
     threadRegister("CoreContext");
+    // start our pseudo-random generator in one of 1000 states.
+    srandom(QTime::currentTime().msec());
 }
 
 MythCoreContextPrivate::~MythCoreContextPrivate()
@@ -121,7 +125,11 @@ MythCoreContextPrivate::~MythCoreContextPrivate()
 
     ShutdownMythDownloadManager();
 
+    // This has already been run in the MythContext dtor.  Do we need it here
+    // too?
+#if 0
     logStop(); // need to shutdown db logger before we kill db
+#endif
 
     MThread::Cleanup();
 
@@ -184,7 +192,14 @@ bool MythCoreContext::Init(void)
         return false;
     }
 
-    has_ipv6 = false;
+#ifndef _WIN32
+    char *lang = getenv("LANG");
+    if (!lang || !strcmp(lang, "C") || (strlen(lang) == 0))
+        LOG(VB_GENERAL, LOG_WARNING,
+                "This application expects to be running a UTF locale, and "
+                "many features may behave improperly with your current LANG "
+                "set to 'C' (or unset).  Please consider correcting this.");
+#endif
 
     // If any of the IPs on any interfaces look like IPv6 addresses, assume IPv6
     // is available
@@ -193,9 +208,11 @@ bool MythCoreContext::Init(void)
     for (int i = 0; i < IpList.size(); i++)
     {
         if (IpList.at(i).toString().contains(":"))
-            has_ipv6 = true;
-    };
-
+        {
+            d->m_hasIPv6 = true;
+            break;
+        }
+    }
 
     return true;
 }
@@ -574,12 +591,8 @@ bool MythCoreContext::IsFrontendOnly(void)
 
 QHostAddress MythCoreContext::MythHostAddressAny(void)
 {
-
-    if (has_ipv6)
-        return QHostAddress(QHostAddress::AnyIPv6);
-    else
-        return QHostAddress(QHostAddress::Any);
-
+    return QHostAddress(
+        (d->m_hasIPv6) ? QHostAddress::AnyIPv6 : QHostAddress::Any);
 }
 
 QString MythCoreContext::GenMythURL(QString host, QString port, QString path, QString storageGroup)
